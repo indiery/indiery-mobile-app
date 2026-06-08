@@ -25,8 +25,8 @@ export const statusLabels: Record<string, string> = {
   cancelled: 'Cancelled'
 };
 
-export function money(value: number) {
-  const amount = Number(value.toFixed(2));
+export function money(value?: number | null) {
+  const amount = Number.isFinite(value) ? Number(value!.toFixed(2)) : 0;
   return `INR ${amount.toLocaleString('en-IN', {
     minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
     maximumFractionDigits: 2

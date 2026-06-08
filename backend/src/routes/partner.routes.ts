@@ -165,11 +165,22 @@ partnerRouter.post(
   asyncRoute(async (req: AuthRequest, res) => {
     const partner = await loadPartner(req.auth!.userId);
     if (!partner.partnerProfile?.online) throw new ApiError(400, 'Go online before accepting orders');
-    const order = await Order.findOne({
-      _id: req.params.orderId,
-      status: { $in: ['searching', 'offered'] }
-    });
-    if (!order) throw new ApiError(404, 'Order no longer available');
+    const order = await Order.findById(String(req.params.orderId));
+    if (!order) throw new ApiError(404, 'Order not found');
+
+    const activeStatuses = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];
+    if (order.partner && String(order.partner) === req.auth!.userId && activeStatuses.includes(order.status)) {
+      const fullOrder = await loadOrderForPartner(String(order._id));
+      return res.json({ order: fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) } });
+    }
+
+    if (!['searching', 'offered'].includes(order.status)) {
+      throw new ApiError(404, 'Order no longer available');
+    }
+    if (order.partner && String(order.partner) !== req.auth!.userId) {
+      throw new ApiError(409, 'Order already accepted by another partner');
+    }
+
     order.partner = partner._id;
     setOrderStatusTimeline(order, 'accepted');
     if (partner.partnerProfile?.currentLocation) {
@@ -182,7 +193,7 @@ partnerRouter.post(
     await sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${order.orderNo}`, {
       orderId: String(order._id),
       orderNo: order.orderNo
-    });
+    }).catch(() => undefined);
     emitOrderChanged(payload, String(order.customer), String(partner._id));
     emitPartnerQueueChanged();
     res.json({ order: payload });

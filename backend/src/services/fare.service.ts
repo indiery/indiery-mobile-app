@@ -28,6 +28,44 @@ function roundMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+export function normalizeFareBreakup(fareInput: unknown, distanceKmInput: unknown) {
+  const fare = (fareInput ?? {}) as Record<string, number | undefined>;
+  const distanceKm = typeof distanceKmInput === 'number' ? distanceKmInput : Number(distanceKmInput || 0);
+  const base = fare.base ?? 0;
+  const distance = fare.distance ?? 0;
+  const orderValue = fare.orderValue ?? base + distance;
+  const gst = fare.gst ?? Math.round(orderValue * 0.18);
+  const coins = fare.coins ?? 0;
+  const driverCommission = fare.driverCommission ?? roundMoney(orderValue * DRIVER_COMMISSION_RATE);
+  const platformCommission = fare.platformCommission ?? roundMoney(orderValue * PLATFORM_COMMISSION_RATE);
+  const reserveAmount = fare.reserveAmount ?? roundMoney(orderValue * RESERVE_RATE);
+  const lateDriverPenalty = fare.lateDriverPenalty ?? roundMoney(driverCommission * DELAY_PENALTY_RATE);
+  const latePlatformPenalty = fare.latePlatformPenalty ?? roundMoney(platformCommission * DELAY_PENALTY_RATE);
+  const lateRefundCoins = fare.lateRefundCoins ?? roundMoney(lateDriverPenalty + latePlatformPenalty + reserveAmount);
+  const onTimePartnerPayout = fare.onTimePartnerPayout ?? roundMoney(driverCommission + reserveAmount);
+  const latePartnerPayout = fare.latePartnerPayout ?? roundMoney(driverCommission - lateDriverPenalty);
+
+  return {
+    distanceKm,
+    billableKm: fare.billableKm ?? Math.max(1, Math.ceil(distanceKm)),
+    orderValue,
+    base,
+    distance,
+    gst,
+    coins,
+    total: fare.total ?? orderValue + gst - coins,
+    driverCommission,
+    reserveAmount,
+    partnerNet: fare.partnerNet ?? onTimePartnerPayout,
+    platformCommission,
+    lateDriverPenalty,
+    latePlatformPenalty,
+    lateRefundCoins,
+    onTimePartnerPayout,
+    latePartnerPayout
+  };
+}
+
 function isIntercityVehicle(vehicle: VehicleDocument) {
   return vehicle.serviceType === 'intercity' || vehicle.code.startsWith('truck');
 }
@@ -56,23 +94,27 @@ export function estimateFare(input: EstimateInput) {
   const latePartnerPayout = roundMoney(driverCommission - lateDriverPenalty);
 
   return {
-    distanceKm,
-    billableKm,
-    orderValue,
-    base,
-    distance,
-    gst,
-    coins,
-    total,
-    driverCommission,
-    reserveAmount,
-    partnerNet: onTimePartnerPayout,
-    platformCommission,
-    lateDriverPenalty,
-    latePlatformPenalty,
-    lateRefundCoins,
-    onTimePartnerPayout,
-    latePartnerPayout,
+    ...normalizeFareBreakup(
+      {
+        billableKm,
+        orderValue,
+        base,
+        distance,
+        gst,
+        coins,
+        total,
+        driverCommission,
+        reserveAmount,
+        partnerNet: onTimePartnerPayout,
+        platformCommission,
+        lateDriverPenalty,
+        latePlatformPenalty,
+        lateRefundCoins,
+        onTimePartnerPayout,
+        latePartnerPayout
+      },
+      distanceKm
+    ),
     etaMinutes: input.vehicle.etaMinutes + Math.round(distanceKm / 2)
   };
 }

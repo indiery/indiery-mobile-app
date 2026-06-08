@@ -1,4 +1,5 @@
 import { Schema, model, InferSchemaType, HydratedDocument } from 'mongoose';
+import { normalizeFareBreakup } from '../services/fare.service';
 
 const PointSchema = new Schema(
   {
@@ -133,4 +134,10 @@ const OrderSchema = new Schema(
 );
 
 export type OrderDocument = HydratedDocument<InferSchemaType<typeof OrderSchema>>;
+OrderSchema.pre('validate', function normalizeLegacyFare(next) {
+  if (this.fare) {
+    this.set('fare', normalizeFareBreakup(this.fare, this.distanceKm));
+  }
+  next();
+});
 export const Order = model('Order', OrderSchema);

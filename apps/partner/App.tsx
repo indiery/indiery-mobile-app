@@ -189,6 +189,9 @@ export default function App() {
             busy={busy}
             onAccept={(orderId) =>
               withBusy(async () => {
+                if (!data.user.partnerProfile?.online) {
+                  await api.setAvailability(true);
+                }
                 await api.acceptOrder(orderId);
                 await refresh();
                 setTab('active');

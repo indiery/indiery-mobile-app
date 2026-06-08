@@ -1,0 +1,20 @@
+{
+  "name": "indiery",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:customer": "npm --workspace @indiery/customer run start",
+    "dev:partner": "npm --workspace @indiery/partner run start",
+    "build:backend": "npm --workspace backend run build",
+    "check": "npm --workspace backend run check && npm --workspace @indiery/shared run check && npm --workspace @indiery/customer run check && npm --workspace @indiery/partner run check"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

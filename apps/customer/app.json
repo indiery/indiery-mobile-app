@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Indiery Customer",
+    "slug": "indiery-customer",
+    "scheme": "indierycustomer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "extra": {
+      "apiBaseUrl": "http://localhost:4000/api"
+    },
+    "ios": {
+      "bundleIdentifier": "com.indiery.customer"
+    },
+    "android": {
+      "package": "com.indiery.customer"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,6 +12,7 @@ import {
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
+import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import {
   colors,
@@ -33,11 +34,17 @@ const apiBaseUrl =
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
   'http://localhost:4000/api';
 
+const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
+
 type Tab = 'dashboard' | 'orders' | 'active' | 'earnings' | 'kyc';
 type KycDoc = 'selfie' | 'pan' | 'drivingLicence' | 'rc' | 'insurance' | 'bank';
 
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
+  const socketRef = useRef<Socket | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const locationSyncInFlightRef = useRef(false);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [data, setData] = useState<PartnerBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,11 +54,18 @@ export default function App() {
 
   useEffect(() => {
     boot();
+    return () => {
+      socketRef.current?.disconnect();
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      stopLocationStream();
+    };
   }, []);
 
   useEffect(() => {
     if (data?.user.partnerProfile?.online || data?.activeOrders[0]) {
-      syncLocation();
+      startLocationStream();
+    } else {
+      stopLocationStream();
     }
   }, [data?.user.partnerProfile?.online, data?.activeOrders[0]?.id]);
 
@@ -63,6 +77,7 @@ export default function App() {
       api.setToken(auth.token);
       const bootstrap = await api.partnerBootstrap();
       setData(bootstrap);
+      connectRealtime(bootstrap.user.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load partner app');
     } finally {
@@ -79,17 +94,116 @@ export default function App() {
     }
   }
 
+  function scheduleRefresh(delay = 450) {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      refresh();
+    }, delay);
+  }
+
+  function mergeRealtimeOrder(order: Order) {
+    setData((current) => {
+      if (!current) return current;
+      const activeStatuses = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];
+      const activeOrders = activeStatuses.includes(order.status)
+        ? [order, ...current.activeOrders.filter((item) => item.id !== order.id)]
+        : current.activeOrders.filter((item) => item.id !== order.id);
+      const availableOrders = ['searching', 'offered'].includes(order.status)
+        ? [order, ...current.availableOrders.filter((item) => item.id !== order.id)]
+        : current.availableOrders.filter((item) => item.id !== order.id);
+      const completedOrders = order.status === 'delivered'
+        ? [order, ...current.completedOrders.filter((item) => item.id !== order.id)]
+        : current.completedOrders.filter((item) => item.id !== order.id);
+
+      return {
+        ...current,
+        activeOrders,
+        availableOrders,
+        completedOrders
+      };
+    });
+    if (['accepted', 'arrived_pickup', 'picked_up', 'in_transit'].includes(order.status)) setTab('active');
+  }
+
+  function connectRealtime(partnerId: string) {
+    socketRef.current?.disconnect();
+    const socket = io(socketUrl, {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 600,
+      reconnectionDelayMax: 3000
+    });
+    socketRef.current = socket;
+    socket.on('connect', () => {
+      socket.emit('join:partner', partnerId);
+    });
+    socket.on('order:changed', (order: Order) => {
+      mergeRealtimeOrder(order);
+    });
+    socket.on('partner:queue_changed', () => {
+      scheduleRefresh();
+    });
+    socket.on('connect_error', () => {
+      scheduleRefresh(1000);
+    });
+  }
+
+  function toLocationPayload(coords: Location.LocationObjectCoords) {
+    return {
+      lat: coords.latitude,
+      lng: coords.longitude,
+      heading: coords.heading ?? undefined,
+      speed: coords.speed ?? undefined
+    };
+  }
+
+  async function sendLocationUpdate(coords: Location.LocationObjectCoords) {
+    if (locationSyncInFlightRef.current) return;
+    locationSyncInFlightRef.current = true;
+    try {
+      await api.updatePartnerLocation(toLocationPayload(coords));
+    } catch {
+      // Location is helpful but should not block accepting or completing jobs.
+    } finally {
+      locationSyncInFlightRef.current = false;
+    }
+  }
+
+  async function startLocationStream() {
+    if (locationSubscriptionRef.current) return;
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') return;
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      sendLocationUpdate(current.coords);
+      locationSubscriptionRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 8000,
+          distanceInterval: 20
+        },
+        (currentPosition) => {
+          sendLocationUpdate(currentPosition.coords);
+        }
+      );
+    } catch {
+      // Keep the delivery flow usable even when device GPS is disabled.
+    }
+  }
+
+  function stopLocationStream() {
+    locationSubscriptionRef.current?.remove();
+    locationSubscriptionRef.current = null;
+  }
+
   async function syncLocation() {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') return;
       const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      await api.updatePartnerLocation({
-        lat: current.coords.latitude,
-        lng: current.coords.longitude,
-        heading: current.coords.heading ?? undefined,
-        speed: current.coords.speed ?? undefined
-      });
+      await sendLocationUpdate(current.coords);
     } catch {
       // Location is helpful but should not block accepting or completing jobs.
     }

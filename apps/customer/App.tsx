@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,6 +10,7 @@ import {
   View
 } from 'react-native';
 import Constants from 'expo-constants';
+import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import {
   colors,
@@ -33,6 +34,8 @@ const apiBaseUrl =
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
   'http://localhost:4000/api';
 
+const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
+
 type Tab = 'home' | 'book' | 'track' | 'wallet' | 'profile';
 
 const initialBooking = {
@@ -47,6 +50,7 @@ const initialBooking = {
 
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
+  const socketRef = useRef<Socket | null>(null);
   const [tab, setTab] = useState<Tab>('home');
   const [data, setData] = useState<CustomerBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +64,9 @@ export default function App() {
 
   useEffect(() => {
     boot();
+    return () => {
+      socketRef.current?.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -76,11 +83,47 @@ export default function App() {
       api.setToken(auth.token);
       const bootstrap = await api.customerBootstrap();
       setData(bootstrap);
+      connectRealtime(bootstrap.user.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load app');
     } finally {
       setLoading(false);
     }
+  }
+
+  function mergeRealtimeOrder(order: Order) {
+    setData((current) => {
+      if (!current) return current;
+      const orders = [order, ...current.orders.filter((item) => item.id !== order.id)];
+      const activeOrder = ['delivered', 'cancelled'].includes(order.status) ? undefined : order;
+      return {
+        ...current,
+        activeOrder: activeOrder ?? current.activeOrder,
+        orders
+      };
+    });
+  }
+
+  function connectRealtime(customerId: string) {
+    socketRef.current?.disconnect();
+    const socket = io(socketUrl, {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 600,
+      reconnectionDelayMax: 3000
+    });
+    socketRef.current = socket;
+    socket.on('connect', () => {
+      socket.emit('join:customer', customerId);
+    });
+    socket.on('order:changed', (order: Order) => {
+      mergeRealtimeOrder(order);
+      if (!['delivered', 'cancelled'].includes(order.status)) setTab('track');
+    });
+    socket.on('connect_error', () => {
+      refresh();
+    });
   }
 
   async function refresh() {
@@ -433,7 +476,7 @@ function TrackScreen({
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <MapPreview pickup={order.pickup.label} drop={order.drop.label} eta={order.etaMinutes} />
+      <MapPreview pickup={order.pickup.label} drop={order.drop.label} eta={order.etaMinutes} partnerLocation={order.partnerLocation} />
       <View style={styles.card}>
         <View style={styles.between}>
           <View>
@@ -679,7 +722,18 @@ function Badge({ label }: { label: string }) {
   );
 }
 
-function MapPreview({ pickup, drop, eta }: { pickup: string; drop: string; eta: number }) {
+function MapPreview({
+  pickup,
+  drop,
+  eta,
+  partnerLocation
+}: {
+  pickup: string;
+  drop: string;
+  eta: number;
+  partnerLocation?: Order['partnerLocation'];
+}) {
+  const hasLiveLocation = typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   return (
     <View style={styles.map}>
       <View style={styles.mapRoad} />
@@ -687,9 +741,17 @@ function MapPreview({ pickup, drop, eta }: { pickup: string; drop: string; eta: 
       <View style={styles.mapRoute} />
       <View style={styles.mapPinA} />
       <View style={styles.mapPinB} />
+      <View style={[styles.vehiclePulse, hasLiveLocation && styles.vehiclePulseLive]} />
+      <View style={[styles.vehicleMarker, hasLiveLocation && styles.vehicleMarkerLive]}>
+        <Ionicons name="bicycle" size={16} color={colors.white} />
+      </View>
       <View style={styles.etaChip}>
         <Text style={styles.etaValue}>{eta}</Text>
         <Text style={styles.etaLabel}>MIN</Text>
+      </View>
+      <View style={styles.liveChip}>
+        <View style={[styles.liveDot, hasLiveLocation && styles.liveDotOn]} />
+        <Text style={styles.liveText}>{hasLiveLocation ? 'Live GPS' : 'Waiting GPS'}</Text>
       </View>
       <Text style={styles.mapText}>{pickup} {'->'} {drop}</Text>
     </View>
@@ -816,9 +878,17 @@ const styles = StyleSheet.create({
   mapRoute: { position: 'absolute', left: 72, top: 88, width: 190, height: 4, borderRadius: 2, backgroundColor: colors.customer },
   mapPinA: { position: 'absolute', left: 64, top: 78, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.customer },
   mapPinB: { position: 'absolute', left: 248, top: 78, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.green },
+  vehiclePulse: { position: 'absolute', left: 144, top: 68, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(124,58,237,0.14)' },
+  vehiclePulseLive: { backgroundColor: 'rgba(5,150,105,0.16)' },
+  vehicleMarker: { position: 'absolute', left: 153, top: 77, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  vehicleMarkerLive: { backgroundColor: colors.green },
   etaChip: { position: 'absolute', right: 12, top: 12, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   etaValue: { color: colors.customer, fontSize: 20, fontWeight: '800' },
   etaLabel: { color: colors.muted, fontSize: 9, fontWeight: '800' },
+  liveChip: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10 },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },
+  liveDotOn: { backgroundColor: colors.green },
+  liveText: { color: colors.ink, fontSize: 11, fontWeight: '800' },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '800' },
   card: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   cardTitle: { color: colors.ink, fontWeight: '800', fontSize: 15 },

@@ -127,6 +127,7 @@ export const legalPolicies: LegalPolicy[] = [
       {
         heading: 'Refund processing',
         body: [
+          'For eligible late deliveries, refund coins are calculated from the order value using the Indiery reserve model: 5% reserve plus 5% of the driver commission plus 5% of the Indiery commission. For an INR 100 order this equals INR 9.75 as coins.',
           'Eligible refunds are sent to the original payment method, Indiery wallet, or other method supported by the payment provider.',
           'Bank, card, UPI, or payment gateway settlement timelines may vary. Failed or duplicate payments are investigated using provider transaction references.',
           'Indiery coins used on a cancelled eligible order are normally returned to the customer account unless fraud or abuse is detected.'

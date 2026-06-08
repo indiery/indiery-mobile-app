@@ -28,6 +28,7 @@ export function serializeVehicle(vehicle: VehicleDocument) {
     name: vehicle.name,
     shortName: vehicle.shortName,
     icon: vehicle.icon,
+    serviceType: vehicle.serviceType,
     capacityKg: vehicle.capacityKg,
     baseFare: vehicle.baseFare,
     perKm: vehicle.perKm,
@@ -64,6 +65,7 @@ export function serializeOrder(order: OrderDocument) {
     timeline: order.timeline,
     pod: order.pod,
     partnerLocation: order.partnerLocation,
+    settlement: order.settlement,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt
   };

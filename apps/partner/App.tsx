@@ -385,9 +385,13 @@ function ActiveScreen({
       <Timeline order={order} />
 
       <View style={styles.payoutCard}>
-        <FareLine label="Gross fare" value={money(order.fare.total)} />
-        <FareLine label="Platform commission" value={`-${money(order.fare.platformCommission)}`} />
-        <FareLine label="You receive" value={money(order.fare.partnerNet)} bold />
+        <FareLine label="Order value" value={money(order.fare.orderValue)} />
+        <FareLine label="Driver commission 80%" value={money(order.fare.driverCommission)} />
+        <FareLine label="On-time reserve reward 5%" value={money(order.fare.reserveAmount)} />
+        <FareLine label="Indiery commission 15%" value={money(order.fare.platformCommission)} />
+        <FareLine label="You receive if on-time" value={money(order.fare.onTimePartnerPayout)} bold />
+        <FareLine label="If late, you receive" value={money(order.fare.latePartnerPayout)} />
+        <FareLine label="Customer late refund coins" value={money(order.fare.lateRefundCoins)} />
       </View>
 
       <SectionTitle title="Trip Actions" />

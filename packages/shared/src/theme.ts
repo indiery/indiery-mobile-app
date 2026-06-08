@@ -26,7 +26,11 @@ export const statusLabels: Record<string, string> = {
 };
 
 export function money(value: number) {
-  return `INR ${Math.round(value).toLocaleString('en-IN')}`;
+  const amount = Number(value.toFixed(2));
+  return `INR ${amount.toLocaleString('en-IN', {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2
+  })}`;
 }
 
 export function weight(value: number) {

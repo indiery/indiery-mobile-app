@@ -54,6 +54,7 @@ export interface Vehicle {
   name: string;
   shortName: string;
   icon: string;
+  serviceType: 'intracity' | 'intercity';
   capacityKg: number;
   baseFare: number;
   perKm: number;
@@ -72,13 +73,22 @@ export interface LocationPoint {
 
 export interface FareBreakup {
   distanceKm: number;
+  billableKm: number;
+  orderValue: number;
   base: number;
   distance: number;
   gst: number;
   coins: number;
   total: number;
+  driverCommission: number;
+  reserveAmount: number;
   partnerNet: number;
   platformCommission: number;
+  lateDriverPenalty: number;
+  latePlatformPenalty: number;
+  lateRefundCoins: number;
+  onTimePartnerPayout: number;
+  latePartnerPayout: number;
   etaMinutes: number;
 }
 
@@ -118,6 +128,15 @@ export interface Order {
     dropOtpVerified?: boolean;
   };
   partnerLocation?: PartnerLocation;
+  settlement?: {
+    delayed: boolean;
+    partnerCredit: number;
+    customerRefundCoins: number;
+    driverPenalty: number;
+    platformPenalty: number;
+    reserveReleasedTo: 'partner' | 'customer';
+    settledAt?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

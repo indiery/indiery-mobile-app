@@ -724,9 +724,11 @@ function FareCard({ fare }: { fare: FareBreakup }) {
   return (
     <View style={styles.fareCard}>
       <FareRow label="Base fare" value={money(fare.base)} />
-      <FareRow label={`Distance (${fare.distanceKm} km)`} value={money(fare.distance)} />
+      <FareRow label={`Distance charge (${fare.billableKm} billable km)`} value={money(fare.distance)} />
+      <FareRow label="Order value" value={money(fare.orderValue)} />
       <FareRow label="GST" value={money(fare.gst)} />
       <FareRow label="Coins" value={`-${money(fare.coins)}`} />
+      <FareRow label="Late refund coins" value={money(fare.lateRefundCoins)} />
       <View style={styles.divider} />
       <FareRow label="Total" value={money(fare.total)} bold />
     </View>

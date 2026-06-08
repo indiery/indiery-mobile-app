@@ -9,6 +9,7 @@ import { createTimeline, setOrderStatusTimeline } from '../services/timeline.ser
 import { serializeOrder, serializeUser } from '../services/serialize.service';
 import { compareOtp } from '../services/otp.service';
 import { requestPartnerPayout } from '../services/payout.service';
+import { calculateDeliverySettlement } from '../services/settlement.service';
 import { sendPush } from '../services/notification.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 
@@ -245,11 +246,15 @@ partnerRouter.post(
     await order.save();
 
     if (body.status === 'delivered') {
+      const settlement = calculateDeliverySettlement(order);
+      order.set('settlement', settlement);
+      await order.save();
+
       await User.updateOne(
         { _id: req.auth!.userId },
         {
           $inc: {
-            'partnerProfile.walletBalance': order.fare.partnerNet,
+            'partnerProfile.walletBalance': settlement.partnerCredit,
             'partnerProfile.weeklyOrders': 1
           }
         }
@@ -257,11 +262,26 @@ partnerRouter.post(
       await WalletLedger.create({
         user: req.auth!.userId,
         order: order._id,
-        amount: order.fare.partnerNet,
+        amount: settlement.partnerCredit,
         kind: 'credit',
-        title: `Order ${order.orderNo}`,
+        title: settlement.delayed ? `Order ${order.orderNo} delayed payout` : `Order ${order.orderNo} on-time payout`,
         reference: order.orderNo
       });
+
+      if (settlement.customerRefundCoins > 0) {
+        await User.updateOne(
+          { _id: order.customer },
+          { $inc: { 'customerProfile.coins': settlement.customerRefundCoins } }
+        );
+        await WalletLedger.create({
+          user: order.customer,
+          order: order._id,
+          amount: settlement.customerRefundCoins,
+          kind: 'credit',
+          title: `Late delivery refund ${order.orderNo}`,
+          reference: order.orderNo
+        });
+      }
     }
 
     const fullOrder = await loadOrderForPartner(String(order._id));

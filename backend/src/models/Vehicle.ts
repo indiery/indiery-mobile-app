@@ -6,6 +6,7 @@ const VehicleSchema = new Schema(
     name: { type: String, required: true },
     shortName: { type: String, required: true },
     icon: { type: String, required: true },
+    serviceType: { type: String, enum: ['intracity', 'intercity'], default: 'intracity' },
     capacityKg: { type: Number, required: true },
     baseFare: { type: Number, required: true },
     perKm: { type: Number, required: true },

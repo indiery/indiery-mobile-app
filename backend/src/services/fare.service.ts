@@ -1,5 +1,10 @@
 import type { VehicleDocument } from '../models/Vehicle';
 
+const DRIVER_COMMISSION_RATE = 0.8;
+const PLATFORM_COMMISSION_RATE = 0.15;
+const RESERVE_RATE = 0.05;
+const DELAY_PENALTY_RATE = 0.05;
+
 export interface EstimateInput {
   pickup: string;
   drop: string;
@@ -19,28 +24,55 @@ export function stableDistanceKm(pickup: string, drop: string) {
   return Number((2.5 + (hash % 120) / 10).toFixed(1));
 }
 
+function roundMoney(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function isIntercityVehicle(vehicle: VehicleDocument) {
+  return vehicle.serviceType === 'intercity' || vehicle.code.startsWith('truck');
+}
+
 export function estimateFare(input: EstimateInput) {
   const distanceKm = Number((input.distanceKm ?? stableDistanceKm(input.pickup, input.drop)).toFixed(1));
-  const distance = Math.round(distanceKm * input.vehicle.perKm);
-  const base = input.vehicle.baseFare;
-  const subtotal = base + distance;
+  const billableKm = Math.max(1, Math.ceil(distanceKm));
+  const intercity = isIntercityVehicle(input.vehicle);
+  const base = intercity ? 0 : input.vehicle.baseFare;
+  const additionalKm = intercity ? billableKm : Math.max(0, billableKm - 1);
+  const distance = Math.round(additionalKm * input.vehicle.perKm);
+  const orderValue = base + distance;
+  const subtotal = orderValue;
   const gst = Math.round(subtotal * 0.18);
   const requestedCoins = Math.max(0, input.coins ?? 0);
   const walletCoins = Math.max(0, input.customerCoins ?? 0);
   const coins = Math.min(walletCoins, requestedCoins, subtotal);
   const total = subtotal + gst - coins;
-  const partnerNet = Number((subtotal * input.vehicle.partnerShare).toFixed(2));
-  const platformCommission = Number((subtotal - partnerNet).toFixed(2));
+  const driverCommission = roundMoney(subtotal * DRIVER_COMMISSION_RATE);
+  const platformCommission = roundMoney(subtotal * PLATFORM_COMMISSION_RATE);
+  const reserveAmount = roundMoney(subtotal * RESERVE_RATE);
+  const lateDriverPenalty = roundMoney(driverCommission * DELAY_PENALTY_RATE);
+  const latePlatformPenalty = roundMoney(platformCommission * DELAY_PENALTY_RATE);
+  const lateRefundCoins = roundMoney(lateDriverPenalty + latePlatformPenalty + reserveAmount);
+  const onTimePartnerPayout = roundMoney(driverCommission + reserveAmount);
+  const latePartnerPayout = roundMoney(driverCommission - lateDriverPenalty);
 
   return {
     distanceKm,
+    billableKm,
+    orderValue,
     base,
     distance,
     gst,
     coins,
     total,
-    partnerNet,
+    driverCommission,
+    reserveAmount,
+    partnerNet: onTimePartnerPayout,
     platformCommission,
+    lateDriverPenalty,
+    latePlatformPenalty,
+    lateRefundCoins,
+    onTimePartnerPayout,
+    latePartnerPayout,
     etaMinutes: input.vehicle.etaMinutes + Math.round(distanceKm / 2)
   };
 }

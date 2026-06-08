@@ -7,6 +7,7 @@ import { User } from '../models/User';
 import { Vehicle } from '../models/Vehicle';
 import { Order } from '../models/Order';
 import { Counter } from '../models/Counter';
+import { WalletLedger } from '../models/WalletLedger';
 import { estimateFare } from '../services/fare.service';
 import { resolveDistanceKm } from '../services/maps.service';
 import { createPaymentIntent } from '../services/payment.service';
@@ -243,6 +244,17 @@ customerRouter.post(
     order.cancellationReason = String(req.body?.reason || 'Cancelled by customer');
     order.set('timeline', createTimeline('cancelled'));
     await order.save();
+    if (order.fare.coins > 0) {
+      await User.updateOne({ _id: req.auth!.userId }, { $inc: { 'customerProfile.coins': order.fare.coins } });
+      await WalletLedger.create({
+        user: req.auth!.userId,
+        order: order._id,
+        amount: order.fare.coins,
+        kind: 'credit',
+        title: `Coins returned ${order.orderNo}`,
+        reference: order.orderNo
+      });
+    }
     const fullOrder = await populatedOrder(order._id);
     emitOrderChanged(fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) }, req.auth!.userId);
     emitPartnerQueueChanged();

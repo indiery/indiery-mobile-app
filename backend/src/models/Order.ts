@@ -14,13 +14,22 @@ const PointSchema = new Schema(
 
 const FareSchema = new Schema(
   {
+    orderValue: { type: Number, required: true },
+    billableKm: { type: Number, required: true },
     base: { type: Number, required: true },
     distance: { type: Number, required: true },
     gst: { type: Number, required: true },
     coins: { type: Number, default: 0 },
     total: { type: Number, required: true },
+    driverCommission: { type: Number, required: true },
+    reserveAmount: { type: Number, required: true },
     partnerNet: { type: Number, required: true },
-    platformCommission: { type: Number, required: true }
+    platformCommission: { type: Number, required: true },
+    lateDriverPenalty: { type: Number, required: true },
+    latePlatformPenalty: { type: Number, required: true },
+    lateRefundCoins: { type: Number, required: true },
+    onTimePartnerPayout: { type: Number, required: true },
+    latePartnerPayout: { type: Number, required: true }
   },
   { _id: false }
 );
@@ -53,6 +62,19 @@ const PartnerLocationSchema = new Schema(
     heading: { type: Number },
     speed: { type: Number },
     updatedAt: { type: Date }
+  },
+  { _id: false }
+);
+
+const SettlementSchema = new Schema(
+  {
+    delayed: { type: Boolean, default: false },
+    partnerCredit: { type: Number, default: 0 },
+    customerRefundCoins: { type: Number, default: 0 },
+    driverPenalty: { type: Number, default: 0 },
+    platformPenalty: { type: Number, default: 0 },
+    reserveReleasedTo: { type: String, enum: ['partner', 'customer'], default: 'partner' },
+    settledAt: { type: Date }
   },
   { _id: false }
 );
@@ -104,6 +126,7 @@ const OrderSchema = new Schema(
       dropOtpHash: { type: String }
     },
     partnerLocation: { type: PartnerLocationSchema },
+    settlement: { type: SettlementSchema },
     cancellationReason: { type: String }
   },
   { timestamps: true }

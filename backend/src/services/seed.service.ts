@@ -10,44 +10,65 @@ export async function seedCoreData() {
         name: '2 Wheeler',
         shortName: 'Bike',
         icon: 'two-wheeler',
+        serviceType: 'intracity',
         capacityKg: 20,
         baseFare: 40,
         perKm: 10,
-        partnerShare: 0.75,
-        etaMinutes: 4
+        partnerShare: 0.8,
+        etaMinutes: 4,
+        active: true
       },
       {
         code: 'mini500',
         name: 'Mini Truck 500 kg',
         shortName: 'Mini 500',
         icon: 'mini-truck',
+        serviceType: 'intracity',
         capacityKg: 500,
         baseFare: 200,
-        perKm: 22,
-        partnerShare: 0.76,
-        etaMinutes: 8
+        perKm: 20,
+        partnerShare: 0.8,
+        etaMinutes: 8,
+        active: true
       },
       {
         code: 'mini750',
         name: 'Mini Truck 750 kg',
         shortName: 'Mini 750',
         icon: 'truck',
+        serviceType: 'intracity',
         capacityKg: 750,
         baseFare: 300,
-        perKm: 28,
-        partnerShare: 0.78,
-        etaMinutes: 11
+        perKm: 30,
+        partnerShare: 0.8,
+        etaMinutes: 11,
+        active: true
       },
       {
         code: 'truck2t',
-        name: 'Truck 2 Ton',
+        name: 'Full Truck Load 2 Ton',
         shortName: 'Truck 2T',
         icon: 'truck-heavy',
+        serviceType: 'intercity',
         capacityKg: 2000,
-        baseFare: 1200,
-        perKm: 34,
-        partnerShare: 0.82,
-        etaMinutes: 18
+        baseFare: 0,
+        perKm: 35,
+        partnerShare: 0.8,
+        etaMinutes: 18,
+        active: false
+      },
+      {
+        code: 'truck10t',
+        name: 'Full Truck Load 3-10 Ton',
+        shortName: 'Truck 10T',
+        icon: 'truck-heavy',
+        serviceType: 'intercity',
+        capacityKg: 10000,
+        baseFare: 0,
+        perKm: 40,
+        partnerShare: 0.8,
+        etaMinutes: 18,
+        active: false
       }
     ].map((vehicle) =>
       Vehicle.findOneAndUpdate({ code: vehicle.code }, vehicle, {

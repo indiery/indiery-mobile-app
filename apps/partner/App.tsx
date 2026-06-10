@@ -619,30 +619,63 @@ function KycScreen({ user, busy, onUpload }: { user: UserProfile; busy: boolean;
 }
 
 function PolicyList() {
+  const [openPolicy, setOpenPolicy] = useState<LegalPolicy['id'] | null>(null);
+
   return (
-    <View>
+    <View style={styles.policyList}>
       <SectionTitle title="Policies and Legal" />
       {legalPolicies.map((policy) => (
-        <PolicyCard key={policy.id} policy={policy} />
+        <PolicyCard
+          key={policy.id}
+          policy={policy}
+          expanded={openPolicy === policy.id}
+          onToggle={() => setOpenPolicy((current) => (current === policy.id ? null : policy.id))}
+        />
       ))}
     </View>
   );
 }
 
-function PolicyCard({ policy }: { policy: LegalPolicy }) {
+function PolicyCard({
+  policy,
+  expanded,
+  onToggle
+}: {
+  policy: LegalPolicy;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const icons: Record<LegalPolicy['id'], keyof typeof Ionicons.glyphMap> = {
+    privacy: 'lock-closed',
+    terms: 'document-text',
+    refunds: 'cash'
+  };
+
   return (
     <View style={styles.policyCard}>
-      <Text style={styles.cardTitle}>{policy.title}</Text>
-      <Text style={styles.mutedSmall}>Updated {policy.updatedAt}</Text>
-      <Text style={styles.policySummary}>{policy.summary}</Text>
-      {policy.sections.map((section) => (
-        <View key={section.heading} style={styles.policySection}>
-          <Text style={styles.policyHeading}>{section.heading}</Text>
-          {section.body.map((line) => (
-            <Text key={line} style={styles.policyText}>{line}</Text>
+      <Pressable style={styles.policyHeader} onPress={onToggle}>
+        <View style={styles.policyIcon}>
+          <Ionicons name={icons[policy.id]} size={18} color={colors.partner} />
+        </View>
+        <View style={styles.flex}>
+          <Text style={styles.cardTitle}>{policy.title}</Text>
+          <Text style={styles.mutedSmall}>Updated {policy.updatedAt}</Text>
+          <Text style={styles.policySummary}>{policy.summary}</Text>
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+      </Pressable>
+      {expanded ? (
+        <View style={styles.policyBody}>
+          {policy.sections.map((section) => (
+            <View key={section.heading} style={styles.policySection}>
+              <Text style={styles.policyHeading}>{section.heading}</Text>
+              {section.body.map((line) => (
+                <Text key={line} style={styles.policyText}>{line}</Text>
+              ))}
+            </View>
           ))}
         </View>
-      ))}
+      ) : null}
     </View>
   );
 }
@@ -959,9 +992,13 @@ const styles = StyleSheet.create({
   docCardDone: { backgroundColor: colors.partnerLight, borderColor: colors.partner },
   docTitle: { color: colors.ink, fontWeight: '900', textAlign: 'center' },
   docDoneText: { color: colors.partner },
-  policyCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
-  policySummary: { color: colors.ink, fontSize: 13, fontWeight: '700', marginTop: 8, lineHeight: 18 },
-  policySection: { marginTop: 10 },
+  policyList: { marginTop: 4, marginBottom: 12 },
+  policyCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginBottom: 10, overflow: 'hidden' },
+  policyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  policyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  policySummary: { color: colors.ink, fontSize: 12, fontWeight: '700', marginTop: 5, lineHeight: 17 },
+  policyBody: { borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 14, paddingBottom: 12, backgroundColor: '#F8FFFC' },
+  policySection: { marginTop: 12 },
   policyHeading: { color: colors.partner, fontSize: 13, fontWeight: '900', marginBottom: 4 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
   flex: { flex: 1 },

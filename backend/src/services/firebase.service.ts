@@ -53,6 +53,9 @@ export async function verifyFirebasePhoneToken(firebaseIdToken: string) {
     };
   } catch (err) {
     if (err instanceof ApiError) throw err;
+    if (env.NODE_ENV !== 'production') {
+      console.error('Firebase login token verification failed:', err);
+    }
     throw new ApiError(401, 'Invalid Firebase login token');
   }
 }

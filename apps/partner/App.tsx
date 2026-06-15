@@ -35,9 +35,14 @@ const apiBaseUrl =
   process?.env?.EXPO_PUBLIC_API_URL ||
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
   (__DEV__ ? 'http://localhost:4000/api' : '');
+const allowInsecureApiBaseUrl =
+  process?.env?.EXPO_PUBLIC_ALLOW_INSECURE_API_URL === 'true' ||
+  Constants.expoConfig?.extra?.allowInsecureApiBaseUrl === true;
 
 if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_URL is required for production builds');
-if (!__DEV__ && !apiBaseUrl.startsWith('https://')) throw new Error('Production API URL must use HTTPS');
+if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) {
+  throw new Error('Production API URL must use HTTPS');
+}
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 

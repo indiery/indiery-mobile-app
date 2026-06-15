@@ -6,13 +6,19 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/auth"
     ],
     "extra": {
-      "apiBaseUrl": "http://10.246.177.133:4000/api"
+      "apiBaseUrl": "http://10.246.177.133:4000/api",
+      "allowInsecureApiBaseUrl": true,
+      "eas": {
+        "projectId": "3c4cb4ab-eb0d-4b2d-97f0-627f5dc02a15"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.indiery.partner"

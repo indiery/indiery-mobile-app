@@ -8,6 +8,8 @@
     "apps/*"
   ],
   "scripts": {
+    "build": "npm --workspace backend run build",
+    "start": "npm --workspace backend run start",
     "dev:backend": "npm --workspace backend run dev",
     "dev:customer": "npm --workspace @indiery/customer run start",
     "dev:partner": "npm --workspace @indiery/partner run start",

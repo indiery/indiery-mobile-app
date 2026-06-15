@@ -17,17 +17,22 @@ export function signToken(userId: string, role: AuthRole) {
   return jwt.sign({ sub: userId, role }, env.JWT_SECRET, { expiresIn: '30d' });
 }
 
+export async function verifyAuthToken(token: string) {
+  const payload = jwt.verify(token, env.JWT_SECRET) as { sub: string; role: AuthRole };
+  const user = await User.findById(payload.sub).select('_id role status');
+  if (!user || user.status !== 'active') throw new ApiError(401, 'Invalid user');
+  return { userId: String(user._id), role: user.role as AuthRole };
+}
+
 export function requireAuth(roles?: AuthRole[]) {
   return async (req: AuthRequest, _res: Response, next: NextFunction) => {
     try {
       const header = req.headers.authorization;
       if (!header?.startsWith('Bearer ')) throw new ApiError(401, 'Missing auth token');
       const token = header.slice('Bearer '.length);
-      const payload = jwt.verify(token, env.JWT_SECRET) as { sub: string; role: AuthRole };
-      if (roles?.length && !roles.includes(payload.role)) throw new ApiError(403, 'Forbidden');
-      const user = await User.findById(payload.sub).select('_id role status');
-      if (!user || user.status !== 'active') throw new ApiError(401, 'Invalid user');
-      req.auth = { userId: String(user._id), role: user.role as AuthRole };
+      const auth = await verifyAuthToken(token);
+      if (roles?.length && !roles.includes(auth.role)) throw new ApiError(403, 'Forbidden');
+      req.auth = auth;
       next();
     } catch (error) {
       next(error);

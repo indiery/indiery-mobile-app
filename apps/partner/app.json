@@ -7,14 +7,20 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": ["**/*"],
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth"
+    ],
     "extra": {
-      "apiBaseUrl": "http://localhost:4000/api"
+      "apiBaseUrl": "http://10.246.177.133:4000/api"
     },
     "ios": {
       "bundleIdentifier": "com.indiery.partner"
     },
     "android": {
-      "package": "com.indiery.partner"
+      "package": "com.indiery.partner",
+      "googleServicesFile": "./google-services.json",
+      "usesCleartextTraffic": true
     }
   }
 }

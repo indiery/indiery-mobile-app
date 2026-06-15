@@ -17,6 +17,11 @@ export const partnerRouter = Router();
 
 partnerRouter.use(requireAuth(['partner']));
 
+const availableOrderQuery = {
+  status: { $in: ['searching', 'offered'] },
+  $or: [{ paymentStatus: 'paid' }, { paymentMode: 'cash' }]
+};
+
 async function loadPartner(userId: string) {
   const partner = await User.findById(userId).populate('partnerProfile.vehicleId');
   if (!partner || partner.role !== 'partner') throw new ApiError(404, 'Partner not found');
@@ -25,7 +30,7 @@ async function loadPartner(userId: string) {
 
 async function getPartnerStats(userId: string) {
   const [availableCount, activeCount, completedCount, ledger] = await Promise.all([
-    Order.countDocuments({ status: { $in: ['searching', 'offered'] } }),
+    Order.countDocuments(availableOrderQuery),
     Order.countDocuments({ partner: userId, status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } }),
     Order.countDocuments({ partner: userId, status: 'delivered' }),
     WalletLedger.find({ user: userId }).sort({ createdAt: -1 }).limit(20)
@@ -65,7 +70,7 @@ partnerRouter.get(
     const partner = await loadPartner(req.auth!.userId);
     const stats = await getPartnerStats(req.auth!.userId);
     const [availableOrders, activeOrders, completedOrders] = await Promise.all([
-      Order.find({ status: { $in: ['searching', 'offered'] } })
+      Order.find(availableOrderQuery)
         .sort({ createdAt: -1 })
         .limit(30)
         .populate('vehicle')
@@ -98,6 +103,12 @@ partnerRouter.post(
   '/availability',
   asyncRoute(async (req: AuthRequest, res) => {
     const body = z.object({ online: z.boolean() }).parse(req.body);
+    if (body.online) {
+      const partner = await loadPartner(req.auth!.userId);
+      if (partner.partnerProfile?.kycStatus !== 'verified') {
+        throw new ApiError(403, 'KYC verification is required before going online');
+      }
+    }
     const partner = await User.findByIdAndUpdate(
       req.auth!.userId,
       { 'partnerProfile.online': body.online },
@@ -164,9 +175,15 @@ partnerRouter.post(
   '/orders/:orderId/accept',
   asyncRoute(async (req: AuthRequest, res) => {
     const partner = await loadPartner(req.auth!.userId);
+    if (partner.partnerProfile?.kycStatus !== 'verified') {
+      throw new ApiError(403, 'KYC verification is required before accepting orders');
+    }
     if (!partner.partnerProfile?.online) throw new ApiError(400, 'Go online before accepting orders');
     const order = await Order.findById(String(req.params.orderId));
     if (!order) throw new ApiError(404, 'Order not found');
+    if (order.paymentMode !== 'cash' && order.paymentStatus !== 'paid') {
+      throw new ApiError(402, 'Customer payment is pending');
+    }
 
     const activeStatuses = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];
     if (order.partner && String(order.partner) === req.auth!.userId && activeStatuses.includes(order.status)) {
@@ -309,7 +326,7 @@ partnerRouter.post(
     const body = z
       .object({
         type: z.enum(['pickup', 'drop']),
-        photoUrl: z.string().min(1).default('local-demo-photo')
+        photoUrl: z.string().url()
       })
       .parse(req.body);
     const order = await Order.findOne({ _id: String(req.params.orderId), partner: req.auth!.userId });
@@ -349,9 +366,7 @@ partnerRouter.post(
     const partner = await loadPartner(req.auth!.userId);
     partner.set(`partnerProfile.docs.${key}`, true);
     if (body.photoUrl) partner.set(`partnerProfile.docUrls.${key}`, body.photoUrl);
-    const docs = partner.partnerProfile?.docs;
-    const verified = Boolean(docs?.selfie && docs.pan && docs.drivingLicence && docs.rc && docs.insurance && docs.bank);
-    partner.set('partnerProfile.kycStatus', verified ? 'verified' : 'pending');
+    partner.set('partnerProfile.kycStatus', 'pending');
     await partner.save();
     res.json({ user: serializeUser(partner) });
   })

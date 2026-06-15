@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { env } from '../config/env';
 
 export class ApiError extends Error {
   status: number;
@@ -24,6 +25,11 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
 
   if (error instanceof ApiError) {
     return res.status(error.status).json({ message: error.message });
+  }
+
+  if (env.NODE_ENV === 'production') {
+    console.error(error);
+    return res.status(500).json({ message: 'Unexpected server error' });
   }
 
   const message = error instanceof Error ? error.message : 'Unexpected server error';

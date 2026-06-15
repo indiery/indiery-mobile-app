@@ -94,15 +94,15 @@ const OrderSchema = new Schema(
     fare: { type: FareSchema, required: true },
     paymentMode: {
       type: String,
-      enum: ['upi', 'card', 'wallet', 'netbanking', 'cash'],
+      enum: ['upi', 'card', 'netbanking', 'cash'],
       default: 'upi'
     },
     paymentStatus: {
       type: String,
       enum: ['pending', 'paid', 'failed', 'refunded'],
-      default: 'paid'
+      default: 'pending'
     },
-    paymentProvider: { type: String, enum: ['demo', 'razorpay', 'cash'], default: 'demo' },
+    paymentProvider: { type: String, enum: ['razorpay', 'cash'], default: 'razorpay' },
     paymentReference: { type: String },
     status: {
       type: String,

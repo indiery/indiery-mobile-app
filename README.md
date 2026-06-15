@@ -7,7 +7,7 @@ Indiery is split into two React Native apps that use the same MongoDB backend:
 - `backend`: Express, MongoDB, Socket.IO API
 - `packages/shared`: shared API client, types, theme, and business labels
 
-This is built as a real app foundation. Credentials are intentionally kept in `.env` files and can be added later.
+This is built as a production-oriented app foundation. Credentials are intentionally kept in `.env` files and must be set per environment.
 
 ## Setup
 
@@ -16,7 +16,7 @@ npm install
 copy backend\.env.example backend\.env
 ```
 
-For local development, `mongodb://127.0.0.1:27017/indiery` works if MongoDB is running locally. For production, replace `MONGODB_URI` and `JWT_SECRET` with real credentials.
+For local development, `mongodb://127.0.0.1:27017/indiery` works if MongoDB is running locally. For production, set `NODE_ENV=production`, replace `MONGODB_URI` and `JWT_SECRET`, and restrict `CORS_ORIGIN` to your real HTTPS origins.
 
 If MongoDB is not installed locally, use one of these:
 
@@ -38,24 +38,63 @@ When testing on a physical phone, set `EXPO_PUBLIC_API_URL` in each app environm
 EXPO_PUBLIC_API_URL=http://192.168.1.10:4000/api
 ```
 
+## Firebase Phone Login
+
+Customer and partner login uses Firebase Phone Authentication only. The mobile app verifies the OTP with Firebase, sends the Firebase ID token to `POST /api/auth/firebase-login`, and the backend returns the normal Indiery JWT. There is no Twilio, MSG91, or custom SMS login path.
+
+For local testing, add Firebase test phone numbers in Firebase Console:
+
+1. Authentication > Sign-in method > Phone.
+2. Enable Phone.
+3. Add entries under Phone numbers for testing, for example `+919999999001` with OTP `123456`.
+
+Backend Firebase Admin credentials can be set in `backend/.env` with either:
+
+```bash
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
+```
+
+or:
+
+```bash
+FIREBASE_SERVICE_ACCOUNT_BASE64=
+```
+
+Download native Firebase config files from Firebase Console before building the apps:
+
+- `apps/customer/google-services.json`
+- `apps/customer/GoogleService-Info.plist`
+- `apps/partner/google-services.json`
+- `apps/partner/GoogleService-Info.plist`
+
+The customer Android native project is already checked in. If you build it directly with `npm run --workspace @indiery/customer android`, also place the customer Android file at `apps/customer/android/app/google-services.json`.
+
+React Native Firebase requires an Expo development build or native build; it will not run inside plain Expo Go.
+
 ## Included Flows
 
-- Customer OTP/demo login, booking, fare estimate, payment intent, pickup/drop OTP, live tracking, wallet coins, order history, profile, and in-app legal policies
-- Partner OTP/demo login, availability, device location sync, order queue, accept/reject, active delivery, Cloudinary-ready pickup/drop POD, pickup/drop OTP verification, status transitions, earnings, payout request, KYC, and in-app legal policies
-- Shared backend order state, MongoDB persistence, Google Maps distance fallback, Razorpay-ready payment adapter, Cloudinary signed uploads, wallet ledger, document status, push-token storage, Expo push adapter, and realtime event hooks
+- Customer Firebase OTP login, booking, fare estimate, Razorpay payment intent and verification API, pickup/drop OTP, live tracking, wallet coins, order history, profile, and in-app legal policies
+- Partner Firebase OTP login, KYC-gated availability, authenticated realtime order queue, device location sync, accept/reject, active delivery, Cloudinary pickup/drop POD, pickup/drop OTP verification, status transitions, earnings, payout request queue, KYC upload, and in-app legal policies
+- Shared backend order state, MongoDB persistence, Google Maps distance calculation, Razorpay webhook verification, Cloudinary signed uploads, wallet ledger, document status, push-token storage, Expo push adapter, authenticated Socket.IO rooms, and realtime event hooks
 
 The admin dashboard is intentionally excluded from this build.
 
-## Credentials To Add Later
+## Production Configuration
 
 - MongoDB Atlas: `MONGODB_URI`
-- JWT secret: `JWT_SECRET`
+- JWT secret: `JWT_SECRET` with at least 32 characters
+- CORS origins: `CORS_ORIGIN`, comma-separated if needed
+- Firebase Admin: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` or `FIREBASE_SERVICE_ACCOUNT_BASE64`
 - Google Maps distance: `GOOGLE_MAPS_API_KEY`
 - Razorpay payments: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`
-- Razorpay payouts: `RAZORPAY_PAYOUT_ACCOUNT`
-- SMS OTP: `MSG91_AUTH_KEY` or `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_PHONE`
 - Expo push: `EXPO_ACCESS_TOKEN`
 - Cloudinary uploads: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_UPLOAD_FOLDER`
+- Mobile API URL: `EXPO_PUBLIC_API_URL=https://your-api-domain.example/api`
+- Customer Android signing properties: `INDIERY_UPLOAD_STORE_FILE`, `INDIERY_UPLOAD_STORE_PASSWORD`, `INDIERY_UPLOAD_KEY_ALIAS`, `INDIERY_UPLOAD_KEY_PASSWORD`
+
+Partner payout requests are recorded and deducted from the partner wallet as `pending_review`; final bank transfer should be handled through your ops process or a future payout integration with verified bank details.
 
 If your MongoDB password contains symbols such as `@`, URL-encode the password before placing it in `MONGODB_URI`.
 

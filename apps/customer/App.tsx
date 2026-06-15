@@ -10,6 +10,8 @@ import {
   View
 } from 'react-native';
 import Constants from 'expo-constants';
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import RazorpayCheckout from 'react-native-razorpay';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -28,11 +30,15 @@ import {
 } from '@indiery/shared';
 
 declare const process: { env?: Record<string, string | undefined> };
+declare const __DEV__: boolean;
 
 const apiBaseUrl =
   process?.env?.EXPO_PUBLIC_API_URL ||
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
-  'http://localhost:4000/api';
+  (__DEV__ ? 'http://localhost:4000/api' : '');
+
+if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_URL is required for production builds');
+if (!__DEV__ && !apiBaseUrl.startsWith('https://')) throw new Error('Production API URL must use HTTPS');
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 
@@ -47,6 +53,16 @@ const initialBooking = {
   paymentMode: 'upi' as PaymentMode,
   vehicleId: ''
 };
+
+function formatPhoneForFirebase(phoneInput: string) {
+  const trimmed = phoneInput.trim();
+  if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
+
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+  throw new Error('Enter a valid mobile number');
+}
 
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
@@ -79,16 +95,28 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
-      const auth = await api.demoLogin('customer');
-      api.setToken(auth.token);
-      const bootstrap = await api.customerBootstrap();
-      setData(bootstrap);
-      connectRealtime(bootstrap.user.id);
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
+        setData(null);
+        return;
+      }
+      const firebaseIdToken = await currentUser.getIdToken();
+      await completeFirebaseLogin(firebaseIdToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load app');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function completeFirebaseLogin(firebaseIdToken: string) {
+    setError('');
+    const login = await api.firebaseLogin('customer', firebaseIdToken);
+    api.setToken(login.token);
+    const bootstrap = await api.customerBootstrap();
+    setData(bootstrap);
+    setTab('home');
+    connectRealtime(login.token);
   }
 
   function mergeRealtimeOrder(order: Order) {
@@ -104,9 +132,10 @@ export default function App() {
     });
   }
 
-  function connectRealtime(customerId: string) {
+  function connectRealtime(token: string) {
     socketRef.current?.disconnect();
     const socket = io(socketUrl, {
+      auth: { token },
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -114,9 +143,6 @@ export default function App() {
       reconnectionDelayMax: 3000
     });
     socketRef.current = socket;
-    socket.on('connect', () => {
-      socket.emit('join:customer', customerId);
-    });
     socket.on('order:changed', (order: Order) => {
       mergeRealtimeOrder(order);
       if (!['delivered', 'cancelled'].includes(order.status)) setTab('track');
@@ -174,6 +200,42 @@ export default function App() {
         paymentMode: booking.paymentMode
       };
       const result = await api.createOrder(input);
+      let confirmedOrder = result.order;
+      if (result.paymentIntent.checkout) {
+        const payment = await RazorpayCheckout.open({
+          key: result.paymentIntent.checkout.keyId,
+          amount: Math.round(result.paymentIntent.amount * 100),
+          currency: result.paymentIntent.currency,
+          name: 'Indiery',
+          description: result.order.orderNo,
+          order_id: result.paymentIntent.checkout.orderId,
+          prefill: {
+            name: data?.user.name,
+            email: data?.user.email,
+            contact: data?.user.phone
+          },
+          notes: {
+            orderNo: result.order.orderNo
+          },
+          theme: {
+            color: colors.customer
+          },
+          modal: {
+            confirm_close: true,
+            handleback: true
+          }
+        });
+        if (!payment.razorpay_order_id || !payment.razorpay_signature) {
+          throw new Error('Payment verification details missing');
+        }
+        const verified = await api.verifyRazorpayPayment({
+          orderId: result.order.id,
+          razorpayOrderId: payment.razorpay_order_id,
+          razorpayPaymentId: payment.razorpay_payment_id,
+          razorpaySignature: payment.razorpay_signature
+        });
+        confirmedOrder = verified.order;
+      }
       if (result.tripOtp) {
         setTripOtpByOrder((current) => ({ ...current, [result.order.id]: result.tripOtp! }));
       }
@@ -182,7 +244,7 @@ export default function App() {
       setFare(null);
       setBooking((current) => ({ ...initialBooking, vehicleId: current.vehicleId }));
       setTab('track');
-      showToast(`${result.order.orderNo} booked`);
+      showToast(`${confirmedOrder.orderNo} booked`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Booking failed');
     } finally {
@@ -199,13 +261,9 @@ export default function App() {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.errorTitle}>Backend not ready</Text>
-        <Text style={styles.muted}>{error || 'No data returned'}</Text>
-        <PrimaryButton title="Retry" icon="refresh" onPress={boot} />
-      </SafeAreaView>
+      <LoginScreen initialError={error} onVerified={completeFirebaseLogin} />
     );
   }
 
@@ -269,6 +327,78 @@ export default function App() {
 
       <BottomTabs active={tab} onChange={setTab} activeOrder={Boolean(activeOrder)} />
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
+    </SafeAreaView>
+  );
+}
+
+function LoginScreen({
+  initialError,
+  onVerified
+}: {
+  initialError: string;
+  onVerified: (firebaseIdToken: string) => Promise<void>;
+}) {
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(initialError);
+
+  useEffect(() => {
+    setError(initialError);
+  }, [initialError]);
+
+  async function sendOtp() {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone));
+      setConfirmation(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send OTP');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyOtp() {
+    if (!confirmation) return;
+    setBusy(true);
+    setError('');
+    try {
+      const credential = await confirmation.confirm(code.trim());
+      if (!credential?.user) throw new Error('Unable to verify OTP');
+      const firebaseIdToken = await credential.user.getIdToken();
+      await onVerified(firebaseIdToken);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid OTP');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.loginShell}>
+      <View style={styles.loginPanel}>
+        <View style={styles.loginIcon}>
+          <Ionicons name="call" size={28} color={colors.customer} />
+        </View>
+        <Text style={styles.loginTitle}>Indiery Customer</Text>
+        <Text style={styles.loginSubtitle}>Mobile number verification</Text>
+        <Field label="Mobile number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+        {confirmation ? <Field label="OTP" value={code} onChangeText={setCode} keyboardType="numeric" /> : null}
+        {error ? <Text style={styles.loginError}>{error}</Text> : null}
+        <View style={styles.row}>
+          {confirmation ? (
+            <>
+              <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
+              <PrimaryButton title={busy ? 'Verifying' : 'Verify'} icon="key" onPress={verifyOtp} />
+            </>
+          ) : (
+            <PrimaryButton title={busy ? 'Sending' : 'Send OTP'} icon="chatbubble" onPress={sendOtp} />
+          )}
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -430,7 +560,7 @@ function BookScreen({
             onChangeText={(coins) => setBooking((current) => ({ ...current, coins }))}
           />
           {fare ? <FareCard fare={fare} /> : null}
-          {(['upi', 'card', 'wallet', 'netbanking'] as PaymentMode[]).map((mode) => (
+          {(['upi', 'card', 'netbanking', 'cash'] as PaymentMode[]).map((mode) => (
             <Pressable
               key={mode}
               style={[styles.payRow, booking.paymentMode === mode && styles.payRowActive]}
@@ -683,7 +813,7 @@ function Field({
   label: string;
   value: string;
   onChangeText?: (value: string) => void;
-  keyboardType?: 'default' | 'numeric';
+  keyboardType?: 'default' | 'numeric' | 'phone-pad';
   editable?: boolean;
 }) {
   return (
@@ -841,6 +971,20 @@ function FareRow({ label, value, bold }: { label: string; value: string; bold?: 
 
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
+  loginShell: { flex: 1, backgroundColor: colors.customerLight, justifyContent: 'center', padding: 20 },
+  loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
+  loginIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: colors.customerLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14
+  },
+  loginTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
+  loginSubtitle: { color: colors.muted, fontSize: 13, fontWeight: '700', marginTop: 4, marginBottom: 18 },
+  loginError: { color: colors.red, fontSize: 12, fontWeight: '800', marginBottom: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
     backgroundColor: colors.customer,

@@ -57,24 +57,10 @@ export class IndieryApi {
     return payload as T;
   }
 
-  demoLogin(role: Role) {
-    return this.request<{ token: string; user: UserProfile }>('/auth/demo', {
+  firebaseLogin(role: Role, firebaseIdToken: string) {
+    return this.request<{ token: string; user: UserProfile }>('/auth/firebase-login', {
       method: 'POST',
-      body: JSON.stringify({ role })
-    });
-  }
-
-  requestOtp(role: Role, phone: string) {
-    return this.request<{ phone: string; expiresAt: string; devOtp?: string }>('/auth/request-otp', {
-      method: 'POST',
-      body: JSON.stringify({ role, phone })
-    });
-  }
-
-  verifyOtp(role: Role, phone: string, otp: string) {
-    return this.request<{ token: string; user: UserProfile }>('/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify({ role, phone, otp })
+      body: JSON.stringify({ role, firebaseIdToken })
     });
   }
 
@@ -113,10 +99,19 @@ export class IndieryApi {
     );
   }
 
-  confirmPayment(orderId: string, reference?: string) {
-    return this.request<{ order: Order }>(`/customer/orders/${orderId}/payment/confirm`, {
+  verifyRazorpayPayment(input: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ order: Order }>(`/customer/orders/${input.orderId}/payment/verify`, {
       method: 'POST',
-      body: JSON.stringify({ reference })
+      body: JSON.stringify({
+        razorpayOrderId: input.razorpayOrderId,
+        razorpayPaymentId: input.razorpayPaymentId,
+        razorpaySignature: input.razorpaySignature
+      })
     });
   }
 
@@ -190,7 +185,7 @@ export class IndieryApi {
     });
   }
 
-  uploadPod(orderId: string, type: 'pickup' | 'drop', photoUrl = 'local-demo-photo') {
+  uploadPod(orderId: string, type: 'pickup' | 'drop', photoUrl: string) {
     return this.request<{ order: Order }>(`/partner/orders/${orderId}/pod`, {
       method: 'POST',
       body: JSON.stringify({ type, photoUrl })
@@ -224,14 +219,6 @@ export async function uploadFileToCloudinary(
   upload: CloudinarySignature,
   options: { fileName?: string; mimeType?: string } = {}
 ): Promise<CloudinaryUploadResult> {
-  if (!upload.configured) {
-    return {
-      secureUrl: `local-demo://${upload.folder}/${Date.now()}`,
-      publicId: `local-demo-${Date.now()}`,
-      provider: 'demo'
-    };
-  }
-
   const form = new FormData();
   const append = form.append.bind(form) as (name: string, value: unknown) => void;
   append('file', {

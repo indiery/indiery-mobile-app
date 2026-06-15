@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { env } from '../config/env';
+import { ApiError } from '../middleware/error';
 
 export type UploadPurpose = 'pod' | 'kyc' | 'profile';
 
@@ -36,15 +37,7 @@ export function createCloudinaryUploadSignature(input: CloudinarySignatureInput)
   const folder = folderParts.join('/');
   const tags = ['indiery', input.purpose, input.role].join(',');
 
-  if (!cloudinaryConfigured()) {
-    return {
-      configured: false,
-      provider: 'demo' as const,
-      folder,
-      tags,
-      timestamp
-    };
-  }
+  if (!cloudinaryConfigured()) throw new ApiError(503, 'Cloudinary uploads are not configured');
 
   const signedParams = {
     folder,

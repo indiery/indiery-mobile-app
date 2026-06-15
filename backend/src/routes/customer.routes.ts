@@ -10,9 +10,9 @@ import { Counter } from '../models/Counter';
 import { WalletLedger } from '../models/WalletLedger';
 import { estimateFare } from '../services/fare.service';
 import { resolveDistanceKm } from '../services/maps.service';
-import { createPaymentIntent } from '../services/payment.service';
+import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { hashOtp, makeTripOtp } from '../services/otp.service';
-import { sendPush, sendSms } from '../services/notification.service';
+import { sendPush } from '../services/notification.service';
 import { createTimeline, setOrderStatusTimeline } from '../services/timeline.service';
 import { serializeOrder, serializeUser, serializeVehicle } from '../services/serialize.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
@@ -39,7 +39,7 @@ const CreateOrderSchema = EstimateSchema.extend({
   dropContactName: z.string().optional(),
   dropContactPhone: z.string().optional(),
   goodsType: z.string().min(2).default('General goods'),
-  paymentMode: z.enum(['upi', 'card', 'wallet', 'netbanking', 'cash']).default('upi')
+  paymentMode: z.enum(['upi', 'card', 'netbanking', 'cash']).default('upi')
 });
 
 async function nextOrderNo() {
@@ -56,6 +56,22 @@ async function populatedOrder(orderId: Types.ObjectId | string) {
     .populate('vehicle')
     .populate('partner')
     .populate('customer');
+}
+
+async function notifyAvailableOrder(order: Awaited<ReturnType<typeof populatedOrder>>) {
+  if (!order) return;
+  const payload = serializeOrder(order);
+  const onlinePartners = await User.find({ role: 'partner', 'partnerProfile.online': true }).select('expoPushTokens');
+  await Promise.all(
+    onlinePartners.map((partner) =>
+      sendPush(partner.expoPushTokens, 'New Indiery order', `${order.pickup.label} to ${order.drop.label}`, {
+        orderId: String(order._id),
+        orderNo: order.orderNo
+      })
+    )
+  );
+  emitPartnerQueueChanged();
+  return payload;
 }
 
 customerRouter.get(
@@ -166,25 +182,15 @@ customerRouter.post(
       }
     });
 
-    if (fare.coins > 0) {
+    if (fare.coins > 0 && paymentIntent.provider === 'cash') {
       await User.updateOne({ _id: user._id }, { $inc: { 'customerProfile.coins': -fare.coins } });
     }
 
     const fullOrder = await populatedOrder(order._id);
     if (!fullOrder) throw new ApiError(500, 'Order could not be loaded');
     const payload = serializeOrder(fullOrder);
-    await sendSms(user.phone, `Indiery order ${order.orderNo}: pickup OTP ${pickupOtp}, drop OTP ${dropOtp}.`);
-    const onlinePartners = await User.find({ role: 'partner', 'partnerProfile.online': true }).select('expoPushTokens');
-    await Promise.all(
-      onlinePartners.map((partner) =>
-        sendPush(partner.expoPushTokens, 'New Indiery order', `${body.pickup} to ${body.drop}`, {
-          orderId: String(order._id),
-          orderNo: order.orderNo
-        })
-      )
-    );
     emitOrderChanged(payload, String(user._id));
-    emitPartnerQueueChanged();
+    if (paymentIntent.provider === 'cash') await notifyAvailableOrder(fullOrder);
     res.status(201).json({
       order: payload,
       paymentIntent,
@@ -218,16 +224,35 @@ customerRouter.get(
 );
 
 customerRouter.post(
-  '/orders/:orderId/payment/confirm',
+  '/orders/:orderId/payment/verify',
   asyncRoute(async (req: AuthRequest, res) => {
+    const body = z
+      .object({
+        razorpayOrderId: z.string().min(6),
+        razorpayPaymentId: z.string().min(6),
+        razorpaySignature: z.string().min(20)
+      })
+      .parse(req.body);
     const order = await Order.findOne({ _id: String(req.params.orderId), customer: req.auth!.userId });
     if (!order) throw new ApiError(404, 'Order not found');
+    if (order.paymentProvider !== 'razorpay') throw new ApiError(400, 'Order does not use Razorpay');
+    if (order.paymentReference !== body.razorpayOrderId) throw new ApiError(400, 'Payment order mismatch');
+    if (order.paymentStatus === 'paid') {
+      const alreadyPaidOrder = await populatedOrder(order._id);
+      return res.json({ order: alreadyPaidOrder ? serializeOrder(alreadyPaidOrder) : { id: String(order._id) } });
+    }
+    const valid = verifyRazorpayPaymentSignature(body);
+    if (!valid) throw new ApiError(400, 'Invalid payment signature');
+
     order.paymentStatus = 'paid';
-    if (typeof req.body?.reference === 'string') order.paymentReference = req.body.reference;
     await order.save();
+    if (order.fare.coins > 0) {
+      await User.updateOne({ _id: req.auth!.userId }, { $inc: { 'customerProfile.coins': -order.fare.coins } });
+    }
     const fullOrder = await populatedOrder(order._id);
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
     emitOrderChanged(payload, req.auth!.userId, order.partner ? String(order.partner) : undefined);
+    await notifyAvailableOrder(fullOrder);
     res.json({ order: payload });
   })
 );
@@ -244,7 +269,7 @@ customerRouter.post(
     order.cancellationReason = String(req.body?.reason || 'Cancelled by customer');
     order.set('timeline', createTimeline('cancelled'));
     await order.save();
-    if (order.fare.coins > 0) {
+    if (order.fare.coins > 0 && (order.paymentStatus === 'paid' || order.paymentMode === 'cash')) {
       await User.updateOne({ _id: req.auth!.userId }, { $inc: { 'customerProfile.coins': order.fare.coins } });
       await WalletLedger.create({
         user: req.auth!.userId,

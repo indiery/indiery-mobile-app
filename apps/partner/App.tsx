@@ -12,6 +12,7 @@ import {
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -28,16 +29,30 @@ import {
 } from '@indiery/shared';
 
 declare const process: { env?: Record<string, string | undefined> };
+declare const __DEV__: boolean;
 
 const apiBaseUrl =
   process?.env?.EXPO_PUBLIC_API_URL ||
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
-  'http://localhost:4000/api';
+  (__DEV__ ? 'http://localhost:4000/api' : '');
+
+if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_URL is required for production builds');
+if (!__DEV__ && !apiBaseUrl.startsWith('https://')) throw new Error('Production API URL must use HTTPS');
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 
 type Tab = 'dashboard' | 'orders' | 'active' | 'earnings' | 'kyc';
 type KycDoc = 'selfie' | 'pan' | 'drivingLicence' | 'rc' | 'insurance' | 'bank';
+
+function formatPhoneForFirebase(phoneInput: string) {
+  const trimmed = phoneInput.trim();
+  if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
+
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+  throw new Error('Enter a valid mobile number');
+}
 
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
@@ -73,16 +88,28 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
-      const auth = await api.demoLogin('partner');
-      api.setToken(auth.token);
-      const bootstrap = await api.partnerBootstrap();
-      setData(bootstrap);
-      connectRealtime(bootstrap.user.id);
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
+        setData(null);
+        return;
+      }
+      const firebaseIdToken = await currentUser.getIdToken();
+      await completeFirebaseLogin(firebaseIdToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load partner app');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function completeFirebaseLogin(firebaseIdToken: string) {
+    setError('');
+    const login = await api.firebaseLogin('partner', firebaseIdToken);
+    api.setToken(login.token);
+    const bootstrap = await api.partnerBootstrap();
+    setData(bootstrap);
+    setTab('dashboard');
+    connectRealtime(login.token);
   }
 
   async function refresh() {
@@ -126,9 +153,10 @@ export default function App() {
     if (['accepted', 'arrived_pickup', 'picked_up', 'in_transit'].includes(order.status)) setTab('active');
   }
 
-  function connectRealtime(partnerId: string) {
+  function connectRealtime(token: string) {
     socketRef.current?.disconnect();
     const socket = io(socketUrl, {
+      auth: { token },
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -136,9 +164,6 @@ export default function App() {
       reconnectionDelayMax: 3000
     });
     socketRef.current = socket;
-    socket.on('connect', () => {
-      socket.emit('join:partner', partnerId);
-    });
     socket.on('order:changed', (order: Order) => {
       mergeRealtimeOrder(order);
     });
@@ -255,13 +280,9 @@ export default function App() {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.errorTitle}>Backend not ready</Text>
-        <Text style={styles.muted}>{error || 'No data returned'}</Text>
-        <PrimaryButton title="Retry" icon="refresh" onPress={boot} />
-      </SafeAreaView>
+      <LoginScreen initialError={error} onVerified={completeFirebaseLogin} />
     );
   }
 
@@ -382,6 +403,84 @@ export default function App() {
 
       <BottomTabs active={tab} onChange={setTab} availableCount={data.availableOrders.length} activeCount={data.activeOrders.length} />
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
+    </SafeAreaView>
+  );
+}
+
+function LoginScreen({
+  initialError,
+  onVerified
+}: {
+  initialError: string;
+  onVerified: (firebaseIdToken: string) => Promise<void>;
+}) {
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(initialError);
+
+  useEffect(() => {
+    setError(initialError);
+  }, [initialError]);
+
+  async function sendOtp() {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone));
+      setConfirmation(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send OTP');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyOtp() {
+    if (!confirmation) return;
+    setBusy(true);
+    setError('');
+    try {
+      const credential = await confirmation.confirm(code.trim());
+      if (!credential?.user) throw new Error('Unable to verify OTP');
+      const firebaseIdToken = await credential.user.getIdToken();
+      await onVerified(firebaseIdToken);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid OTP');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.loginShell}>
+      <View style={styles.loginPanel}>
+        <View style={styles.loginIcon}>
+          <Ionicons name="bicycle" size={28} color={colors.partner} />
+        </View>
+        <Text style={styles.loginTitle}>Indiery Partner</Text>
+        <Text style={styles.loginSubtitle}>Mobile number verification</Text>
+        <Text style={styles.fieldLabel}>Mobile number</Text>
+        <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" style={styles.loginInput} />
+        {confirmation ? (
+          <>
+            <Text style={styles.fieldLabel}>OTP</Text>
+            <TextInput value={code} onChangeText={setCode} keyboardType="numeric" style={styles.loginInput} />
+          </>
+        ) : null}
+        {error ? <Text style={styles.loginError}>{error}</Text> : null}
+        <View style={styles.row}>
+          {confirmation ? (
+            <>
+              <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
+              <PrimaryButton title={busy ? 'Verifying' : 'Verify'} icon="key" onPress={verifyOtp} />
+            </>
+          ) : (
+            <PrimaryButton title={busy ? 'Sending' : 'Send OTP'} icon="chatbubble" onPress={sendOtp} />
+          )}
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -906,6 +1005,30 @@ function Empty({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap
 
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
+  loginShell: { flex: 1, backgroundColor: colors.partnerLight, justifyContent: 'center', padding: 20 },
+  loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
+  loginIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: colors.partnerLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14
+  },
+  loginTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
+  loginSubtitle: { color: colors.muted, fontSize: 13, fontWeight: '700', marginTop: 4, marginBottom: 18 },
+  loginInput: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    minHeight: 46,
+    color: colors.ink,
+    fontWeight: '800',
+    marginBottom: 12
+  },
+  loginError: { color: colors.red, fontSize: 12, fontWeight: '800', marginBottom: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
     backgroundColor: colors.partner,

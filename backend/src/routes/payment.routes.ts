@@ -1,0 +1,89 @@
+import { Router } from 'express';
+import { Order } from '../models/Order';
+import { User } from '../models/User';
+import { ApiError, asyncRoute } from '../middleware/error';
+import { serializeOrder } from '../services/serialize.service';
+import { sendPush } from '../services/notification.service';
+import { verifyRazorpayWebhookSignature } from '../services/payment.service';
+import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
+
+export const paymentRouter = Router();
+
+async function populatedOrder(orderId: string) {
+  return Order.findById(orderId)
+    .populate('vehicle')
+    .populate('partner')
+    .populate('customer');
+}
+
+async function notifyPartners(orderId: string) {
+  const order = await populatedOrder(orderId);
+  if (!order) return;
+  const onlinePartners = await User.find({ role: 'partner', 'partnerProfile.online': true }).select('expoPushTokens');
+  await Promise.all(
+    onlinePartners.map((partner) =>
+      sendPush(partner.expoPushTokens, 'New Indiery order', `${order.pickup.label} to ${order.drop.label}`, {
+        orderId: String(order._id),
+        orderNo: order.orderNo
+      })
+    )
+  );
+  emitPartnerQueueChanged();
+}
+
+paymentRouter.post(
+  '/razorpay/webhook',
+  asyncRoute(async (req, res) => {
+    const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+    const signature = req.header('x-razorpay-signature') ?? undefined;
+    if (!verifyRazorpayWebhookSignature(rawBody, signature)) {
+      throw new ApiError(400, 'Invalid Razorpay webhook signature');
+    }
+
+    const event = JSON.parse(rawBody.toString('utf8')) as {
+      event?: string;
+      payload?: {
+        payment?: {
+          entity?: {
+            order_id?: string;
+            status?: string;
+          };
+        };
+      };
+    };
+
+    const razorpayOrderId = event.payload?.payment?.entity?.order_id;
+    if (!razorpayOrderId) return res.json({ ok: true });
+
+    const order = await Order.findOne({ paymentProvider: 'razorpay', paymentReference: razorpayOrderId });
+    if (!order) return res.json({ ok: true });
+
+    const paymentStatus = event.payload?.payment?.entity?.status;
+    if (event.event === 'payment.captured' || paymentStatus === 'captured') {
+      const wasPaid = order.paymentStatus === 'paid';
+      order.paymentStatus = 'paid';
+      await order.save();
+      if (!wasPaid && order.fare.coins > 0) {
+        await User.updateOne({ _id: order.customer }, { $inc: { 'customerProfile.coins': -order.fare.coins } });
+      }
+      const fullOrder = await populatedOrder(String(order._id));
+      if (fullOrder) {
+        const payload = serializeOrder(fullOrder);
+        emitOrderChanged(payload, String(order.customer), order.partner ? String(order.partner) : undefined);
+      }
+      if (!wasPaid) await notifyPartners(String(order._id));
+      return res.json({ ok: true });
+    }
+
+    if (event.event === 'payment.failed' || paymentStatus === 'failed') {
+      if (order.paymentStatus === 'pending') {
+        order.paymentStatus = 'failed';
+        await order.save();
+        const fullOrder = await populatedOrder(String(order._id));
+        if (fullOrder) emitOrderChanged(serializeOrder(fullOrder), String(order.customer));
+      }
+    }
+
+    return res.json({ ok: true });
+  })
+);

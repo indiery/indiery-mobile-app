@@ -10,8 +10,8 @@ export type OrderStatus =
   | 'delivered'
   | 'cancelled';
 
-export type PaymentMode = 'upi' | 'card' | 'wallet' | 'netbanking' | 'cash';
-export type PaymentProvider = 'demo' | 'razorpay' | 'cash';
+export type PaymentMode = 'upi' | 'card' | 'netbanking' | 'cash';
+export type PaymentProvider = 'razorpay' | 'cash';
 export type UploadPurpose = 'pod' | 'kyc' | 'profile';
 
 export interface PartnerLocation {
@@ -153,30 +153,22 @@ export interface PaymentIntent {
   };
 }
 
-export type CloudinarySignature =
-  | {
-      configured: false;
-      provider: 'demo';
-      folder: string;
-      tags: string;
-      timestamp: number;
-    }
-  | {
-      configured: true;
-      provider: 'cloudinary';
-      cloudName: string;
-      apiKey: string;
-      uploadUrl: string;
-      folder: string;
-      tags: string;
-      timestamp: number;
-      signature: string;
-    };
+export interface CloudinarySignature {
+  configured: true;
+  provider: 'cloudinary';
+  cloudName: string;
+  apiKey: string;
+  uploadUrl: string;
+  folder: string;
+  tags: string;
+  timestamp: number;
+  signature: string;
+}
 
 export interface CloudinaryUploadResult {
   secureUrl: string;
   publicId: string;
-  provider: 'demo' | 'cloudinary';
+  provider: 'cloudinary';
 }
 
 export interface LedgerItem {

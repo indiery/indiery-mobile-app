@@ -12,3 +12,5 @@ yarn-debug.log*
 yarn-error.log*
 *.tsbuildinfo
 data/
+google-services.json
+GoogleService-Info.plist

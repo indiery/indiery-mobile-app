@@ -3,17 +3,15 @@ import { z } from 'zod';
 import { User } from '../models/User';
 import { Vehicle } from '../models/Vehicle';
 import { signToken } from '../middleware/auth';
-import { env } from '../config/env';
 import { asyncRoute, ApiError } from '../middleware/error';
-import { seedCoreData } from '../services/seed.service';
 import { serializeUser } from '../services/serialize.service';
-import { requestLoginOtp, verifyLoginOtp } from '../services/otp.service';
+import { verifyFirebasePhoneToken } from '../services/firebase.service';
 
 export const authRouter = Router();
 
-const OtpRoleSchema = z.object({
+const FirebaseLoginSchema = z.object({
   role: z.enum(['customer', 'partner']),
-  phone: z.string().min(6)
+  firebaseIdToken: z.string().min(20)
 });
 
 async function ensureUser(phone: string, role: 'customer' | 'partner') {
@@ -35,6 +33,7 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
   }
 
   const vehicle = await Vehicle.findOne({ active: true }).sort({ capacityKg: 1 });
+  if (!vehicle) throw new ApiError(500, 'No active vehicle catalog is configured');
   return User.create({
     role,
     phone,
@@ -62,39 +61,10 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
 }
 
 authRouter.post(
-  '/demo',
+  '/firebase-login',
   asyncRoute(async (req, res) => {
-    const body = z.object({ role: z.enum(['customer', 'partner']) }).parse(req.body);
-    await seedCoreData();
-    const phone = body.role === 'customer' ? env.DEMO_CUSTOMER_PHONE : env.DEMO_PARTNER_PHONE;
-    const user = await User.findOne({ phone, role: body.role });
-    if (!user) throw new ApiError(404, 'Demo user not found');
-    const token = signToken(String(user._id), body.role);
-    res.json({ token, user: serializeUser(user) });
-  })
-);
-
-authRouter.post(
-  '/request-otp',
-  asyncRoute(async (req, res) => {
-    const body = OtpRoleSchema.parse(req.body);
-    await seedCoreData();
-    const challenge = await requestLoginOtp(body.phone, body.role);
-    res.json({
-      phone: challenge.phone,
-      expiresAt: challenge.expiresAt,
-      devOtp: challenge.devOtp
-    });
-  })
-);
-
-authRouter.post(
-  '/verify-otp',
-  asyncRoute(async (req, res) => {
-    const body = OtpRoleSchema.extend({ otp: z.string().min(4) }).parse(req.body);
-    await seedCoreData();
-    const verification = await verifyLoginOtp(body.phone, body.role, body.otp);
-    if (!verification.ok) throw new ApiError(400, 'Invalid or expired OTP');
+    const body = FirebaseLoginSchema.parse(req.body);
+    const verification = await verifyFirebasePhoneToken(body.firebaseIdToken);
     const user = await ensureUser(verification.phone, body.role);
     const token = signToken(String(user._id), body.role);
     res.json({ token, user: serializeUser(user) });

@@ -4,6 +4,8 @@ import type {
   CreateOrderInput,
   CustomerBootstrap,
   FareBreakup,
+  LocationDetails,
+  LocationSuggestion,
   Order,
   PaymentIntent,
   PartnerBootstrap,
@@ -64,12 +66,38 @@ export class IndieryApi {
     });
   }
 
+  requestAccountDeletion(reason?: string) {
+    return this.request<{ ok: boolean; status: string }>('/auth/account-deletion-request', {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    });
+  }
+
   vehicles() {
     return this.request<{ vehicles: Vehicle[] }>('/meta/vehicles');
   }
 
+  autocompleteLocations(input: string, sessionToken?: string) {
+    const params = new URLSearchParams({ input });
+    if (sessionToken) params.set('sessionToken', sessionToken);
+    return this.request<{ suggestions: LocationSuggestion[] }>(`/maps/autocomplete?${params.toString()}`);
+  }
+
+  locationDetails(placeId: string, sessionToken?: string) {
+    const params = new URLSearchParams({ placeId });
+    if (sessionToken) params.set('sessionToken', sessionToken);
+    return this.request<{ location: LocationDetails }>(`/maps/place-details?${params.toString()}`);
+  }
+
   customerBootstrap() {
     return this.request<CustomerBootstrap>('/customer/bootstrap');
+  }
+
+  updateCustomerProfile(input: { name: string; email?: string; city: string }) {
+    return this.request<{ user: UserProfile }>('/customer/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(input)
+    });
   }
 
   estimate(input: {
@@ -145,6 +173,13 @@ export class IndieryApi {
 
   partnerBootstrap() {
     return this.request<PartnerBootstrap>('/partner/bootstrap');
+  }
+
+  updatePartnerProfile(input: { name: string; email?: string; city: string; vehicleNumber?: string }) {
+    return this.request<{ user: UserProfile }>('/partner/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(input)
+    });
   }
 
   setAvailability(online: boolean) {

@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -22,10 +25,13 @@ import {
   IndieryApi,
   legalPolicies,
   LegalPolicy,
+  LocationDetails,
+  LocationSuggestion,
   money,
   Order,
   PaymentMode,
   statusLabels,
+  UserProfile,
   Vehicle
 } from '@indiery/shared';
 
@@ -51,13 +57,23 @@ type Tab = 'home' | 'book' | 'track' | 'wallet' | 'profile';
 
 const initialBooking = {
   pickup: 'Hazratganj',
+  pickupPlaceId: '',
+  pickupLat: undefined as number | undefined,
+  pickupLng: undefined as number | undefined,
   drop: 'Gomti Nagar',
+  dropPlaceId: '',
+  dropLat: undefined as number | undefined,
+  dropLng: undefined as number | undefined,
   goodsType: 'Documents',
   weightKg: '4',
   coins: '40',
   paymentMode: 'upi' as PaymentMode,
   vehicleId: ''
 };
+
+function needsCustomerProfile(user: UserProfile) {
+  return !user.email || user.name === 'Indiery Customer';
+}
 
 function formatPhoneForFirebase(phoneInput: string) {
   const trimmed = phoneInput.trim();
@@ -141,13 +157,16 @@ export default function App() {
     socketRef.current?.disconnect();
     const socket = io(socketUrl, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 600,
       reconnectionDelayMax: 3000
     });
     socketRef.current = socket;
+    socket.on('connect', () => {
+      refresh();
+    });
     socket.on('order:changed', (order: Order) => {
       mergeRealtimeOrder(order);
       if (!['delivered', 'cancelled'].includes(order.status)) setTab('track');
@@ -180,7 +199,11 @@ export default function App() {
         drop: booking.drop,
         vehicleId: booking.vehicleId,
         coins: Number(booking.coins || 0),
-        weightKg: Number(booking.weightKg || 1)
+        weightKg: Number(booking.weightKg || 1),
+        pickupLat: booking.pickupLat,
+        pickupLng: booking.pickupLng,
+        dropLat: booking.dropLat,
+        dropLng: booking.dropLng
       });
       setFare(result.fare);
       setStep(nextStep);
@@ -202,7 +225,11 @@ export default function App() {
         goodsType: booking.goodsType,
         weightKg: Number(booking.weightKg || 1),
         coins: Number(booking.coins || 0),
-        paymentMode: booking.paymentMode
+        paymentMode: booking.paymentMode,
+        pickupLat: booking.pickupLat,
+        pickupLng: booking.pickupLng,
+        dropLat: booking.dropLat,
+        dropLng: booking.dropLng
       };
       const result = await api.createOrder(input);
       let confirmedOrder = result.order;
@@ -257,11 +284,71 @@ export default function App() {
     }
   }
 
+  async function saveProfile(input: { name: string; email: string; city: string }) {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.updateCustomerProfile(input);
+      setData((current) => current ? { ...current, user: result.user } : current);
+      showToast('Profile saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Profile update failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    setBusy(true);
+    setError('');
+    try {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      api.setToken('');
+      await auth().signOut();
+      setData(null);
+      setTab('home');
+      setStep(1);
+      setFare(null);
+      setBooking(initialBooking);
+      setTripOtpByOrder({});
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Logout failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function requestAccountDeletion() {
+    Alert.alert(
+      'Request account deletion',
+      'We will review your request and delete eligible account data. Some order, payment, fraud prevention, tax, or legal records may be retained where required.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Submit request',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await api.requestAccountDeletion('Requested from customer profile');
+              showToast('Deletion request submitted');
+            } catch (err) {
+              showToast(err instanceof Error ? err.message : 'Request failed');
+            } finally {
+              setBusy(false);
+            }
+          }
+        }
+      ]
+    );
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
         <ActivityIndicator color={colors.customer} size="large" />
-        <Text style={styles.muted}>Loading Indiery Customer</Text>
+        <Text style={styles.muted}>Loading Indiery</Text>
       </SafeAreaView>
     );
   }
@@ -272,13 +359,24 @@ export default function App() {
     );
   }
 
+  if (needsCustomerProfile(data.user)) {
+    return (
+      <ProfileSetupScreen
+        user={data.user}
+        busy={busy}
+        error={error}
+        onSave={saveProfile}
+      />
+    );
+  }
+
   const activeOrder = data.activeOrder || data.orders.find((order) => !['delivered', 'cancelled'].includes(order.status));
 
   return (
     <SafeAreaView style={styles.shell}>
       <View style={styles.appHeader}>
         <View>
-          <Text style={styles.eyebrow}>INDIERY CUSTOMER</Text>
+          <Text style={styles.eyebrow}>INDIERY</Text>
           <Text style={styles.headerTitle}>Hi, {data.user.name.split(' ')[0]}</Text>
         </View>
         <View style={styles.avatar}>
@@ -297,6 +395,7 @@ export default function App() {
         )}
         {tab === 'book' && (
           <BookScreen
+            api={api}
             vehicles={data.vehicles}
             booking={booking}
             setBooking={setBooking}
@@ -327,7 +426,7 @@ export default function App() {
             }}
           />
         )}
-        {tab === 'profile' && <ProfileScreen data={data} />}
+        {tab === 'profile' && <ProfileScreen data={data} onLogout={logout} onRequestAccountDeletion={requestAccountDeletion} />}
       </View>
 
       <BottomTabs active={tab} onChange={setTab} activeOrder={Boolean(activeOrder)} />
@@ -384,27 +483,287 @@ function LoginScreen({
 
   return (
     <SafeAreaView style={styles.loginShell}>
-      <View style={styles.loginPanel}>
-        <View style={styles.loginIcon}>
-          <Ionicons name="call" size={28} color={colors.customer} />
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
+          <LoginHero title="Indiery" caption="Delivering trust, every mile." />
+          <View style={styles.authForm}>
+            <Text style={styles.authTitle}>Welcome Back</Text>
+            <Text style={styles.loginSubtitle}>Login to book and manage your shipments</Text>
+            <PhoneLoginField value={phone} onChangeText={setPhone} />
+            {confirmation ? (
+              <>
+                <View style={styles.authNotice}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.customer} />
+                  <Text style={styles.authNoticeText}>OTP sent. Enter the code to verify.</Text>
+                </View>
+                <AuthField label="OTP code" value={code} onChangeText={setCode} keyboardType="numeric" icon="key" maxLength={6} />
+              </>
+            ) : null}
+            {error ? <Text style={styles.loginError}>{error}</Text> : null}
+            <View style={styles.row}>
+              {confirmation ? (
+                <>
+                  <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
+                  <AuthActionButton title={busy ? 'Verifying' : 'Verify'} onPress={verifyOtp} />
+                </>
+              ) : (
+                <AuthActionButton title={busy ? 'Sending' : 'Send OTP'} onPress={sendOtp} />
+              )}
+            </View>
+            <AuthDivider />
+            <LoginFeatureRow />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+function LoginHero({ title, caption }: { title: string; caption: string }) {
+  return (
+    <View style={styles.loginHero}>
+      <View style={styles.loginSkyGlow} />
+      <View style={styles.loginBrandRow}>
+        <View style={styles.loginBrandIcon}>
+          <Ionicons name="cube" size={23} color={colors.white} />
         </View>
-        <Text style={styles.loginTitle}>Indiery Customer</Text>
-        <Text style={styles.loginSubtitle}>Mobile number verification</Text>
-        <Field label="Mobile number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-        {confirmation ? <Field label="OTP" value={code} onChangeText={setCode} keyboardType="numeric" /> : null}
-        {error ? <Text style={styles.loginError}>{error}</Text> : null}
-        <View style={styles.row}>
-          {confirmation ? (
-            <>
-              <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
-              <PrimaryButton title={busy ? 'Verifying' : 'Verify'} icon="key" onPress={verifyOtp} />
-            </>
-          ) : (
-            <PrimaryButton title={busy ? 'Sending' : 'Send OTP'} icon="chatbubble" onPress={sendOtp} />
-          )}
+        <Text style={styles.loginBrandText}>{title}</Text>
+      </View>
+      <Text style={styles.loginHeroCaption}>{caption}</Text>
+      <DeliveryIllustration />
+    </View>
+  );
+}
+
+function DeliveryIllustration() {
+  return (
+    <View style={styles.deliveryArt}>
+      <View style={[styles.skylineBlock, styles.skylineOne]} />
+      <View style={[styles.skylineBlock, styles.skylineTwo]} />
+      <View style={[styles.skylineBlock, styles.skylineThree]} />
+      <View style={styles.heroGround} />
+      <View style={styles.routeDashOne} />
+      <View style={styles.routeDashTwo} />
+      <Ionicons name="location" size={28} color={colors.customer} style={styles.routePinTop} />
+      <Ionicons name="location" size={18} color={colors.customer} style={styles.routePinMid} />
+      <View style={styles.boxStack}>
+        <View style={styles.boxBack} />
+        <View style={styles.boxFront} />
+        <View style={styles.boxSmall} />
+      </View>
+      <View style={styles.truckShadow} />
+      <View style={styles.truckTrailer}>
+        <View style={styles.trailerStripe} />
+      </View>
+      <View style={styles.truckCab}>
+        <View style={styles.truckWindshield} />
+        <View style={styles.truckGrill} />
+      </View>
+      <View style={[styles.truckWheel, styles.truckWheelOne]} />
+      <View style={[styles.truckWheel, styles.truckWheelTwo]} />
+    </View>
+  );
+}
+
+function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText: (value: string) => void }) {
+  return (
+    <View style={styles.authFieldGroup}>
+      <Text style={styles.fieldLabel}>Mobile Number</Text>
+      <View style={styles.phoneInputShell}>
+        <Ionicons name="phone-portrait-outline" size={18} color={colors.customer} />
+        <Text style={styles.countryCode}>+91</Text>
+        <Ionicons name="chevron-down" size={14} color={colors.muted} />
+        <View style={styles.phoneDivider} />
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType="phone-pad"
+          maxLength={10}
+          placeholder="Enter your mobile number"
+          placeholderTextColor="#9CA3AF"
+          style={styles.phoneInputText}
+        />
+      </View>
+    </View>
+  );
+}
+
+function AuthActionButton({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.authPrimaryButton} onPress={onPress}>
+      <Text style={styles.authPrimaryButtonText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+function AuthDivider() {
+  return (
+    <View style={styles.authDividerRow}>
+      <View style={styles.authDividerLine} />
+      <View style={styles.authDividerLine} />
+    </View>
+  );
+}
+
+function LoginFeatureRow() {
+  const features: Array<{ icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string }> = [
+    { icon: 'cube-outline', title: 'Real-time', subtitle: 'Tracking' },
+    { icon: 'shield-checkmark-outline', title: 'Secure', subtitle: 'Deliveries' },
+    { icon: 'document-text-outline', title: 'Smart', subtitle: 'Pricing' },
+    { icon: 'headset-outline', title: '24/7', subtitle: 'Support' }
+  ];
+  return (
+    <View style={styles.loginFeatureRow}>
+      {features.map((feature) => (
+        <View key={feature.subtitle} style={styles.loginFeatureItem}>
+          <View style={styles.loginFeatureIcon}>
+            <Ionicons name={feature.icon} size={20} color={colors.customer} />
+          </View>
+          <Text style={styles.loginFeatureTitle}>{feature.title}</Text>
+          <Text style={styles.loginFeatureSubtitle}>{feature.subtitle}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ProfileSetupScreen({
+  user,
+  busy,
+  error,
+  onSave
+}: {
+  user: UserProfile;
+  busy: boolean;
+  error: string;
+  onSave: (input: { name: string; email: string; city: string }) => Promise<void>;
+}) {
+  const [name, setName] = useState(user.name === 'Indiery Customer' ? '' : user.name);
+  const [email, setEmail] = useState(user.email || '');
+  const [city, setCity] = useState(user.city || 'Lucknow');
+  const [localError, setLocalError] = useState('');
+
+  async function submit() {
+    const nextName = name.trim();
+    const nextEmail = email.trim();
+    const nextCity = city.trim();
+    if (nextName.length < 2) {
+      setLocalError('Enter your full name');
+      return;
+    }
+    if (!nextEmail.includes('@')) {
+      setLocalError('Enter a valid email');
+      return;
+    }
+    if (nextCity.length < 2) {
+      setLocalError('Enter your city');
+      return;
+    }
+    setLocalError('');
+    await onSave({ name: nextName, email: nextEmail, city: nextCity });
+  }
+
+  return (
+    <SafeAreaView style={styles.loginShell}>
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.profileSetupScroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.authHero}>
+            <View style={styles.authTrackOne} />
+            <View style={styles.authTrackTwo} />
+            <View style={styles.authAccentLine} />
+            <BrandLogo title="Indiery" accentColor={colors.customer} />
+          </View>
+          <View style={styles.authForm}>
+            <Text style={styles.authKicker}>Almost there</Text>
+            <Text style={styles.authTitle}>Profile</Text>
+            <Text style={styles.loginSubtitle}>Complete your profile</Text>
+            <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
+            <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
+            <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
+            <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
+            {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
+            <PrimaryButton title={busy ? 'Saving' : 'Continue'} icon="arrow-forward" onPress={submit} />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+function AuthField({
+  label,
+  value,
+  onChangeText,
+  keyboardType = 'default',
+  editable = true,
+  autoCapitalize = 'words',
+  icon,
+  maxLength
+}: {
+  label: string;
+  value: string;
+  onChangeText?: (value: string) => void;
+  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
+  editable?: boolean;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  icon: keyof typeof Ionicons.glyphMap;
+  maxLength?: number;
+}) {
+  return (
+    <View style={styles.authFieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={[styles.authInputShell, !editable && styles.authInputReadonly]}>
+        <Ionicons name={icon} size={18} color={editable ? colors.customer : colors.muted} />
+        <TextInput
+          value={value}
+          editable={editable}
+          onChangeText={onChangeText}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          maxLength={maxLength}
+          placeholderTextColor={colors.muted}
+          style={styles.authInputText}
+        />
+      </View>
+    </View>
+  );
+}
+
+function BrandLogo({ title, accentColor }: { title: string; accentColor: string }) {
+  const titleLetters = title.toUpperCase().split('');
+  return (
+    <View style={styles.brandLogo}>
+      <View style={styles.brandMark}>
+        <View style={styles.motionStack}>
+          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionLine, styles.motionLineWide, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionLine, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionLine, styles.motionLineShort, { backgroundColor: accentColor }]} />
+        </View>
+        <View style={styles.packageMark}>
+          <Ionicons name="cube" size={54} color={colors.ink} />
+          <View style={[styles.packageFace, { backgroundColor: accentColor }]} />
+        </View>
+        <View style={styles.routeMark}>
+          <View style={styles.routeRoad} />
+          <Ionicons name="location" size={42} color={accentColor} />
         </View>
       </View>
-    </SafeAreaView>
+      <Text style={styles.loginTitle}>
+        {titleLetters.map((letter, index) => (
+          <Text key={`${letter}-${index}`} style={letter === 'I' && index > 0 ? { color: accentColor } : undefined}>
+            {letter}
+          </Text>
+        ))}
+      </Text>
+      <View style={styles.taglineRow}>
+        <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
+        <Text style={styles.tagline}>SMART LAST-MILE LOGISTICS INDIA</Text>
+        <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
+      </View>
+    </View>
   );
 }
 
@@ -455,7 +814,123 @@ function HomeScreen({
   );
 }
 
+function LocationPickerField({
+  api,
+  label,
+  value,
+  selected,
+  onChangeText,
+  onSelect
+}: {
+  api: IndieryApi;
+  label: string;
+  value: string;
+  selected: boolean;
+  onChangeText: (value: string) => void;
+  onSelect: (location: LocationDetails) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [localError, setLocalError] = useState('');
+  const requestSeqRef = useRef(0);
+  const sessionTokenRef = useRef(`loc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+  useEffect(() => {
+    const query = value.trim();
+    if (!focused || selected || query.length < 3) {
+      setSuggestions([]);
+      setLocalError('');
+      return;
+    }
+
+    const requestId = ++requestSeqRef.current;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const result = await api.autocompleteLocations(query, sessionTokenRef.current);
+        if (requestId === requestSeqRef.current) {
+          setSuggestions(result.suggestions);
+          setLocalError('');
+        }
+      } catch {
+        if (requestId === requestSeqRef.current) {
+          setSuggestions([]);
+          setLocalError('Location suggestions unavailable');
+        }
+      } finally {
+        if (requestId === requestSeqRef.current) setLoading(false);
+      }
+    }, 320);
+
+    return () => clearTimeout(timer);
+  }, [api, focused, selected, value]);
+
+  async function chooseSuggestion(suggestion: LocationSuggestion) {
+    setLoading(true);
+    setLocalError('');
+    try {
+      const result = await api.locationDetails(suggestion.placeId, sessionTokenRef.current);
+      onSelect(result.location);
+      setSuggestions([]);
+      setFocused(false);
+      sessionTokenRef.current = `loc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    } catch {
+      setLocalError('Could not select this location');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <View style={styles.locationFieldGroup}>
+      <View style={styles.locationLabelRow}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        {selected ? (
+          <View style={styles.locationSelectedBadge}>
+            <Ionicons name="checkmark-circle" size={13} color={colors.customer} />
+            <Text style={styles.locationSelectedText}>Selected</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={[styles.locationInputShell, focused && styles.locationInputShellActive]}>
+        <Ionicons name={label === 'Pickup' ? 'radio-button-on' : 'location'} size={18} color={colors.customer} />
+        <TextInput
+          value={value}
+          onFocus={() => setFocused(true)}
+          onChangeText={(nextValue) => {
+            setFocused(true);
+            onChangeText(nextValue);
+          }}
+          placeholder={`Search ${label.toLowerCase()} location`}
+          placeholderTextColor={colors.muted}
+          style={styles.locationInput}
+        />
+        {loading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
+      </View>
+      {localError ? <Text style={styles.locationError}>{localError}</Text> : null}
+      {suggestions.length ? (
+        <View style={styles.locationSuggestionBox}>
+          {suggestions.map((suggestion) => (
+            <Pressable key={suggestion.placeId} style={styles.locationSuggestionItem} onPress={() => chooseSuggestion(suggestion)}>
+              <Ionicons name="location-outline" size={18} color={colors.customer} />
+              <View style={styles.flex}>
+                <Text style={styles.locationSuggestionTitle}>{suggestion.mainText}</Text>
+                {suggestion.secondaryText ? <Text style={styles.locationSuggestionSubtitle}>{suggestion.secondaryText}</Text> : null}
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {!selected && value.trim().length >= 3 && !suggestions.length && !loading ? (
+        <Text style={styles.locationHint}>Select a suggestion for accurate fare and tracking, or continue with typed text.</Text>
+      ) : null}
+    </View>
+  );
+}
+
 function BookScreen({
+  api,
   vehicles,
   booking,
   setBooking,
@@ -466,6 +941,7 @@ function BookScreen({
   estimateNow,
   placeOrder
 }: {
+  api: IndieryApi;
   vehicles: Vehicle[];
   booking: typeof initialBooking;
   setBooking: React.Dispatch<React.SetStateAction<typeof initialBooking>>;
@@ -512,15 +988,53 @@ function BookScreen({
       {step === 2 && (
         <View>
           <SectionTitle title="Pickup and Drop" />
-          <Field
+          <LocationPickerField
+            api={api}
             label="Pickup"
             value={booking.pickup}
-            onChangeText={(pickup) => setBooking((current) => ({ ...current, pickup }))}
+            selected={typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number'}
+            onChangeText={(pickup) =>
+              setBooking((current) => ({
+                ...current,
+                pickup,
+                pickupPlaceId: '',
+                pickupLat: undefined,
+                pickupLng: undefined
+              }))
+            }
+            onSelect={(location) =>
+              setBooking((current) => ({
+                ...current,
+                pickup: location.address || location.label,
+                pickupPlaceId: location.placeId,
+                pickupLat: location.lat,
+                pickupLng: location.lng
+              }))
+            }
           />
-          <Field
+          <LocationPickerField
+            api={api}
             label="Drop"
             value={booking.drop}
-            onChangeText={(drop) => setBooking((current) => ({ ...current, drop }))}
+            selected={typeof booking.dropLat === 'number' && typeof booking.dropLng === 'number'}
+            onChangeText={(drop) =>
+              setBooking((current) => ({
+                ...current,
+                drop,
+                dropPlaceId: '',
+                dropLat: undefined,
+                dropLng: undefined
+              }))
+            }
+            onSelect={(location) =>
+              setBooking((current) => ({
+                ...current,
+                drop: location.address || location.label,
+                dropPlaceId: location.placeId,
+                dropLat: location.lat,
+                dropLng: location.lng
+              }))
+            }
           />
           <MapPreview pickup={booking.pickup} drop={booking.drop} eta={fare?.etaMinutes || selectedVehicle?.etaMinutes || 4} />
           <View style={styles.row}>
@@ -675,7 +1189,15 @@ function WalletScreen({ coins, busy, onCoupon }: { coins: number; busy: boolean;
   );
 }
 
-function ProfileScreen({ data }: { data: CustomerBootstrap }) {
+function ProfileScreen({
+  data,
+  onLogout,
+  onRequestAccountDeletion
+}: {
+  data: CustomerBootstrap;
+  onLogout: () => void;
+  onRequestAccountDeletion: () => void;
+}) {
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.profileHero}>
@@ -689,6 +1211,14 @@ function ProfileScreen({ data }: { data: CustomerBootstrap }) {
       <Field label="Phone" value={data.user.phone} editable={false} />
       <Field label="Email" value={data.user.email || ''} editable={false} />
       <Field label="City" value={data.user.city} editable={false} />
+      <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
+        <Ionicons name="trash-outline" size={18} color={colors.red} />
+        <Text style={styles.deleteAccountButtonText}>Request account deletion</Text>
+      </Pressable>
+      <Pressable style={styles.logoutButton} onPress={onLogout}>
+        <Ionicons name="log-out-outline" size={18} color={colors.red} />
+        <Text style={styles.logoutButtonText}>Logout</Text>
+      </Pressable>
       <PolicyList />
     </ScrollView>
   );
@@ -818,7 +1348,7 @@ function Field({
   label: string;
   value: string;
   onChangeText?: (value: string) => void;
-  keyboardType?: 'default' | 'numeric' | 'phone-pad';
+  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
   editable?: boolean;
 }) {
   return (
@@ -976,19 +1506,196 @@ function FareRow({ label, value, bold }: { label: string; value: string; bold?: 
 
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
-  loginShell: { flex: 1, backgroundColor: colors.customerLight, justifyContent: 'center', padding: 20 },
-  loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
-  loginIcon: {
+  loginShell: { flex: 1, backgroundColor: colors.white },
+  authKeyboard: { flex: 1 },
+  authScroll: { flexGrow: 1, backgroundColor: colors.white },
+  profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
+  loginHero: {
+    minHeight: 330,
+    backgroundColor: colors.customerLight,
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    overflow: 'hidden'
+  },
+  loginSkyGlow: {
+    position: 'absolute',
+    right: -48,
+    top: -58,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: '#FFFFFF',
+    opacity: 0.75
+  },
+  loginBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  loginBrandIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: colors.customer,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  loginBrandText: { color: colors.ink, fontSize: 25, fontWeight: '900' },
+  loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '800', lineHeight: 19, marginTop: 10, maxWidth: 145 },
+  deliveryArt: { height: 220, marginTop: -2 },
+  skylineBlock: { position: 'absolute', bottom: 43, borderRadius: 12, backgroundColor: '#DDEAF8', opacity: 0.9 },
+  skylineOne: { left: -8, width: 26, height: 82 },
+  skylineTwo: { right: 64, width: 28, height: 112 },
+  skylineThree: { right: 18, width: 34, height: 72 },
+  routeDashOne: {
+    position: 'absolute',
+    right: 40,
+    top: 14,
+    width: 88,
+    borderTopWidth: 1.5,
+    borderTopColor: colors.customer,
+    borderStyle: 'dashed',
+    transform: [{ rotate: '-27deg' }]
+  },
+  routeDashTwo: {
+    position: 'absolute',
+    right: 104,
+    top: 56,
     width: 58,
-    height: 58,
-    borderRadius: 18,
+    borderTopWidth: 1.5,
+    borderTopColor: colors.customer,
+    borderStyle: 'dashed',
+    transform: [{ rotate: '-37deg' }]
+  },
+  routePinTop: { position: 'absolute', right: 20, top: -2 },
+  routePinMid: { position: 'absolute', right: 96, top: 50 },
+  boxStack: { position: 'absolute', left: 8, bottom: 39, width: 88, height: 72 },
+  boxBack: { position: 'absolute', left: 26, bottom: 18, width: 44, height: 38, borderRadius: 4, backgroundColor: '#C98743' },
+  boxFront: { position: 'absolute', left: 0, bottom: 0, width: 48, height: 42, borderRadius: 4, backgroundColor: '#D99A50' },
+  boxSmall: { position: 'absolute', left: 44, bottom: 0, width: 34, height: 31, borderRadius: 4, backgroundColor: '#E8B06B' },
+  truckShadow: { position: 'absolute', left: 82, right: 14, bottom: 34, height: 12, borderRadius: 12, backgroundColor: '#B8C7D8', opacity: 0.6 },
+  truckTrailer: { position: 'absolute', right: 14, bottom: 66, width: 154, height: 62, borderRadius: 7, backgroundColor: '#EAF2FB', borderWidth: 1, borderColor: '#CAD7E8' },
+  trailerStripe: { position: 'absolute', left: 12, right: 12, top: 18, height: 3, borderRadius: 3, backgroundColor: '#D5E1F0' },
+  truckCab: { position: 'absolute', right: 156, bottom: 58, width: 72, height: 78, borderRadius: 10, backgroundColor: colors.customer },
+  truckWindshield: { position: 'absolute', right: 9, top: 9, width: 42, height: 26, borderRadius: 6, backgroundColor: '#0F2A55' },
+  truckGrill: { position: 'absolute', left: 8, bottom: 12, width: 52, height: 9, borderRadius: 5, backgroundColor: '#063D8F' },
+  truckWheel: { position: 'absolute', bottom: 50, width: 23, height: 23, borderRadius: 12, backgroundColor: colors.ink, borderWidth: 5, borderColor: '#7FA9D9' },
+  truckWheelOne: { right: 136 },
+  truckWheelTwo: { right: 34 },
+  heroGround: { position: 'absolute', left: -18, right: -18, bottom: 30, height: 15, backgroundColor: '#DFE9F5' },
+  authHero: {
+    minHeight: 350,
     backgroundColor: colors.customerLight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14
+    paddingHorizontal: 20,
+    paddingTop: 44,
+    paddingBottom: 30,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    overflow: 'hidden'
   },
-  loginTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
-  loginSubtitle: { color: colors.muted, fontSize: 13, fontWeight: '700', marginTop: 4, marginBottom: 18 },
+  authTrackOne: {
+    position: 'absolute',
+    left: -34,
+    right: -24,
+    bottom: 46,
+    height: 22,
+    borderRadius: 18,
+    backgroundColor: colors.ink,
+    opacity: 0.12,
+    transform: [{ rotate: '-11deg' }]
+  },
+  authTrackTwo: {
+    position: 'absolute',
+    left: 180,
+    right: -60,
+    top: 86,
+    height: 18,
+    borderRadius: 16,
+    backgroundColor: colors.customer,
+    opacity: 0.16,
+    transform: [{ rotate: '15deg' }]
+  },
+  authAccentLine: {
+    position: 'absolute',
+    left: 22,
+    right: 22,
+    bottom: 0,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: colors.customer
+  },
+  authForm: {
+    flexGrow: 1,
+    backgroundColor: colors.white,
+    paddingHorizontal: 22,
+    paddingTop: 30,
+    paddingBottom: 26
+  },
+  authKicker: { color: colors.customer, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 8 },
+  authTitle: { color: colors.ink, fontSize: 32, fontWeight: '900', marginBottom: 6 },
+  authFieldGroup: { marginBottom: 14 },
+  authInputShell: {
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14
+  },
+  authInputReadonly: { backgroundColor: colors.faint },
+  authInputText: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: '800', paddingVertical: 12 },
+  phoneInputShell: {
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: '#D7E0EA',
+    borderRadius: 8,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12
+  },
+  countryCode: { color: colors.ink, fontSize: 14, fontWeight: '800', marginLeft: 7 },
+  phoneDivider: { width: 1, height: 24, backgroundColor: colors.line, marginHorizontal: 10 },
+  phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700', paddingVertical: 12 },
+  authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '900' },
+  authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
+  authDividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
+  loginFeatureRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  loginFeatureItem: { flex: 1, alignItems: 'center', gap: 4 },
+  loginFeatureIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  loginFeatureTitle: { color: colors.ink, fontSize: 9, fontWeight: '900', textAlign: 'center' },
+  loginFeatureSubtitle: { color: colors.muted, fontSize: 8, fontWeight: '800', textAlign: 'center' },
+  authNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    backgroundColor: colors.customerLight,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12
+  },
+  authNoticeText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800' },
+  authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', lineHeight: 16, marginTop: 4 },
+  loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
+  brandLogo: { alignItems: 'center' },
+  brandMark: { width: 222, height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  motionStack: { position: 'absolute', left: 14, top: 36, gap: 8 },
+  motionDot: { width: 10, height: 10, borderRadius: 5 },
+  motionLine: { width: 66, height: 9, borderRadius: 8, marginLeft: 18 },
+  motionLineWide: { width: 86 },
+  motionLineShort: { width: 48 },
+  packageMark: { position: 'absolute', top: 18, left: 82, width: 72, height: 70, alignItems: 'center', justifyContent: 'center' },
+  packageFace: { position: 'absolute', left: 5, bottom: 8, width: 28, height: 36, borderRadius: 2, opacity: 0.95 },
+  routeMark: { position: 'absolute', right: 8, bottom: 10, width: 104, height: 58, alignItems: 'flex-end', justifyContent: 'center' },
+  routeRoad: { position: 'absolute', left: 0, bottom: 6, width: 86, height: 15, borderRadius: 16, backgroundColor: colors.ink, transform: [{ rotate: '-24deg' }] },
+  loginTitle: { color: colors.ink, fontSize: 31, fontWeight: '900', letterSpacing: 6, textAlign: 'center' },
+  taglineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 6 },
+  taglineRule: { width: 50, height: 2, borderRadius: 2 },
+  tagline: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1, textAlign: 'center' },
+  loginSubtitle: { color: colors.muted, fontSize: 14, fontWeight: '700', marginBottom: 22 },
   loginError: { color: colors.red, fontSize: 12, fontWeight: '800', marginBottom: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
@@ -1049,6 +1756,19 @@ const styles = StyleSheet.create({
   fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginBottom: 6 },
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.ink },
   inputReadonly: { backgroundColor: colors.faint },
+  locationFieldGroup: { marginBottom: 14 },
+  locationLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  locationInputShell: { minHeight: 50, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 },
+  locationInputShellActive: { borderColor: colors.customer, backgroundColor: '#FBFAFF' },
+  locationInput: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '800', paddingVertical: 10 },
+  locationSelectedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
+  locationSelectedText: { color: colors.customer, fontSize: 10, fontWeight: '900' },
+  locationSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginTop: 8, overflow: 'hidden' },
+  locationSuggestionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.line },
+  locationSuggestionTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  locationSuggestionSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
+  locationHint: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 7, lineHeight: 15 },
+  locationError: { color: colors.red, fontSize: 11, fontWeight: '800', marginTop: 7 },
   notice: { flexDirection: 'row', gap: 8, backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginBottom: 14 },
   noticeText: { flex: 1, color: '#92400E', fontSize: 12, fontWeight: '700' },
   payRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 14, marginBottom: 10 },
@@ -1117,6 +1837,10 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: colors.white, fontWeight: '800' },
   secondaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
   secondaryButtonText: { color: colors.ink, fontWeight: '800' },
+  deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 10 },
+  deleteAccountButtonText: { color: colors.red, fontWeight: '900' },
+  logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
+  logoutButtonText: { color: colors.red, fontWeight: '900' },
   toast: { position: 'absolute', left: 16, right: 16, bottom: 88, backgroundColor: colors.ink, borderRadius: 14, padding: 14 },
   toastText: { color: colors.white, fontWeight: '800' },
   empty: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center', gap: 12 },

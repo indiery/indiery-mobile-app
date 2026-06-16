@@ -12,6 +12,7 @@ import { requestPartnerPayout } from '../services/payout.service';
 import { calculateDeliverySettlement } from '../services/settlement.service';
 import { sendPush } from '../services/notification.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
+import { initialsFromName } from '../services/profile.service';
 
 export const partnerRouter = Router();
 
@@ -21,6 +22,13 @@ const availableOrderQuery = {
   status: { $in: ['searching', 'offered'] },
   $or: [{ paymentStatus: 'paid' }, { paymentMode: 'cash' }]
 };
+
+const ProfileSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  email: z.string().trim().email().max(120).optional().or(z.literal('')),
+  city: z.string().trim().min(2).max(80),
+  vehicleNumber: z.string().trim().max(30).optional().or(z.literal(''))
+});
 
 async function loadPartner(userId: string) {
   const partner = await User.findById(userId).populate('partnerProfile.vehicleId');
@@ -96,6 +104,21 @@ partnerRouter.get(
       activeOrders: activeOrders.map(serializeOrder),
       completedOrders: completedOrders.map(serializeOrder)
     });
+  })
+);
+
+partnerRouter.patch(
+  '/profile',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const body = ProfileSchema.parse(req.body);
+    const partner = await loadPartner(req.auth!.userId);
+    partner.name = body.name;
+    partner.initials = initialsFromName(body.name);
+    partner.email = body.email || undefined;
+    partner.city = body.city;
+    partner.set('partnerProfile.vehicleNumber', body.vehicleNumber || '');
+    await partner.save();
+    res.json({ user: serializeUser(partner) });
   })
 );
 

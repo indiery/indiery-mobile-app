@@ -71,6 +71,21 @@ export interface LocationPoint {
   contactPhone?: string;
 }
 
+export interface LocationSuggestion {
+  placeId: string;
+  description: string;
+  mainText: string;
+  secondaryText?: string;
+}
+
+export interface LocationDetails {
+  placeId: string;
+  label: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
 export interface FareBreakup {
   distanceKm: number;
   billableKm: number;

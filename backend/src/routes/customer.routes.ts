@@ -16,6 +16,7 @@ import { sendPush } from '../services/notification.service';
 import { createTimeline, setOrderStatusTimeline } from '../services/timeline.service';
 import { serializeOrder, serializeUser, serializeVehicle } from '../services/serialize.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
+import { initialsFromName } from '../services/profile.service';
 
 export const customerRouter = Router();
 
@@ -40,6 +41,12 @@ const CreateOrderSchema = EstimateSchema.extend({
   dropContactPhone: z.string().optional(),
   goodsType: z.string().min(2).default('General goods'),
   paymentMode: z.enum(['upi', 'card', 'netbanking', 'cash']).default('upi')
+});
+
+const ProfileSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  email: z.string().trim().email().max(120).optional().or(z.literal('')),
+  city: z.string().trim().min(2).max(80)
 });
 
 async function nextOrderNo() {
@@ -93,6 +100,25 @@ customerRouter.get(
       activeOrder: activeOrder ? serializeOrder(activeOrder) : undefined,
       orders: orders.map(serializeOrder)
     });
+  })
+);
+
+customerRouter.patch(
+  '/profile',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const body = ProfileSchema.parse(req.body);
+    const user = await User.findOneAndUpdate(
+      { _id: req.auth!.userId, role: 'customer' },
+      {
+        name: body.name,
+        initials: initialsFromName(body.name),
+        email: body.email || undefined,
+        city: body.city
+      },
+      { new: true }
+    );
+    if (!user) throw new ApiError(404, 'Customer not found');
+    res.json({ user: serializeUser(user) });
   })
 );
 

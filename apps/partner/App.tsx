@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -57,6 +60,10 @@ function formatPhoneForFirebase(phoneInput: string) {
   if (digits.length === 10) return `+91${digits}`;
   if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
   throw new Error('Enter a valid mobile number');
+}
+
+function needsPartnerProfile(user: UserProfile) {
+  return !user.email || user.name === 'Indiery Partner';
 }
 
 export default function App() {
@@ -162,13 +169,16 @@ export default function App() {
     socketRef.current?.disconnect();
     const socket = io(socketUrl, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 600,
       reconnectionDelayMax: 3000
     });
     socketRef.current = socket;
+    socket.on('connect', () => {
+      scheduleRefresh(200);
+    });
     socket.on('order:changed', (order: Order) => {
       mergeRealtimeOrder(order);
     });
@@ -276,6 +286,66 @@ export default function App() {
     return uploaded.secureUrl;
   }
 
+  async function saveProfile(input: { name: string; email: string; city: string; vehicleNumber: string }) {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.updatePartnerProfile(input);
+      setData((current) => current ? { ...current, user: result.user } : current);
+      showToast('Profile saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Profile update failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    setBusy(true);
+    setError('');
+    try {
+      if (data?.user.partnerProfile?.online) {
+        await api.setAvailability(false).catch(() => undefined);
+      }
+      stopLocationStream();
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      api.setToken('');
+      await auth().signOut();
+      setData(null);
+      setTab('dashboard');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Logout failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function requestAccountDeletion() {
+    Alert.alert(
+      'Request account deletion',
+      'We will review your request and delete eligible account data. Some order, payout, KYC, fraud prevention, tax, or legal records may be retained where required.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Submit request',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await api.requestAccountDeletion('Requested from partner KYC screen');
+              showToast('Deletion request submitted');
+            } catch (err) {
+              showToast(err instanceof Error ? err.message : 'Request failed');
+            } finally {
+              setBusy(false);
+            }
+          }
+        }
+      ]
+    );
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
@@ -288,6 +358,17 @@ export default function App() {
   if (!data) {
     return (
       <LoginScreen initialError={error} onVerified={completeFirebaseLogin} />
+    );
+  }
+
+  if (needsPartnerProfile(data.user)) {
+    return (
+      <ProfileSetupScreen
+        user={data.user}
+        busy={busy}
+        error={error}
+        onSave={saveProfile}
+      />
     );
   }
 
@@ -394,6 +475,8 @@ export default function App() {
           <KycScreen
             user={data.user}
             busy={busy}
+            onLogout={logout}
+            onRequestAccountDeletion={requestAccountDeletion}
             onUpload={(doc) =>
               withBusy(async () => {
                 const photoUrl = await pickAndUploadImage({ purpose: 'kyc', documentKey: doc });
@@ -460,33 +543,290 @@ function LoginScreen({
 
   return (
     <SafeAreaView style={styles.loginShell}>
-      <View style={styles.loginPanel}>
-        <View style={styles.loginIcon}>
-          <Ionicons name="bicycle" size={28} color={colors.partner} />
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
+          <LoginHero title="Indiery Partner" caption="Delivering trust, every mile." />
+          <View style={styles.authForm}>
+            <Text style={styles.authTitle}>Welcome Back</Text>
+            <Text style={styles.loginSubtitle}>Login to manage your deliveries</Text>
+            <PhoneLoginField value={phone} onChangeText={setPhone} />
+            {confirmation ? (
+              <>
+                <View style={styles.authNotice}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.partner} />
+                  <Text style={styles.authNoticeText}>OTP sent. Enter the code to verify.</Text>
+                </View>
+                <AuthField label="OTP code" value={code} onChangeText={setCode} keyboardType="numeric" icon="key" maxLength={6} />
+              </>
+            ) : null}
+            {error ? <Text style={styles.loginError}>{error}</Text> : null}
+            <View style={styles.row}>
+              {confirmation ? (
+                <>
+                  <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
+                  <AuthActionButton title={busy ? 'Verifying' : 'Verify'} onPress={verifyOtp} />
+                </>
+              ) : (
+                <AuthActionButton title={busy ? 'Sending' : 'Send OTP'} onPress={sendOtp} />
+              )}
+            </View>
+            <AuthDivider />
+            <LoginFeatureRow />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+function LoginHero({ title, caption }: { title: string; caption: string }) {
+  return (
+    <View style={styles.loginHero}>
+      <View style={styles.loginSkyGlow} />
+      <View style={styles.loginBrandRow}>
+        <View style={styles.loginBrandIcon}>
+          <Ionicons name="cube" size={23} color={colors.white} />
         </View>
-        <Text style={styles.loginTitle}>Indiery Partner</Text>
-        <Text style={styles.loginSubtitle}>Mobile number verification</Text>
-        <Text style={styles.fieldLabel}>Mobile number</Text>
-        <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" style={styles.loginInput} />
-        {confirmation ? (
-          <>
-            <Text style={styles.fieldLabel}>OTP</Text>
-            <TextInput value={code} onChangeText={setCode} keyboardType="numeric" style={styles.loginInput} />
-          </>
-        ) : null}
-        {error ? <Text style={styles.loginError}>{error}</Text> : null}
-        <View style={styles.row}>
-          {confirmation ? (
-            <>
-              <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
-              <PrimaryButton title={busy ? 'Verifying' : 'Verify'} icon="key" onPress={verifyOtp} />
-            </>
-          ) : (
-            <PrimaryButton title={busy ? 'Sending' : 'Send OTP'} icon="chatbubble" onPress={sendOtp} />
-          )}
+        <Text style={styles.loginBrandText}>{title}</Text>
+      </View>
+      <Text style={styles.loginHeroCaption}>{caption}</Text>
+      <DeliveryIllustration />
+    </View>
+  );
+}
+
+function DeliveryIllustration() {
+  return (
+    <View style={styles.deliveryArt}>
+      <View style={[styles.skylineBlock, styles.skylineOne]} />
+      <View style={[styles.skylineBlock, styles.skylineTwo]} />
+      <View style={[styles.skylineBlock, styles.skylineThree]} />
+      <View style={styles.heroGround} />
+      <View style={styles.routeDashOne} />
+      <View style={styles.routeDashTwo} />
+      <Ionicons name="location" size={28} color={colors.partner} style={styles.routePinTop} />
+      <Ionicons name="location" size={18} color={colors.partner} style={styles.routePinMid} />
+      <View style={styles.boxStack}>
+        <View style={styles.boxBack} />
+        <View style={styles.boxFront} />
+        <View style={styles.boxSmall} />
+      </View>
+      <View style={styles.truckShadow} />
+      <View style={styles.truckTrailer}>
+        <View style={styles.trailerStripe} />
+      </View>
+      <View style={styles.truckCab}>
+        <View style={styles.truckWindshield} />
+        <View style={styles.truckGrill} />
+      </View>
+      <View style={[styles.truckWheel, styles.truckWheelOne]} />
+      <View style={[styles.truckWheel, styles.truckWheelTwo]} />
+    </View>
+  );
+}
+
+function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText: (value: string) => void }) {
+  return (
+    <View style={styles.authFieldGroup}>
+      <Text style={styles.fieldLabel}>Mobile Number</Text>
+      <View style={styles.phoneInputShell}>
+        <Ionicons name="phone-portrait-outline" size={18} color={colors.partner} />
+        <Text style={styles.countryCode}>+91</Text>
+        <Ionicons name="chevron-down" size={14} color={colors.muted} />
+        <View style={styles.phoneDivider} />
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType="phone-pad"
+          maxLength={10}
+          placeholder="Enter your mobile number"
+          placeholderTextColor="#9CA3AF"
+          style={styles.phoneInputText}
+        />
+      </View>
+    </View>
+  );
+}
+
+function AuthActionButton({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.authPrimaryButton} onPress={onPress}>
+      <Text style={styles.authPrimaryButtonText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+function AuthDivider() {
+  return (
+    <View style={styles.authDividerRow}>
+      <View style={styles.authDividerLine} />
+      <View style={styles.authDividerLine} />
+    </View>
+  );
+}
+
+function LoginFeatureRow() {
+  const features: Array<{ icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string }> = [
+    { icon: 'cube-outline', title: 'Live', subtitle: 'Orders' },
+    { icon: 'shield-checkmark-outline', title: 'Secure', subtitle: 'KYC' },
+    { icon: 'document-text-outline', title: 'Smart', subtitle: 'Payouts' },
+    { icon: 'headset-outline', title: '24/7', subtitle: 'Support' }
+  ];
+  return (
+    <View style={styles.loginFeatureRow}>
+      {features.map((feature) => (
+        <View key={feature.subtitle} style={styles.loginFeatureItem}>
+          <View style={styles.loginFeatureIcon}>
+            <Ionicons name={feature.icon} size={20} color={colors.partner} />
+          </View>
+          <Text style={styles.loginFeatureTitle}>{feature.title}</Text>
+          <Text style={styles.loginFeatureSubtitle}>{feature.subtitle}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function ProfileSetupScreen({
+  user,
+  busy,
+  error,
+  onSave
+}: {
+  user: UserProfile;
+  busy: boolean;
+  error: string;
+  onSave: (input: { name: string; email: string; city: string; vehicleNumber: string }) => Promise<void>;
+}) {
+  const [name, setName] = useState(user.name === 'Indiery Partner' ? '' : user.name);
+  const [email, setEmail] = useState(user.email || '');
+  const [city, setCity] = useState(user.city || 'Lucknow');
+  const [vehicleNumber, setVehicleNumber] = useState(user.partnerProfile?.vehicleNumber || '');
+  const [localError, setLocalError] = useState('');
+
+  async function submit() {
+    const nextName = name.trim();
+    const nextEmail = email.trim();
+    const nextCity = city.trim();
+    const nextVehicleNumber = vehicleNumber.trim().toUpperCase();
+    if (nextName.length < 2) {
+      setLocalError('Enter your full name');
+      return;
+    }
+    if (!nextEmail.includes('@')) {
+      setLocalError('Enter a valid email');
+      return;
+    }
+    if (nextCity.length < 2) {
+      setLocalError('Enter your city');
+      return;
+    }
+    setLocalError('');
+    await onSave({ name: nextName, email: nextEmail, city: nextCity, vehicleNumber: nextVehicleNumber });
+  }
+
+  return (
+    <SafeAreaView style={styles.loginShell}>
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.profileSetupScroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.authHero}>
+            <View style={styles.authTrackOne} />
+            <View style={styles.authTrackTwo} />
+            <View style={styles.authAccentLine} />
+            <BrandLogo title="Indiery Partner" accentColor={colors.partner} />
+          </View>
+          <View style={styles.authForm}>
+            <Text style={styles.authKicker}>Almost there</Text>
+            <Text style={styles.authTitle}>Profile</Text>
+            <Text style={styles.loginSubtitle}>Complete your partner profile</Text>
+            <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
+            <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
+            <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
+            <AuthField label="Vehicle number" value={vehicleNumber} onChangeText={setVehicleNumber} icon="bicycle" autoCapitalize="characters" />
+            <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
+            {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
+            <PrimaryButton title={busy ? 'Saving' : 'Continue'} icon="arrow-forward" onPress={submit} />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+function AuthField({
+  label,
+  value,
+  onChangeText,
+  keyboardType = 'default',
+  editable = true,
+  autoCapitalize = 'words',
+  icon,
+  maxLength
+}: {
+  label: string;
+  value: string;
+  onChangeText?: (value: string) => void;
+  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
+  editable?: boolean;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  icon: keyof typeof Ionicons.glyphMap;
+  maxLength?: number;
+}) {
+  return (
+    <View style={styles.authFieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={[styles.authInputShell, !editable && styles.authInputReadonly]}>
+        <Ionicons name={icon} size={18} color={editable ? colors.partner : colors.muted} />
+        <TextInput
+          value={value}
+          editable={editable}
+          onChangeText={onChangeText}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          maxLength={maxLength}
+          placeholderTextColor={colors.muted}
+          style={styles.authInputText}
+        />
+      </View>
+    </View>
+  );
+}
+
+function BrandLogo({ title, accentColor }: { title: string; accentColor: string }) {
+  const titleLetters = title.toUpperCase().split('');
+  return (
+    <View style={styles.brandLogo}>
+      <View style={styles.brandMark}>
+        <View style={styles.motionStack}>
+          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionLine, styles.motionLineWide, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionLine, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
+          <View style={[styles.motionLine, styles.motionLineShort, { backgroundColor: accentColor }]} />
+        </View>
+        <View style={styles.packageMark}>
+          <Ionicons name="cube" size={54} color={colors.ink} />
+          <View style={[styles.packageFace, { backgroundColor: accentColor }]} />
+        </View>
+        <View style={styles.routeMark}>
+          <View style={styles.routeRoad} />
+          <Ionicons name="location" size={42} color={accentColor} />
         </View>
       </View>
-    </SafeAreaView>
+      <Text style={styles.loginTitle}>
+        {titleLetters.map((letter, index) => (
+          <Text key={`${letter}-${index}`} style={letter === 'I' && index > 0 ? { color: accentColor } : undefined}>
+            {letter}
+          </Text>
+        ))}
+      </Text>
+      <View style={styles.taglineRow}>
+        <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
+        <Text style={styles.tagline}>SMART LAST-MILE LOGISTICS INDIA</Text>
+        <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
+      </View>
+    </View>
   );
 }
 
@@ -688,7 +1028,19 @@ function EarningsScreen({ data, busy, onPayout }: { data: PartnerBootstrap; busy
   );
 }
 
-function KycScreen({ user, busy, onUpload }: { user: UserProfile; busy: boolean; onUpload: (doc: KycDoc) => void }) {
+function KycScreen({
+  user,
+  busy,
+  onUpload,
+  onLogout,
+  onRequestAccountDeletion
+}: {
+  user: UserProfile;
+  busy: boolean;
+  onUpload: (doc: KycDoc) => void;
+  onLogout: () => void;
+  onRequestAccountDeletion: () => void;
+}) {
   const docs = user.partnerProfile?.docs;
   const rows: Array<[KycDoc, string]> = [
     ['selfie', 'Selfie'],
@@ -718,6 +1070,14 @@ function KycScreen({ user, busy, onUpload }: { user: UserProfile; busy: boolean;
         })}
       </View>
       <PolicyList />
+      <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
+        <Ionicons name="trash-outline" size={18} color={colors.red} />
+        <Text style={styles.deleteAccountButtonText}>Request account deletion</Text>
+      </Pressable>
+      <Pressable style={styles.logoutButton} onPress={onLogout}>
+        <Ionicons name="log-out-outline" size={18} color={colors.red} />
+        <Text style={styles.logoutButtonText}>Logout</Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -1010,19 +1370,196 @@ function Empty({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap
 
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
-  loginShell: { flex: 1, backgroundColor: colors.partnerLight, justifyContent: 'center', padding: 20 },
-  loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
-  loginIcon: {
+  loginShell: { flex: 1, backgroundColor: colors.white },
+  authKeyboard: { flex: 1 },
+  authScroll: { flexGrow: 1, backgroundColor: colors.white },
+  profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
+  loginHero: {
+    minHeight: 330,
+    backgroundColor: colors.partnerLight,
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    overflow: 'hidden'
+  },
+  loginSkyGlow: {
+    position: 'absolute',
+    right: -48,
+    top: -58,
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    backgroundColor: '#FFFFFF',
+    opacity: 0.75
+  },
+  loginBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  loginBrandIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: colors.partner,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  loginBrandText: { color: colors.ink, fontSize: 25, fontWeight: '900' },
+  loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '800', lineHeight: 19, marginTop: 10, maxWidth: 145 },
+  deliveryArt: { height: 220, marginTop: -2 },
+  skylineBlock: { position: 'absolute', bottom: 43, borderRadius: 12, backgroundColor: '#DDEAF8', opacity: 0.9 },
+  skylineOne: { left: -8, width: 26, height: 82 },
+  skylineTwo: { right: 64, width: 28, height: 112 },
+  skylineThree: { right: 18, width: 34, height: 72 },
+  routeDashOne: {
+    position: 'absolute',
+    right: 40,
+    top: 14,
+    width: 88,
+    borderTopWidth: 1.5,
+    borderTopColor: colors.partner,
+    borderStyle: 'dashed',
+    transform: [{ rotate: '-27deg' }]
+  },
+  routeDashTwo: {
+    position: 'absolute',
+    right: 104,
+    top: 56,
     width: 58,
-    height: 58,
-    borderRadius: 18,
+    borderTopWidth: 1.5,
+    borderTopColor: colors.partner,
+    borderStyle: 'dashed',
+    transform: [{ rotate: '-37deg' }]
+  },
+  routePinTop: { position: 'absolute', right: 20, top: -2 },
+  routePinMid: { position: 'absolute', right: 96, top: 50 },
+  boxStack: { position: 'absolute', left: 8, bottom: 39, width: 88, height: 72 },
+  boxBack: { position: 'absolute', left: 26, bottom: 18, width: 44, height: 38, borderRadius: 4, backgroundColor: '#C98743' },
+  boxFront: { position: 'absolute', left: 0, bottom: 0, width: 48, height: 42, borderRadius: 4, backgroundColor: '#D99A50' },
+  boxSmall: { position: 'absolute', left: 44, bottom: 0, width: 34, height: 31, borderRadius: 4, backgroundColor: '#E8B06B' },
+  truckShadow: { position: 'absolute', left: 82, right: 14, bottom: 34, height: 12, borderRadius: 12, backgroundColor: '#B8C7D8', opacity: 0.6 },
+  truckTrailer: { position: 'absolute', right: 14, bottom: 66, width: 154, height: 62, borderRadius: 7, backgroundColor: '#EAF2FB', borderWidth: 1, borderColor: '#CAD7E8' },
+  trailerStripe: { position: 'absolute', left: 12, right: 12, top: 18, height: 3, borderRadius: 3, backgroundColor: '#D5E1F0' },
+  truckCab: { position: 'absolute', right: 156, bottom: 58, width: 72, height: 78, borderRadius: 10, backgroundColor: colors.partner },
+  truckWindshield: { position: 'absolute', right: 9, top: 9, width: 42, height: 26, borderRadius: 6, backgroundColor: '#0F2A55' },
+  truckGrill: { position: 'absolute', left: 8, bottom: 12, width: 52, height: 9, borderRadius: 5, backgroundColor: '#063D8F' },
+  truckWheel: { position: 'absolute', bottom: 50, width: 23, height: 23, borderRadius: 12, backgroundColor: colors.ink, borderWidth: 5, borderColor: '#7FA9D9' },
+  truckWheelOne: { right: 136 },
+  truckWheelTwo: { right: 34 },
+  heroGround: { position: 'absolute', left: -18, right: -18, bottom: 30, height: 15, backgroundColor: '#DFE9F5' },
+  authHero: {
+    minHeight: 350,
     backgroundColor: colors.partnerLight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14
+    paddingHorizontal: 20,
+    paddingTop: 44,
+    paddingBottom: 30,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    overflow: 'hidden'
   },
-  loginTitle: { color: colors.ink, fontSize: 24, fontWeight: '900' },
-  loginSubtitle: { color: colors.muted, fontSize: 13, fontWeight: '700', marginTop: 4, marginBottom: 18 },
+  authTrackOne: {
+    position: 'absolute',
+    left: -34,
+    right: -24,
+    bottom: 46,
+    height: 22,
+    borderRadius: 18,
+    backgroundColor: colors.ink,
+    opacity: 0.12,
+    transform: [{ rotate: '-11deg' }]
+  },
+  authTrackTwo: {
+    position: 'absolute',
+    left: 180,
+    right: -60,
+    top: 86,
+    height: 18,
+    borderRadius: 16,
+    backgroundColor: colors.partner,
+    opacity: 0.16,
+    transform: [{ rotate: '15deg' }]
+  },
+  authAccentLine: {
+    position: 'absolute',
+    left: 22,
+    right: 22,
+    bottom: 0,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: colors.partner
+  },
+  authForm: {
+    flexGrow: 1,
+    backgroundColor: colors.white,
+    paddingHorizontal: 22,
+    paddingTop: 30,
+    paddingBottom: 26
+  },
+  authKicker: { color: colors.partner, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 8 },
+  authTitle: { color: colors.ink, fontSize: 32, fontWeight: '900', marginBottom: 6 },
+  authFieldGroup: { marginBottom: 14 },
+  authInputShell: {
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14
+  },
+  authInputReadonly: { backgroundColor: colors.faint },
+  authInputText: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: '800', paddingVertical: 12 },
+  phoneInputShell: {
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: '#D7E0EA',
+    borderRadius: 8,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12
+  },
+  countryCode: { color: colors.ink, fontSize: 14, fontWeight: '800', marginLeft: 7 },
+  phoneDivider: { width: 1, height: 24, backgroundColor: colors.line, marginHorizontal: 10 },
+  phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700', paddingVertical: 12 },
+  authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.partner, alignItems: 'center', justifyContent: 'center' },
+  authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '900' },
+  authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
+  authDividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
+  loginFeatureRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
+  loginFeatureItem: { flex: 1, alignItems: 'center', gap: 4 },
+  loginFeatureIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  loginFeatureTitle: { color: colors.ink, fontSize: 9, fontWeight: '900', textAlign: 'center' },
+  loginFeatureSubtitle: { color: colors.muted, fontSize: 8, fontWeight: '800', textAlign: 'center' },
+  authNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    backgroundColor: colors.partnerLight,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12
+  },
+  authNoticeText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800' },
+  authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', lineHeight: 16, marginTop: 4 },
+  loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
+  brandLogo: { alignItems: 'center' },
+  brandMark: { width: 222, height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  motionStack: { position: 'absolute', left: 14, top: 36, gap: 8 },
+  motionDot: { width: 10, height: 10, borderRadius: 5 },
+  motionLine: { width: 66, height: 9, borderRadius: 8, marginLeft: 18 },
+  motionLineWide: { width: 86 },
+  motionLineShort: { width: 48 },
+  packageMark: { position: 'absolute', top: 18, left: 82, width: 72, height: 70, alignItems: 'center', justifyContent: 'center' },
+  packageFace: { position: 'absolute', left: 5, bottom: 8, width: 28, height: 36, borderRadius: 2, opacity: 0.95 },
+  routeMark: { position: 'absolute', right: 8, bottom: 10, width: 104, height: 58, alignItems: 'flex-end', justifyContent: 'center' },
+  routeRoad: { position: 'absolute', left: 0, bottom: 6, width: 86, height: 15, borderRadius: 16, backgroundColor: colors.ink, transform: [{ rotate: '-24deg' }] },
+  loginTitle: { color: colors.ink, fontSize: 22, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center' },
+  taglineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 6 },
+  taglineRule: { width: 42, height: 2, borderRadius: 2 },
+  tagline: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1, textAlign: 'center' },
+  loginSubtitle: { color: colors.muted, fontSize: 14, fontWeight: '700', marginBottom: 22 },
   loginInput: {
     borderWidth: 1,
     borderColor: colors.line,
@@ -1033,6 +1570,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 12
   },
+  fieldGroup: { marginBottom: 12 },
+  disabledInput: { backgroundColor: colors.faint, color: colors.muted },
   loginError: { color: colors.red, fontSize: 12, fontWeight: '800', marginBottom: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
@@ -1081,6 +1620,10 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: colors.white, fontWeight: '900' },
   secondaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12, marginBottom: 10 },
   secondaryButtonText: { color: colors.ink, fontWeight: '900' },
+  deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 10 },
+  deleteAccountButtonText: { color: colors.red, fontWeight: '900' },
+  logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 12 },
+  logoutButtonText: { color: colors.red, fontWeight: '900' },
   map: { height: 170, borderRadius: 18, backgroundColor: '#ECFDF5', overflow: 'hidden', marginBottom: 14 },
   mapRoad: { position: 'absolute', top: 72, left: -20, right: -20, height: 20, backgroundColor: '#BBF7D0', transform: [{ rotate: '-8deg' }] },
   mapRoadTwo: { top: 30, transform: [{ rotate: '12deg' }], opacity: 0.7 },

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Indiery Customer",
+    "name": "Indiery",
     "slug": "indiery-customer",
     "scheme": "indierycustomer",
     "version": "1.0.0",
@@ -14,8 +14,10 @@
       "@react-native-firebase/auth"
     ],
     "extra": {
-      "apiBaseUrl": "http://10.246.177.133:4000/api",
-      "allowInsecureApiBaseUrl": true,
+      "apiBaseUrl": "https://indiery-mobile-app-bp9h.onrender.com/api",
+      "allowInsecureApiBaseUrl": false,
+      "privacyPolicyUrl": "https://indiery-mobile-app-bp9h.onrender.com/privacy",
+      "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
       "eas": {
         "projectId": "08d17edb-9730-4ff0-a798-b6bd0156fc3e"
       }
@@ -26,7 +28,7 @@
     "android": {
       "package": "com.indiery.customer",
       "googleServicesFile": "./google-services.json",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": false
     }
   }
 }

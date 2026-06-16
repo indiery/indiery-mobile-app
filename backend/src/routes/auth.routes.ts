@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { User } from '../models/User';
 import { Vehicle } from '../models/Vehicle';
-import { signToken } from '../middleware/auth';
+import { requireAuth, signToken, type AuthRequest } from '../middleware/auth';
 import { asyncRoute, ApiError } from '../middleware/error';
 import { serializeUser } from '../services/serialize.service';
 import { verifyFirebasePhoneToken } from '../services/firebase.service';
+import { initialsFromName } from '../services/profile.service';
+import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
 
 export const authRouter = Router();
 
@@ -23,7 +25,7 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
       role,
       phone,
       name: 'Indiery Customer',
-      initials: 'IC',
+      initials: initialsFromName('Indiery Customer'),
       city: 'Lucknow',
       customerProfile: {
         coins: 0,
@@ -38,7 +40,7 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
     role,
     phone,
     name: 'Indiery Partner',
-    initials: 'IP',
+    initials: initialsFromName('Indiery Partner'),
     city: 'Lucknow',
     partnerProfile: {
       vehicleId: vehicle?._id,
@@ -68,5 +70,27 @@ authRouter.post(
     const user = await ensureUser(verification.phone, body.role);
     const token = signToken(String(user._id), body.role);
     res.json({ token, user: serializeUser(user) });
+  })
+);
+
+authRouter.post(
+  '/account-deletion-request',
+  requireAuth(['customer', 'partner']),
+  asyncRoute<AuthRequest>(async (req, res) => {
+    const body = z.object({ reason: z.string().trim().max(800).optional() }).parse(req.body);
+    const user = await User.findById(req.auth!.userId);
+    if (!user) throw new ApiError(404, 'User not found');
+
+    await AccountDeletionRequest.create({
+      role: req.auth!.role,
+      user: user._id,
+      name: user.name,
+      phone: user.phone,
+      email: user.email,
+      reason: body.reason,
+      source: 'in_app'
+    });
+
+    res.status(201).json({ ok: true, status: 'requested' });
   })
 );

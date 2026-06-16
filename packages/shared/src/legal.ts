@@ -42,7 +42,7 @@ export const legalPolicies: LegalPolicy[] = [
       {
         heading: 'Choices and rights',
         body: [
-          'Users may request access, correction, deletion, or grievance support by contacting support@indiery.in.',
+          'Users may request access, correction, deletion, or grievance support in the app or from the Indiery account deletion page.',
           'Some order, tax, payment, fraud prevention, and legal records may be retained where required by law or legitimate business need.',
           'Users can disable app permissions such as notifications or location in device settings, but some app features may stop working.'
         ]

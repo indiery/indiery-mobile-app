@@ -3052,9 +3052,9 @@ function OrdersScreen({
                 </View>
                 <View style={styles.flex}>
                   <Text style={styles.cardTitle}>{activeOrder.partner.name}</Text>
-                  <Text style={styles.mutedSmall}>{activeOrder.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
+                  <Text style={styles.mutedSmall}>Mobile: {activeOrder.partner.phone}</Text>
+                  <Text style={styles.mutedSmall}>Vehicle: {activeOrder.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
                 </View>
-                <Text style={styles.rating}>4.9</Text>
               </View>
             ) : (
               <View style={styles.searchingPartnerRow}>
@@ -3162,9 +3162,9 @@ function TrackScreen({
           </View>
           <View style={styles.flex}>
             <Text style={styles.cardTitle}>{order.partner.name}</Text>
-            <Text style={styles.mutedSmall}>{order.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
+            <Text style={styles.mutedSmall}>Mobile: {order.partner.phone}</Text>
+            <Text style={styles.mutedSmall}>Vehicle: {order.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
           </View>
-          <Text style={styles.rating}>4.9</Text>
         </View>
       ) : null}
       {tripOtp ? (

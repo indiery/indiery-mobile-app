@@ -323,27 +323,109 @@ export async function uploadFileToCloudinary(
   upload: CloudinarySignature,
   options: { fileName?: string; mimeType?: string } = {}
 ): Promise<CloudinaryUploadResult> {
+  if (!fileUri || typeof fileUri !== 'string') {
+    throw new Error('Captured photo is missing. Please retake the photo.');
+  }
+
+  const fileName = safeUploadFileName(options.fileName, fileUri);
+  const mimeType = safeUploadMimeType(options.mimeType, fileName);
+  let response: CloudinaryUploadHttpResponse;
+  try {
+    response = await uploadCloudinaryForm(upload.uploadUrl, await createBlobUploadForm(fileUri, upload, fileName, mimeType));
+  } catch {
+    response = await uploadCloudinaryNativeUriForm(upload.uploadUrl, createNativeUriUploadForm(fileUri, upload, fileName, mimeType));
+  }
+
+  return parseCloudinaryUploadResponse(response);
+}
+
+type CloudinaryUploadHttpResponse = {
+  ok: boolean;
+  json: () => Promise<unknown>;
+};
+
+function safeUploadFileName(fileName: string | undefined, fileUri: string) {
+  const rawName = fileName || fileUri.split(/[\\/]/).pop()?.split('?')[0] || `indiery-${Date.now()}.jpg`;
+  const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '-');
+  return /\.[a-zA-Z0-9]+$/.test(safeName) ? safeName : `${safeName}.jpg`;
+}
+
+function safeUploadMimeType(mimeType: string | undefined, fileName: string) {
+  if (mimeType && /^[a-z]+\/[-+.a-z0-9]+$/i.test(mimeType)) return mimeType;
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'heic' || extension === 'heif') return 'image/heic';
+  return 'image/jpeg';
+}
+
+function appendCloudinaryFields(form: FormData, upload: CloudinarySignature) {
+  form.append('api_key', String(upload.apiKey));
+  form.append('timestamp', String(upload.timestamp));
+  form.append('signature', String(upload.signature));
+  form.append('folder', String(upload.folder));
+  form.append('tags', String(upload.tags));
+}
+
+async function createBlobUploadForm(fileUri: string, upload: CloudinarySignature, fileName: string, mimeType: string) {
+  const fileResponse = await fetch(fileUri);
+  const blob = await fileResponse.blob();
+  const form = new FormData();
+  const append = form.append.bind(form) as (name: string, value: Blob | string, fileName?: string) => void;
+  append('file', blob.type ? blob : blob.slice(0, blob.size, mimeType), fileName);
+  appendCloudinaryFields(form, upload);
+  return form;
+}
+
+function createNativeUriUploadForm(fileUri: string, upload: CloudinarySignature, fileName: string, mimeType: string) {
   const form = new FormData();
   const append = form.append.bind(form) as (name: string, value: unknown) => void;
   append('file', {
     uri: fileUri,
-    name: options.fileName ?? `indiery-${Date.now()}.jpg`,
-    type: options.mimeType ?? 'image/jpeg'
+    name: fileName,
+    type: mimeType
   });
-  append('api_key', upload.apiKey);
-  append('timestamp', String(upload.timestamp));
-  append('signature', upload.signature);
-  append('folder', upload.folder);
-  append('tags', upload.tags);
+  appendCloudinaryFields(form, upload);
+  return form;
+}
 
-  const response = await fetch(upload.uploadUrl, {
+async function uploadCloudinaryForm(uploadUrl: string, form: FormData) {
+  const response = await fetch(uploadUrl, {
     method: 'POST',
     body: form
   });
+  if (response.ok) return response;
+  return response;
+}
 
+function uploadCloudinaryNativeUriForm(uploadUrl: string, form: FormData): Promise<CloudinaryUploadHttpResponse> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', uploadUrl);
+    request.timeout = 60000;
+    request.onload = () => {
+      resolve({
+        ok: request.status >= 200 && request.status < 300,
+        json: async () => {
+          try {
+            return JSON.parse(request.responseText || '{}');
+          } catch {
+            return {};
+          }
+        }
+      });
+    };
+    request.onerror = () => reject(new Error('Photo upload failed. Check your connection and try again.'));
+    request.ontimeout = () => reject(new Error('Photo upload timed out. Please try again.'));
+    request.onabort = () => reject(new Error('Photo upload was cancelled.'));
+    request.send(form);
+  });
+}
+
+async function parseCloudinaryUploadResponse(response: CloudinaryUploadHttpResponse): Promise<CloudinaryUploadResult> {
   const payload = (await response.json().catch(() => ({}))) as { secure_url?: string; public_id?: string; error?: { message?: string } };
   if (!response.ok || !payload.secure_url || !payload.public_id) {
-    throw new Error(payload.error?.message ?? 'Cloudinary upload failed');
+    throw new Error(payload.error?.message ?? 'Photo upload failed. Please retake the photo and try again.');
   }
 
   return {

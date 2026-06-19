@@ -19,8 +19,9 @@
       "allowInsecureApiBaseUrl": false,
       "privacyPolicyUrl": "https://indiery-mobile-app-bp9h.onrender.com/privacy",
       "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
+      "googleMapsApiKey": "",
       "eas": {
-        "projectId": "08d17edb-9730-4ff0-a798-b6bd0156fc3e"
+        "projectId": "0e831c07-3e7f-4430-be30-59df033b2be1"
       }
     },
     "ios": {

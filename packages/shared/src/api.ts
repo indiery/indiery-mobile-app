@@ -213,7 +213,7 @@ export class IndieryApi {
     return this.request<PartnerBootstrap>('/partner/bootstrap');
   }
 
-  updatePartnerProfile(input: { name: string; email?: string; city: string; vehicleNumber?: string }) {
+  updatePartnerProfile(input: { name: string; email?: string; city: string; vehicleId: string; vehicleNumber?: string }) {
     return this.request<{ user: UserProfile }>('/partner/profile', {
       method: 'PATCH',
       body: JSON.stringify(input)
@@ -279,10 +279,41 @@ export class IndieryApi {
     });
   }
 
-  uploadKyc(documentKey: 'selfie' | 'pan' | 'drivingLicence' | 'rc' | 'insurance' | 'bank', photoUrl?: string) {
+  createPartnerWalletTopup(input: { amount: number; paymentMode: 'upi' | 'card' | 'netbanking' }) {
+    return this.request<{ user: UserProfile; paymentIntent: PaymentIntent }>('/partner/wallet/topup', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  verifyPartnerWalletTopup(input: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ user: UserProfile }>('/partner/wallet/topup/verify', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  uploadKyc(
+    documentKey: 'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc' | 'insurance' | 'bank',
+    input?:
+      | string
+      | {
+          photoUrl?: string;
+          bankDetails?: {
+            accountHolder: string;
+            accountNumber: string;
+            ifsc: string;
+          };
+        }
+  ) {
+    const body = typeof input === 'string' ? { photoUrl: input } : input ?? {};
     return this.request<{ user: UserProfile }>(`/partner/kyc/${documentKey}`, {
       method: 'POST',
-      body: JSON.stringify({ photoUrl })
+      body: JSON.stringify(body)
     });
   }
 }

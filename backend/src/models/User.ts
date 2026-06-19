@@ -16,6 +16,7 @@ const PartnerProfileSchema = new Schema(
     docs: {
       selfie: { type: Boolean, default: false },
       pan: { type: Boolean, default: false },
+      aadhaar: { type: Boolean, default: false },
       drivingLicence: { type: Boolean, default: false },
       rc: { type: Boolean, default: false },
       insurance: { type: Boolean, default: false },
@@ -24,10 +25,17 @@ const PartnerProfileSchema = new Schema(
     docUrls: {
       selfie: { type: String },
       pan: { type: String },
+      aadhaar: { type: String },
       drivingLicence: { type: String },
       rc: { type: String },
       insurance: { type: String },
       bank: { type: String }
+    },
+    bankDetails: {
+      accountHolder: { type: String },
+      accountNumberMasked: { type: String },
+      accountNumberLast4: { type: String },
+      ifsc: { type: String }
     },
     currentLocation: {
       lat: { type: Number },

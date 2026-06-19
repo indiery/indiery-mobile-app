@@ -54,6 +54,7 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
       docs: {
         selfie: false,
         pan: false,
+        aadhaar: false,
         drivingLicence: false,
         rc: false,
         insurance: false,

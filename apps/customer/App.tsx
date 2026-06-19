@@ -109,7 +109,7 @@ const serviceOptions: Array<{
 
 const goodsOptions = ['Documents', 'Groceries', 'Electronics', 'Furniture', 'Business stock', 'Household items'];
 const maxExtraStops = 3;
-const customerVehicleCodes = ['bike', 'mini500', 'mini750'];
+const customerVehicleCodes = ['bike', 'loader90', 'mini500', 'mini750'];
 const languageOptions: Array<{ id: AppLanguage; label: string; nativeLabel: string }> = [
   { id: 'en', label: 'English', nativeLabel: 'English' },
   { id: 'hi', label: 'Hindi', nativeLabel: 'हिन्दी' }
@@ -649,7 +649,7 @@ const initialBooking = {
   dropContactPhone: '',
   dropAddressLine: '',
   goodsType: 'Documents',
-  weightKg: '4',
+  weightKg: '',
   coins: '40',
   paymentMode: 'upi' as PaymentMode,
   vehicleId: ''
@@ -673,10 +673,40 @@ function hasValidContactPhone(phoneInput: string) {
   return phoneInput.replace(/\D/g, '').length >= 10;
 }
 
+function parseBookingWeight(value: string) {
+  const weight = Number(value);
+  return Number.isFinite(weight) && weight > 0 ? weight : undefined;
+}
+
+function customerVehicleCodeForWeight(weightKg: number) {
+  if (weightKg >= 40 && weightKg <= 90) return 'loader90';
+  if (weightKg <= 40) return 'bike';
+  if (weightKg <= 500) return 'mini500';
+  if (weightKg <= 750) return 'mini750';
+  return undefined;
+}
+
+function customerVehiclesForWeight(vehicles: Vehicle[], weightKg?: number) {
+  const customerVehicles = vehicles
+    .filter((vehicle) => customerVehicleCodes.includes(vehicle.code))
+    .sort((left, right) => left.capacityKg - right.capacityKg);
+  if (!weightKg) return customerVehicles;
+  const requiredCode = customerVehicleCodeForWeight(weightKg);
+  const smallestMatch = customerVehicles.find((vehicle) => vehicle.code === requiredCode);
+  return smallestMatch ? [smallestMatch] : [];
+}
+
 function vehicleIcon(vehicle: Vehicle): keyof typeof Ionicons.glyphMap {
-  if (vehicle.capacityKg <= 20) return 'bicycle';
+  if (vehicle.code === 'loader90') return 'cube';
+  if (vehicle.code === 'bike' || vehicle.capacityKg <= 40) return 'bicycle';
+  if (vehicle.capacityKg <= 100) return 'cube';
   if (vehicle.capacityKg >= 1000) return 'bus';
   return 'car-sport';
+}
+
+function vehicleCapacityText(vehicle: Vehicle, upTo: string) {
+  if (vehicle.code === 'loader90') return '40-90 kg';
+  return `${upTo} ${vehicle.capacityKg} kg`;
 }
 
 function bookingStopsToLocationPoints(stops: BookingStop[]): LocationPoint[] {
@@ -1971,7 +2001,8 @@ function BookScreen({
 }) {
   const copy = useCopy();
   const language = useLanguage();
-  const vehicleChoices = vehicles.filter((vehicle) => customerVehicleCodes.includes(vehicle.code));
+  const bookingWeightKg = parseBookingWeight(booking.weightKg);
+  const vehicleChoices = customerVehiclesForWeight(vehicles, bookingWeightKg);
   const selectedVehicle = vehicleChoices.find((vehicle) => vehicle.id === booking.vehicleId) ?? vehicleChoices[0];
   const vehicleChoiceIds = vehicleChoices.map((vehicle) => vehicle.id).join('|');
   const walletBalance = user.customerProfile?.walletBalance ?? 0;
@@ -1983,10 +2014,14 @@ function BookScreen({
   const hasDropLocation = booking.drop.trim().length > 0;
 
   useEffect(() => {
+    if (!vehicleChoices.length) {
+      if (booking.vehicleId) setBooking((current) => ({ ...current, vehicleId: '' }));
+      return;
+    }
     if (vehicleChoices.length && !vehicleChoices.some((vehicle) => vehicle.id === booking.vehicleId)) {
       setBooking((current) => ({ ...current, vehicleId: vehicleChoices[0].id }));
     }
-  }, [booking.serviceCategory, booking.vehicleId, setBooking, vehicleChoiceIds]);
+  }, [booking.serviceCategory, booking.vehicleId, bookingWeightKg, setBooking, vehicleChoiceIds]);
 
   function addStop() {
     if (booking.extraStops.length >= maxExtraStops) return;
@@ -2156,6 +2191,12 @@ function BookScreen({
           </View>
 
           <SectionTitle title={copy.selectVehicle} />
+          <Field
+            label={copy.weightKg}
+            keyboardType="numeric"
+            value={booking.weightKg}
+            onChangeText={(weightKg) => setBooking((current) => ({ ...current, weightKg }))}
+          />
           <View style={styles.vehicleGrid}>
             {vehicleChoices.map((vehicle) => (
               <Pressable
@@ -2168,10 +2209,16 @@ function BookScreen({
                   <Text style={styles.vehicleEta}>{vehicle.etaMinutes} min</Text>
                 </View>
                 <Text style={styles.vehicleName}>{vehicle.shortName}</Text>
-                <Text style={styles.mutedSmall}>{copy.upTo} {vehicle.capacityKg} kg</Text>
+                <Text style={styles.mutedSmall}>{vehicleCapacityText(vehicle, copy.upTo)}</Text>
               </Pressable>
             ))}
           </View>
+          {bookingWeightKg && !vehicleChoices.length ? (
+            <View style={styles.notice}>
+              <Ionicons name="warning" size={16} color={colors.amber} />
+              <Text style={styles.noticeText}>No customer vehicle is available for {bookingWeightKg} kg.</Text>
+            </View>
+          ) : null}
           {booking.serviceCategory === 'movers' ? (
             <View style={styles.noticeInfo}>
               <Ionicons name="information-circle" size={16} color={colors.blue} />
@@ -3918,13 +3965,33 @@ function Timeline({ items }: { items: Order['timeline'] }) {
 }
 
 function FareCard({ fare }: { fare: FareBreakup }) {
+  const waitingFare = fare as FareBreakup & {
+    waitingCharge?: number;
+    billableWaitingMinutes?: number;
+    waitingFreeMinutes?: number;
+    waitingPerMinute?: number;
+  };
+  const waitingCharge = waitingFare.waitingCharge ?? 0;
+  const hasWaitingPolicy =
+    typeof waitingFare.waitingFreeMinutes === 'number' && typeof waitingFare.waitingPerMinute === 'number';
   return (
     <View style={styles.fareCard}>
       <FareRow label={`Distance charge (${fare.billableKm} billable km)`} value={money(fare.distance)} />
       <FareRow label="Order value" value={money(fare.orderValue)} />
+      {waitingCharge > 0 ? (
+        <FareRow
+          label={`Waiting charge (${waitingFare.billableWaitingMinutes ?? 0} min)`}
+          value={`+${money(waitingCharge)}`}
+        />
+      ) : null}
       <FareRow label="GST" value={money(fare.gst)} />
       <FareRow label="Coins" value={`-${money(fare.coins)}`} />
       <FareRow label="Late refund coins" value={money(fare.lateRefundCoins)} />
+      {hasWaitingPolicy ? (
+        <Text style={styles.farePolicyText}>
+          Waiting: {waitingFare.waitingFreeMinutes} min free, then {money(waitingFare.waitingPerMinute)}/min
+        </Text>
+      ) : null}
       <View style={styles.divider} />
       <FareRow label="Total" value={money(fare.total)} bold />
     </View>
@@ -4390,6 +4457,7 @@ const styles = StyleSheet.create({
   otpText: { color: colors.customer, fontSize: 22, fontWeight: '900', marginTop: 4 },
   fareLabel: { color: colors.customer, fontSize: 13 },
   fareValue: { color: colors.customer, fontSize: 13, fontWeight: '700' },
+  farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2, marginBottom: 8 },
   orderMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   orderMetaText: { color: colors.muted, fontSize: 10, fontWeight: '900', backgroundColor: colors.faint, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8 },
   bold: { fontWeight: '900', fontSize: 15 },

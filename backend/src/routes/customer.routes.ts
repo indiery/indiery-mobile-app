@@ -4,7 +4,7 @@ import { Types } from 'mongoose';
 import { AuthRequest, requireAuth } from '../middleware/auth';
 import { ApiError, asyncRoute } from '../middleware/error';
 import { User } from '../models/User';
-import { Vehicle } from '../models/Vehicle';
+import { Vehicle, type VehicleDocument } from '../models/Vehicle';
 import { Order } from '../models/Order';
 import { Counter } from '../models/Counter';
 import { WalletLedger, type WalletLedgerDocument } from '../models/WalletLedger';
@@ -22,7 +22,8 @@ export const customerRouter = Router();
 
 customerRouter.use(requireAuth(['customer']));
 
-const customerVehicleCodes = ['bike', 'mini500', 'mini750'];
+const customerVehicleCodes = ['bike', 'loader90', 'mini500', 'mini750'];
+const MIN_PARTNER_WALLET_BALANCE = 200;
 
 const ExtraStopSchema = z.object({
   label: z.string().trim().min(2),
@@ -193,10 +194,44 @@ async function debitCustomerWallet(input: {
   });
 }
 
+async function customerVehicleForWeight(weightKg: number) {
+  const requiredCode =
+    weightKg >= 40 && weightKg <= 90
+      ? 'loader90'
+      : weightKg <= 40
+        ? 'bike'
+        : weightKg <= 500
+          ? 'mini500'
+          : weightKg <= 750
+            ? 'mini750'
+            : undefined;
+  if (!requiredCode) return undefined;
+  return Vehicle.findOne({ active: true, code: requiredCode });
+}
+
+function assertVehicleMatchesWeight(vehicle: VehicleDocument | null, requiredVehicle: VehicleDocument | null | undefined) {
+  if (!vehicle) throw new ApiError(404, 'Vehicle not found');
+  if (!customerVehicleCodes.includes(vehicle.code)) throw new ApiError(400, 'This vehicle is not available for customer booking');
+  if (!requiredVehicle) throw new ApiError(400, 'No customer vehicle is available for this weight');
+  if (String(vehicle._id) !== String(requiredVehicle._id)) {
+    throw new ApiError(400, `Use ${requiredVehicle.shortName} for this weight`);
+  }
+}
+
 async function notifyAvailableOrder(order: Awaited<ReturnType<typeof populatedOrder>>) {
   if (!order) return;
   const payload = serializeOrder(order);
-  const onlinePartners = await User.find({ role: 'partner', 'partnerProfile.online': true }).select('expoPushTokens');
+  const vehicleId =
+    order.vehicle && typeof order.vehicle === 'object' && '_id' in order.vehicle
+      ? String(order.vehicle._id)
+      : String(order.vehicle || '');
+  const onlinePartners = await User.find({
+    role: 'partner',
+    'partnerProfile.online': true,
+    'partnerProfile.kycStatus': 'verified',
+    'partnerProfile.walletBalance': { $gte: MIN_PARTNER_WALLET_BALANCE },
+    'partnerProfile.vehicleId': vehicleId
+  }).select('expoPushTokens');
   await Promise.all(
     onlinePartners.map((partner) =>
       sendPush(partner.expoPushTokens, 'New Indiery order', `${order.pickup.label} to ${order.drop.label}`, {
@@ -295,7 +330,8 @@ customerRouter.post(
     const user = await User.findById(req.auth!.userId);
     const vehicle = await Vehicle.findById(body.vehicleId);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
-    if (!customerVehicleCodes.includes(vehicle.code)) throw new ApiError(400, 'This vehicle is not available for customer booking');
+    const requiredVehicle = await customerVehicleForWeight(body.weightKg);
+    assertVehicleMatchesWeight(vehicle, requiredVehicle);
     const distanceKm = await resolveDistanceKm(body);
     const fare = estimateFare({
       pickup: body.pickup,
@@ -317,8 +353,8 @@ customerRouter.post(
     const user = await User.findById(req.auth!.userId);
     const vehicle = await Vehicle.findById(body.vehicleId);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
-    if (!customerVehicleCodes.includes(vehicle.code)) throw new ApiError(400, 'This vehicle is not available for customer booking');
-    if (body.weightKg > vehicle.capacityKg) throw new ApiError(400, 'Selected vehicle cannot carry this weight');
+    const requiredVehicle = await customerVehicleForWeight(body.weightKg);
+    assertVehicleMatchesWeight(vehicle, requiredVehicle);
 
     const distanceKm = await resolveDistanceKm(body);
     const fare = estimateFare({

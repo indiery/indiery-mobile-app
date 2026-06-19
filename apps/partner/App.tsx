@@ -16,6 +16,7 @@ import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import RazorpayCheckout from 'react-native-razorpay';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -28,7 +29,8 @@ import {
   PartnerBootstrap,
   statusLabels,
   uploadFileToCloudinary,
-  UserProfile
+  UserProfile,
+  Vehicle
 } from '@indiery/shared';
 
 declare const process: { env?: Record<string, string | undefined> };
@@ -48,9 +50,11 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 }
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
+const minPartnerWalletBalance = 200;
 
 type Tab = 'dashboard' | 'orders' | 'active' | 'earnings' | 'kyc';
-type KycDoc = 'selfie' | 'pan' | 'drivingLicence' | 'rc' | 'insurance' | 'bank';
+type KycDoc = 'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc';
+type BankDetailsInput = { accountHolder: string; accountNumber: string; ifsc: string };
 
 function formatPhoneForFirebase(phoneInput: string) {
   const trimmed = phoneInput.trim();
@@ -63,7 +67,27 @@ function formatPhoneForFirebase(phoneInput: string) {
 }
 
 function needsPartnerProfile(user: UserProfile) {
-  return !user.email || user.name === 'Indiery Partner';
+  return !user.email || user.name === 'Indiery Partner' || !user.partnerProfile?.vehicleId;
+}
+
+function kycProgress(user: UserProfile) {
+  const docs = user.partnerProfile?.docs;
+  const steps = [
+    Boolean(docs?.selfie),
+    Boolean(docs?.pan || docs?.aadhaar),
+    Boolean(docs?.drivingLicence),
+    Boolean(docs?.rc),
+    Boolean(docs?.bank)
+  ];
+  return {
+    completed: steps.filter(Boolean).length,
+    total: steps.length,
+    complete: steps.every(Boolean)
+  };
+}
+
+function needsPartnerKyc(user: UserProfile) {
+  return user.partnerProfile?.kycStatus !== 'verified';
 }
 
 export default function App() {
@@ -265,17 +289,17 @@ export default function App() {
     }
   }
 
-  async function pickAndUploadImage(input: { purpose: 'pod' | 'kyc' | 'profile'; orderId?: string; documentKey?: string }) {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  async function captureAndUploadImage(input: { purpose: 'pod' | 'kyc' | 'profile'; orderId?: string; documentKey?: string }) {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (permission.status !== 'granted') {
-      throw new Error('Photo permission is required to upload proof');
+      throw new Error('Camera permission is required to capture proof');
     }
 
-    const picked = await ImagePicker.launchImageLibraryAsync({
+    const picked = await ImagePicker.launchCameraAsync({
       allowsEditing: false,
       quality: 0.75
     });
-    if (picked.canceled || !picked.assets[0]) throw new Error('No image selected');
+    if (picked.canceled || !picked.assets[0]) throw new Error('No image captured');
 
     const asset = picked.assets[0];
     const signature = await api.createCloudinarySignature(input);
@@ -286,7 +310,7 @@ export default function App() {
     return uploaded.secureUrl;
   }
 
-  async function saveProfile(input: { name: string; email: string; city: string; vehicleNumber: string }) {
+  async function saveProfile(input: { name: string; email: string; city: string; vehicleId: string; vehicleNumber: string }) {
     setBusy(true);
     setError('');
     try {
@@ -295,6 +319,67 @@ export default function App() {
       showToast('Profile saved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Profile update failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function captureKycDocument(doc: KycDoc) {
+    const photoUrl = await captureAndUploadImage({ purpose: 'kyc', documentKey: doc });
+    await api.uploadKyc(doc, { photoUrl });
+    await refresh();
+    showToast('KYC photo captured');
+  }
+
+  async function submitKycBankDetails(bankDetails: BankDetailsInput) {
+    await api.uploadKyc('bank', { bankDetails });
+    await refresh();
+    showToast('Bank details saved');
+  }
+
+  async function topUpPartnerWallet(amount: number, paymentMode: 'upi' | 'card' | 'netbanking' = 'upi') {
+    if (!data) return;
+    setBusy(true);
+    try {
+      const result = await api.createPartnerWalletTopup({ amount, paymentMode });
+      const checkout = result.paymentIntent.checkout;
+      if (!checkout) throw new Error('Wallet recharge is not available');
+      const payment = await RazorpayCheckout.open({
+        key: checkout.keyId,
+        amount: Math.round(result.paymentIntent.amount * 100),
+        currency: result.paymentIntent.currency,
+        name: 'Indiery Partner',
+        description: 'Driver wallet recharge',
+        order_id: checkout.orderId,
+        prefill: {
+          name: data.user.name,
+          email: data.user.email,
+          contact: data.user.phone
+        },
+        notes: {
+          wallet: 'partner'
+        },
+        theme: {
+          color: colors.partner
+        },
+        modal: {
+          confirm_close: true,
+          handleback: true
+        }
+      });
+      if (!payment.razorpay_order_id || !payment.razorpay_signature) {
+        throw new Error('Payment verification details missing');
+      }
+      const verified = await api.verifyPartnerWalletTopup({
+        razorpayOrderId: payment.razorpay_order_id,
+        razorpayPaymentId: payment.razorpay_payment_id,
+        razorpaySignature: payment.razorpay_signature
+      });
+      setData((current) => current ? { ...current, user: verified.user } : current);
+      await refresh();
+      showToast('Wallet recharged');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Wallet recharge failed');
     } finally {
       setBusy(false);
     }
@@ -365,10 +450,39 @@ export default function App() {
     return (
       <ProfileSetupScreen
         user={data.user}
+        vehicles={data.vehicles}
         busy={busy}
         error={error}
         onSave={saveProfile}
       />
+    );
+  }
+
+  if (needsPartnerKyc(data.user)) {
+    return (
+      <SafeAreaView style={styles.shell}>
+        <View style={styles.appHeader}>
+          <View>
+            <Text style={styles.eyebrow}>INDIERY PARTNER</Text>
+            <Text style={styles.headerTitle}>Complete KYC</Text>
+          </View>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{data.user.initials}</Text>
+          </View>
+        </View>
+        <View style={styles.content}>
+          <KycScreen
+            user={data.user}
+            busy={busy}
+            gated
+            onLogout={logout}
+            onRequestAccountDeletion={requestAccountDeletion}
+            onCapture={(doc) => withBusy(() => captureKycDocument(doc))}
+            onSubmitBank={(bankDetails) => withBusy(() => submitKycBankDetails(bankDetails))}
+          />
+        </View>
+        {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
+      </SafeAreaView>
     );
   }
 
@@ -402,6 +516,7 @@ export default function App() {
             }
             onOrders={() => setTab('orders')}
             onActive={() => setTab('active')}
+            onTopup={(amount) => topUpPartnerWallet(amount)}
           />
         )}
         {tab === 'orders' && (
@@ -442,7 +557,7 @@ export default function App() {
             }
             onPod={(orderId, type) =>
               withBusy(async () => {
-                const photoUrl = await pickAndUploadImage({ purpose: 'pod', orderId, documentKey: type });
+                const photoUrl = await captureAndUploadImage({ purpose: 'pod', orderId, documentKey: type });
                 await api.uploadPod(orderId, type, photoUrl);
                 await refresh();
                 showToast(`${type} POD captured`);
@@ -469,6 +584,7 @@ export default function App() {
                 showToast('Payout requested');
               })
             }
+            onTopup={(amount) => topUpPartnerWallet(amount)}
           />
         )}
         {tab === 'kyc' && (
@@ -477,14 +593,8 @@ export default function App() {
             busy={busy}
             onLogout={logout}
             onRequestAccountDeletion={requestAccountDeletion}
-            onUpload={(doc) =>
-              withBusy(async () => {
-                const photoUrl = await pickAndUploadImage({ purpose: 'kyc', documentKey: doc });
-                await api.uploadKyc(doc, photoUrl);
-                await refresh();
-                showToast('Document uploaded');
-              })
-            }
+            onCapture={(doc) => withBusy(() => captureKycDocument(doc))}
+            onSubmitBank={(bankDetails) => withBusy(() => submitKycBankDetails(bankDetails))}
           />
         )}
       </View>
@@ -689,18 +799,21 @@ function LoginFeatureRow() {
 
 function ProfileSetupScreen({
   user,
+  vehicles,
   busy,
   error,
   onSave
 }: {
   user: UserProfile;
+  vehicles: Vehicle[];
   busy: boolean;
   error: string;
-  onSave: (input: { name: string; email: string; city: string; vehicleNumber: string }) => Promise<void>;
+  onSave: (input: { name: string; email: string; city: string; vehicleId: string; vehicleNumber: string }) => Promise<void>;
 }) {
   const [name, setName] = useState(user.name === 'Indiery Partner' ? '' : user.name);
   const [email, setEmail] = useState(user.email || '');
   const [city, setCity] = useState(user.city || 'Lucknow');
+  const [vehicleId, setVehicleId] = useState(user.partnerProfile?.vehicleId || vehicles[0]?.id || '');
   const [vehicleNumber, setVehicleNumber] = useState(user.partnerProfile?.vehicleNumber || '');
   const [localError, setLocalError] = useState('');
 
@@ -721,8 +834,12 @@ function ProfileSetupScreen({
       setLocalError('Enter your city');
       return;
     }
+    if (!vehicleId) {
+      setLocalError('Select your vehicle type');
+      return;
+    }
     setLocalError('');
-    await onSave({ name: nextName, email: nextEmail, city: nextCity, vehicleNumber: nextVehicleNumber });
+    await onSave({ name: nextName, email: nextEmail, city: nextCity, vehicleId, vehicleNumber: nextVehicleNumber });
   }
 
   return (
@@ -742,6 +859,7 @@ function ProfileSetupScreen({
             <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
             <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
             <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
+            <VehiclePicker vehicles={vehicles} selectedId={vehicleId} onSelect={setVehicleId} />
             <AuthField label="Vehicle number" value={vehicleNumber} onChangeText={setVehicleNumber} icon="bicycle" autoCapitalize="characters" />
             <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
             {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
@@ -750,6 +868,40 @@ function ProfileSetupScreen({
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function VehiclePicker({
+  vehicles,
+  selectedId,
+  onSelect
+}: {
+  vehicles: Vehicle[];
+  selectedId: string;
+  onSelect: (vehicleId: string) => void;
+}) {
+  return (
+    <View style={styles.authFieldGroup}>
+      <Text style={styles.fieldLabel}>Vehicle type</Text>
+      <View style={styles.vehicleChoiceList}>
+        {vehicles.map((vehicle) => {
+          const selected = vehicle.id === selectedId;
+          return (
+            <Pressable
+              key={vehicle.id}
+              style={[styles.vehicleChoice, selected && styles.vehicleChoiceSelected]}
+              onPress={() => onSelect(vehicle.id)}
+            >
+              <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={selected ? colors.partner : colors.muted} />
+              <View style={styles.flex}>
+                <Text style={styles.vehicleChoiceTitle}>{vehicle.shortName}</Text>
+                <Text style={styles.vehicleChoiceMeta}>Up to {vehicle.capacityKg} kg</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -835,21 +987,40 @@ function DashboardScreen({
   busy,
   onToggle,
   onOrders,
-  onActive
+  onActive,
+  onTopup
 }: {
   data: PartnerBootstrap;
   busy: boolean;
   onToggle: () => void;
   onOrders: () => void;
   onActive: () => void;
+  onTopup: (amount: number) => void;
 }) {
   const profile = data.user.partnerProfile;
   const online = Boolean(profile?.online);
+  const balance = profile?.walletBalance ?? 0;
+  const walletReady = balance >= minPartnerWalletBalance;
+  const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <Pressable style={[styles.onlineCard, online && styles.onlineCardActive]} onPress={onToggle}>
-        <Text style={[styles.onlineText, online && styles.onlineTextActive]}>{busy ? 'SYNCING' : online ? 'ONLINE' : 'OFFLINE'}</Text>
-        <Text style={styles.muted}>{online ? 'Receiving nearby orders' : 'Tap to start receiving orders'}</Text>
+      {!walletReady ? (
+        <View style={styles.walletBlockCard}>
+          <View style={styles.walletBlockHeader}>
+            <Ionicons name="wallet-outline" size={22} color={colors.amber} />
+            <View style={styles.flex}>
+              <Text style={styles.cardTitle}>Recharge driver wallet</Text>
+              <Text style={styles.mutedSmall}>Minimum {money(minPartnerWalletBalance)} balance is required to receive new orders.</Text>
+            </View>
+          </View>
+          <Text style={styles.walletBlockBalance}>Current balance: {money(balance)}</Text>
+          <PrimaryButton title={`Recharge ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
+        </View>
+      ) : null}
+
+      <Pressable style={[styles.onlineCard, online && styles.onlineCardActive, !walletReady && styles.onlineCardDisabled]} onPress={walletReady ? onToggle : () => onTopup(rechargeAmount)}>
+        <Text style={[styles.onlineText, online && styles.onlineTextActive]}>{busy ? 'SYNCING' : online ? 'ONLINE' : walletReady ? 'OFFLINE' : 'RECHARGE'}</Text>
+        <Text style={styles.muted}>{walletReady ? (online ? 'Receiving nearby orders' : 'Tap to start receiving orders') : 'Wallet below minimum'}</Text>
       </Pressable>
 
       <View style={styles.statRow}>
@@ -994,15 +1165,32 @@ function ActiveScreen({
   );
 }
 
-function EarningsScreen({ data, busy, onPayout }: { data: PartnerBootstrap; busy: boolean; onPayout: () => void }) {
+function EarningsScreen({
+  data,
+  busy,
+  onPayout,
+  onTopup
+}: {
+  data: PartnerBootstrap;
+  busy: boolean;
+  onPayout: () => void;
+  onTopup: (amount: number) => void;
+}) {
   const profile = data.user.partnerProfile;
   const balance = profile?.walletBalance ?? 0;
+  const walletReady = balance >= minPartnerWalletBalance;
+  const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.walletCard}>
         <Text style={styles.eyebrowDark}>WALLET BALANCE</Text>
         <Text style={styles.walletValue}>{money(balance)}</Text>
-        <Text style={styles.muted}>{profile?.weeklyOrders ?? 0} trips this week</Text>
+        <Text style={styles.muted}>
+          {walletReady ? `${profile?.weeklyOrders ?? 0} trips this week` : `Recharge ${money(rechargeAmount)} to unlock new orders`}
+        </Text>
+        {!walletReady ? (
+          <PrimaryButton title={busy ? 'Opening' : `Recharge ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
+        ) : null}
         <PrimaryButton title={busy ? 'Requesting' : 'Request Payout'} icon="send" onPress={onPayout} />
       </View>
       <View style={styles.statRow}>
@@ -1031,44 +1219,159 @@ function EarningsScreen({ data, busy, onPayout }: { data: PartnerBootstrap; busy
 function KycScreen({
   user,
   busy,
-  onUpload,
+  onCapture,
+  onSubmitBank,
   onLogout,
-  onRequestAccountDeletion
+  onRequestAccountDeletion,
+  gated = false
 }: {
   user: UserProfile;
   busy: boolean;
-  onUpload: (doc: KycDoc) => void;
+  onCapture: (doc: KycDoc) => void;
+  onSubmitBank: (bankDetails: BankDetailsInput) => void;
   onLogout: () => void;
   onRequestAccountDeletion: () => void;
+  gated?: boolean;
 }) {
   const docs = user.partnerProfile?.docs;
-  const rows: Array<[KycDoc, string]> = [
-    ['selfie', 'Selfie'],
-    ['pan', 'PAN card'],
-    ['drivingLicence', 'Driving licence'],
-    ['rc', 'RC certificate'],
-    ['insurance', 'Insurance'],
-    ['bank', 'Bank details']
-  ];
+  const bankDetails = user.partnerProfile?.bankDetails;
+  const progress = kycProgress(user);
+  const identityDone = Boolean(docs?.pan || docs?.aadhaar);
+  const [accountHolder, setAccountHolder] = useState(bankDetails?.accountHolder || user.name);
+  const [accountNumber, setAccountNumber] = useState('');
+  const [ifsc, setIfsc] = useState(bankDetails?.ifsc || '');
+  const [bankError, setBankError] = useState('');
+
+  function submitBank() {
+    const nextAccountHolder = accountHolder.trim();
+    const nextAccountNumber = accountNumber.replace(/\D/g, '');
+    const nextIfsc = ifsc.trim().toUpperCase();
+    if (nextAccountHolder.length < 2) {
+      setBankError('Enter account holder name');
+      return;
+    }
+    if (!/^\d{9,18}$/.test(nextAccountNumber)) {
+      setBankError('Enter a valid account number');
+      return;
+    }
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(nextIfsc)) {
+      setBankError('Enter a valid IFSC code');
+      return;
+    }
+    setBankError('');
+    onSubmitBank({ accountHolder: nextAccountHolder, accountNumber: nextAccountNumber, ifsc: nextIfsc });
+    setAccountNumber('');
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.notice}>
-        <Ionicons name="shield-checkmark" size={18} color={colors.partner} />
-        <Text style={styles.noticeText}>KYC status: {user.partnerProfile?.kycStatus || 'not_started'}</Text>
+      <View style={styles.kycHero}>
+        <View style={styles.kycHeroIcon}>
+          <Ionicons name="shield-checkmark" size={26} color={colors.white} />
+        </View>
+        <View style={styles.flex}>
+          <Text style={styles.kycHeroTitle}>{gated ? 'Complete KYC to continue' : 'Partner KYC'}</Text>
+          <Text style={styles.kycHeroText}>
+            Capture documents with camera. Orders unlock after verification.
+          </Text>
+        </View>
       </View>
-      <SectionTitle title="Required Documents" />
-      <View style={styles.docGrid}>
-        {rows.map(([key, label]) => {
-          const done = Boolean(docs?.[key]);
-          return (
-            <Pressable key={key} style={[styles.docCard, done && styles.docCardDone]} onPress={() => onUpload(key)}>
-              <Ionicons name={done ? 'checkmark-circle' : 'cloud-upload-outline'} size={26} color={done ? colors.green : colors.muted} />
-              <Text style={[styles.docTitle, done && styles.docDoneText]}>{label}</Text>
-              <Text style={styles.mutedSmall}>{done ? 'Uploaded' : busy ? 'Uploading' : 'Tap to upload'}</Text>
-            </Pressable>
-          );
-        })}
+
+      <View style={styles.kycProgressCard}>
+        <View style={styles.between}>
+          <Text style={styles.cardTitle}>Verification progress</Text>
+          <Text style={styles.priceText}>{progress.completed}/{progress.total}</Text>
+        </View>
+        <View style={styles.kycProgressTrack}>
+          <View style={[styles.kycProgressFill, { width: `${(progress.completed / progress.total) * 100}%` }]} />
+        </View>
+        <Text style={styles.mutedSmall}>
+          Status: {user.partnerProfile?.kycStatus || 'not_started'}
+          {progress.complete && user.partnerProfile?.kycStatus !== 'verified' ? ' - submitted for review' : ''}
+        </Text>
       </View>
+
+      <SectionTitle title="Required Steps" />
+      <KycStepCard
+        icon="person-circle"
+        title="Live selfie"
+        subtitle="Take a clear face photo with camera"
+        done={Boolean(docs?.selfie)}
+        busy={busy}
+        onPress={() => onCapture('selfie')}
+      />
+
+      <View style={styles.kycGroupCard}>
+        <View style={styles.between}>
+          <View>
+            <Text style={styles.cardTitle}>Identity proof</Text>
+            <Text style={styles.mutedSmall}>Capture PAN or Aadhaar. One is required.</Text>
+          </View>
+          <Ionicons name={identityDone ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={identityDone ? colors.green : colors.muted} />
+        </View>
+        <View style={styles.row}>
+          <SecondaryButton title={docs?.pan ? 'PAN done' : 'Capture PAN'} icon="card" onPress={() => onCapture('pan')} />
+          <SecondaryButton title={docs?.aadhaar ? 'Aadhaar done' : 'Capture Aadhaar'} icon="card" onPress={() => onCapture('aadhaar')} />
+        </View>
+      </View>
+
+      <KycStepCard
+        icon="document-text"
+        title="Driving licence"
+        subtitle="Capture front side clearly"
+        done={Boolean(docs?.drivingLicence)}
+        busy={busy}
+        onPress={() => onCapture('drivingLicence')}
+      />
+      <KycStepCard
+        icon="car"
+        title="Vehicle RC"
+        subtitle="Required for vehicle ownership or authorization"
+        done={Boolean(docs?.rc)}
+        busy={busy}
+        onPress={() => onCapture('rc')}
+      />
+
+      <View style={[styles.kycGroupCard, docs?.bank && styles.kycStepDone]}>
+        <View style={styles.between}>
+          <View>
+            <Text style={styles.cardTitle}>Bank account</Text>
+            <Text style={styles.mutedSmall}>
+              {docs?.bank ? `${bankDetails?.accountNumberMasked || 'Account saved'} - ${bankDetails?.ifsc || 'IFSC saved'}` : 'Used for payouts'}
+            </Text>
+          </View>
+          <Ionicons name={docs?.bank ? 'checkmark-circle' : 'wallet-outline'} size={22} color={docs?.bank ? colors.green : colors.partner} />
+        </View>
+        <View style={styles.kycInputGroup}>
+          <Text style={styles.fieldLabel}>Account holder</Text>
+          <TextInput value={accountHolder} onChangeText={setAccountHolder} style={styles.kycInput} placeholder="Name as per bank" />
+        </View>
+        <View style={styles.kycInputGroup}>
+          <Text style={styles.fieldLabel}>Account number</Text>
+          <TextInput
+            value={accountNumber}
+            onChangeText={setAccountNumber}
+            style={styles.kycInput}
+            placeholder={bankDetails?.accountNumberMasked || 'Enter account number'}
+            keyboardType="numeric"
+            secureTextEntry
+          />
+        </View>
+        <View style={styles.kycInputGroup}>
+          <Text style={styles.fieldLabel}>IFSC code</Text>
+          <TextInput value={ifsc} onChangeText={setIfsc} style={styles.kycInput} autoCapitalize="characters" placeholder="ABCD0123456" />
+        </View>
+        {bankError ? <Text style={styles.loginError}>{bankError}</Text> : null}
+        <PrimaryButton title={busy ? 'Saving' : docs?.bank ? 'Update Bank' : 'Save Bank'} icon="checkmark" onPress={submitBank} />
+      </View>
+
+      {progress.complete ? (
+        <View style={styles.notice}>
+          <Ionicons name="time" size={18} color={colors.partner} />
+          <Text style={styles.noticeText}>KYC submitted. Indiery will review it before order access is enabled.</Text>
+        </View>
+      ) : null}
+
       <PolicyList />
       <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
         <Ionicons name="trash-outline" size={18} color={colors.red} />
@@ -1079,6 +1382,37 @@ function KycScreen({
         <Text style={styles.logoutButtonText}>Logout</Text>
       </Pressable>
     </ScrollView>
+  );
+}
+
+function KycStepCard({
+  icon,
+  title,
+  subtitle,
+  done,
+  busy,
+  onPress
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  done: boolean;
+  busy: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={[styles.kycStepCard, done && styles.kycStepDone]} onPress={onPress}>
+      <View style={[styles.kycStepIcon, done && styles.kycStepIconDone]}>
+        <Ionicons name={done ? 'checkmark' : icon} size={20} color={done ? colors.white : colors.partner} />
+      </View>
+      <View style={styles.flex}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.mutedSmall}>{subtitle}</Text>
+      </View>
+      <Text style={[styles.kycActionText, done && styles.docDoneText]}>
+        {done ? 'Done' : busy ? 'Opening' : 'Capture'}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -1509,6 +1843,22 @@ const styles = StyleSheet.create({
   },
   authInputReadonly: { backgroundColor: colors.faint },
   authInputText: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: '800', paddingVertical: 12 },
+  vehicleChoiceList: { gap: 8 },
+  vehicleChoice: {
+    minHeight: 54,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10
+  },
+  vehicleChoiceSelected: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
+  vehicleChoiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  vehicleChoiceMeta: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
   phoneInputShell: {
     minHeight: 54,
     borderWidth: 1,
@@ -1592,8 +1942,12 @@ const styles = StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 96 },
   onlineCard: { borderRadius: 80, borderWidth: 4, borderColor: colors.line, width: 124, height: 124, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
   onlineCardActive: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
+  onlineCardDisabled: { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' },
   onlineText: { color: colors.muted, fontWeight: '900', fontSize: 16 },
   onlineTextActive: { color: colors.partner },
+  walletBlockCard: { borderWidth: 1, borderColor: '#FDE68A', backgroundColor: '#FFFBEB', borderRadius: 16, padding: 14, marginBottom: 12 },
+  walletBlockHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  walletBlockBalance: { color: '#92400E', fontSize: 13, fontWeight: '900', marginBottom: 10 },
   statRow: { flexDirection: 'row', gap: 10, marginTop: 16, marginBottom: 16 },
   statCard: { flex: 1, borderRadius: 14, padding: 14 },
   statValue: { fontSize: 17, fontWeight: '900' },
@@ -1655,6 +2009,21 @@ const styles = StyleSheet.create({
   notice: { flexDirection: 'row', gap: 10, backgroundColor: colors.partnerLight, borderRadius: 14, padding: 14, alignItems: 'center' },
   noticeText: { flex: 1, color: colors.partner, fontSize: 13, fontWeight: '900' },
   fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginBottom: 6 },
+  kycHero: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.partner, borderRadius: 18, padding: 16, marginBottom: 14 },
+  kycHeroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  kycHeroTitle: { color: colors.white, fontSize: 18, fontWeight: '900' },
+  kycHeroText: { color: '#D1FAE5', fontSize: 12, fontWeight: '800', marginTop: 3, lineHeight: 17 },
+  kycProgressCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
+  kycProgressTrack: { height: 8, borderRadius: 8, backgroundColor: colors.faint, overflow: 'hidden', marginBottom: 8 },
+  kycProgressFill: { height: 8, borderRadius: 8, backgroundColor: colors.partner },
+  kycStepCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
+  kycStepDone: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
+  kycStepIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  kycStepIconDone: { backgroundColor: colors.partner },
+  kycActionText: { color: colors.partner, fontSize: 12, fontWeight: '900' },
+  kycGroupCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
+  kycInputGroup: { marginBottom: 10 },
+  kycInput: { minHeight: 46, borderWidth: 1, borderColor: colors.line, borderRadius: 12, color: colors.ink, fontWeight: '800', paddingHorizontal: 12, backgroundColor: colors.white },
   otpPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 12, marginBottom: 12 },
   otpRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   otpInput: { flex: 1, borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 12, minHeight: 46, color: colors.ink, fontWeight: '800' },

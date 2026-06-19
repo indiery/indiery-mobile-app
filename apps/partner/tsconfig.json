@@ -15,6 +15,7 @@
   "include": [
     "index.ts",
     "App.tsx",
+    "declarations.d.ts",
     "../../packages/shared/src/**/*.ts"
   ],
   "extends": "expo/tsconfig.base"

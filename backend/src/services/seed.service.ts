@@ -9,11 +9,24 @@ export async function seedCoreData() {
         shortName: 'Bike',
         icon: 'two-wheeler',
         serviceType: 'intracity',
-        capacityKg: 20,
+        capacityKg: 40,
         baseFare: 40,
         perKm: 10,
         partnerShare: 0.8,
         etaMinutes: 4,
+        active: true
+      },
+      {
+        code: 'loader90',
+        name: 'Mini Loader 40-90 kg',
+        shortName: 'Loader 90',
+        icon: 'loader',
+        serviceType: 'intracity',
+        capacityKg: 90,
+        baseFare: 90,
+        perKm: 14,
+        partnerShare: 0.8,
+        etaMinutes: 6,
         active: true
       },
       {
@@ -76,6 +89,7 @@ export async function seedCoreData() {
       })
     )
   );
+  await Vehicle.updateOne({ code: 'bike90' }, { active: false });
 
   return {
     vehicles: vehicles.length

@@ -4,6 +4,8 @@ const DRIVER_COMMISSION_RATE = 0.8;
 const PLATFORM_COMMISSION_RATE = 0.15;
 const RESERVE_RATE = 0.05;
 const DELAY_PENALTY_RATE = 0.05;
+const BIKE_WAITING_FREE_MINUTES = 10;
+const BIKE_WAITING_PER_MINUTE = 2;
 
 export interface EstimateInput {
   pickup: string;
@@ -34,6 +36,9 @@ export function normalizeFareBreakup(fareInput: unknown, distanceKmInput: unknow
   const base = fare.base ?? 0;
   const distance = fare.distance ?? 0;
   const orderValue = fare.orderValue ?? base + distance;
+  const waitingCharge = fare.waitingCharge ?? 0;
+  const waitingMinutes = fare.waitingMinutes ?? 0;
+  const billableWaitingMinutes = fare.billableWaitingMinutes ?? Math.max(0, waitingMinutes - (fare.waitingFreeMinutes ?? 0));
   const gst = fare.gst ?? Math.round(orderValue * 0.18);
   const coins = fare.coins ?? 0;
   const driverCommission = fare.driverCommission ?? roundMoney(orderValue * DRIVER_COMMISSION_RATE);
@@ -51,9 +56,14 @@ export function normalizeFareBreakup(fareInput: unknown, distanceKmInput: unknow
     orderValue,
     base,
     distance,
+    waitingCharge,
+    waitingMinutes,
+    billableWaitingMinutes,
+    waitingFreeMinutes: fare.waitingFreeMinutes,
+    waitingPerMinute: fare.waitingPerMinute,
     gst,
     coins,
-    total: fare.total ?? orderValue + gst - coins,
+    total: fare.total ?? orderValue + waitingCharge + gst - coins,
     driverCommission,
     reserveAmount,
     partnerNet: fare.partnerNet ?? onTimePartnerPayout,
@@ -70,6 +80,52 @@ function isIntercityVehicle(vehicle: VehicleDocument) {
   return vehicle.serviceType === 'intercity' || vehicle.code.startsWith('truck');
 }
 
+function waitingPolicyForVehicle(vehicle: VehicleDocument) {
+  if (vehicle.code !== 'bike') return {};
+  return {
+    waitingCharge: 0,
+    waitingMinutes: 0,
+    billableWaitingMinutes: 0,
+    waitingFreeMinutes: BIKE_WAITING_FREE_MINUTES,
+    waitingPerMinute: BIKE_WAITING_PER_MINUTE
+  };
+}
+
+export function applyWaitingChargeToFare(input: {
+  fare: unknown;
+  distanceKm: number;
+  vehicle: VehicleDocument;
+  waitingMinutes: number;
+}) {
+  const normalized = normalizeFareBreakup(input.fare, input.distanceKm);
+  const waitingPolicy = waitingPolicyForVehicle(input.vehicle);
+  if (typeof waitingPolicy.waitingFreeMinutes !== 'number' || typeof waitingPolicy.waitingPerMinute !== 'number') {
+    return normalized;
+  }
+
+  const waitingMinutes = Math.max(0, Math.ceil(input.waitingMinutes));
+  const billableWaitingMinutes = Math.max(0, waitingMinutes - waitingPolicy.waitingFreeMinutes);
+  const waitingCharge = roundMoney(billableWaitingMinutes * waitingPolicy.waitingPerMinute);
+  const payoutWithWaiting = roundMoney(normalized.onTimePartnerPayout + waitingCharge);
+  const latePayoutWithWaiting = roundMoney(normalized.latePartnerPayout + waitingCharge);
+
+  return normalizeFareBreakup(
+    {
+      ...normalized,
+      waitingCharge,
+      waitingMinutes,
+      billableWaitingMinutes,
+      waitingFreeMinutes: waitingPolicy.waitingFreeMinutes,
+      waitingPerMinute: waitingPolicy.waitingPerMinute,
+      total: roundMoney(normalized.orderValue + waitingCharge + normalized.gst - normalized.coins),
+      partnerNet: payoutWithWaiting,
+      onTimePartnerPayout: payoutWithWaiting,
+      latePartnerPayout: latePayoutWithWaiting
+    },
+    input.distanceKm
+  );
+}
+
 export function estimateFare(input: EstimateInput) {
   const distanceKm = Number((input.distanceKm ?? stableDistanceKm(input.pickup, input.drop)).toFixed(1));
   const billableKm = Math.max(1, Math.ceil(distanceKm));
@@ -83,7 +139,8 @@ export function estimateFare(input: EstimateInput) {
   const requestedCoins = Math.max(0, input.coins ?? 0);
   const walletCoins = Math.max(0, input.customerCoins ?? 0);
   const coins = Math.min(walletCoins, requestedCoins, subtotal);
-  const total = subtotal + gst - coins;
+  const waitingPolicy = waitingPolicyForVehicle(input.vehicle);
+  const total = subtotal + (waitingPolicy.waitingCharge ?? 0) + gst - coins;
   const driverCommission = roundMoney(subtotal * DRIVER_COMMISSION_RATE);
   const platformCommission = roundMoney(subtotal * PLATFORM_COMMISSION_RATE);
   const reserveAmount = roundMoney(subtotal * RESERVE_RATE);
@@ -100,6 +157,7 @@ export function estimateFare(input: EstimateInput) {
         orderValue,
         base,
         distance,
+        ...waitingPolicy,
         gst,
         coins,
         total,

@@ -44,6 +44,17 @@ export function serializeUser(user: UserDocument) {
         savedAddresses: serializeSavedAddresses(user.customerProfile.savedAddresses as unknown[] | undefined)
       }
     : undefined;
+  const rawPartnerProfile = user.partnerProfile
+    ? 'toObject' in user.partnerProfile && typeof user.partnerProfile.toObject === 'function'
+      ? user.partnerProfile.toObject()
+      : user.partnerProfile
+    : undefined;
+  const partnerProfile = rawPartnerProfile
+    ? {
+        ...rawPartnerProfile,
+        vehicleId: rawPartnerProfile.vehicleId ? idOf(rawPartnerProfile.vehicleId) : undefined
+      }
+    : undefined;
 
   return {
     id: String(user._id),
@@ -54,7 +65,7 @@ export function serializeUser(user: UserDocument) {
     email: user.email,
     city: user.city,
     customerProfile,
-    partnerProfile: user.partnerProfile
+    partnerProfile
   };
 }
 

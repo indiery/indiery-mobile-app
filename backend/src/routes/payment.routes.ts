@@ -20,7 +20,17 @@ async function populatedOrder(orderId: string) {
 async function notifyPartners(orderId: string) {
   const order = await populatedOrder(orderId);
   if (!order) return;
-  const onlinePartners = await User.find({ role: 'partner', 'partnerProfile.online': true }).select('expoPushTokens');
+  const vehicleId =
+    order.vehicle && typeof order.vehicle === 'object' && '_id' in order.vehicle
+      ? String(order.vehicle._id)
+      : String(order.vehicle || '');
+  const onlinePartners = await User.find({
+    role: 'partner',
+    'partnerProfile.online': true,
+    'partnerProfile.kycStatus': 'verified',
+    'partnerProfile.walletBalance': { $gte: 200 },
+    'partnerProfile.vehicleId': vehicleId
+  }).select('expoPushTokens');
   await Promise.all(
     onlinePartners.map((partner) =>
       sendPush(partner.expoPushTokens, 'New Indiery order', `${order.pickup.label} to ${order.drop.label}`, {
@@ -47,7 +57,12 @@ async function settleWalletTopup(razorpayOrderId: string) {
     { new: true }
   );
   if (!ledger) return;
-  await User.updateOne({ _id: ledger.user }, { $inc: { 'customerProfile.walletBalance': ledger.amount } });
+  const user = await User.findById(ledger.user).select('role');
+  if (user?.role === 'partner') {
+    await User.updateOne({ _id: ledger.user }, { $inc: { 'partnerProfile.walletBalance': ledger.amount } });
+  } else {
+    await User.updateOne({ _id: ledger.user }, { $inc: { 'customerProfile.walletBalance': ledger.amount } });
+  }
 }
 
 paymentRouter.post(

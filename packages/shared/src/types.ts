@@ -44,8 +44,13 @@ export interface UserProfile {
     walletBalance: number;
     weeklyOrders: number;
     kycStatus: 'not_started' | 'pending' | 'verified' | 'rejected';
-    docs: Record<'selfie' | 'pan' | 'drivingLicence' | 'rc' | 'insurance' | 'bank', boolean>;
-    docUrls?: Partial<Record<'selfie' | 'pan' | 'drivingLicence' | 'rc' | 'insurance' | 'bank', string>>;
+    docs: Record<'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc' | 'insurance' | 'bank', boolean>;
+    docUrls?: Partial<Record<'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc' | 'insurance' | 'bank', string>>;
+    bankDetails?: {
+      accountHolder?: string;
+      accountNumberMasked?: string;
+      ifsc?: string;
+    };
     currentLocation?: PartnerLocation;
   };
 }
@@ -104,6 +109,11 @@ export interface FareBreakup {
   orderValue: number;
   base: number;
   distance: number;
+  waitingCharge?: number;
+  waitingMinutes?: number;
+  billableWaitingMinutes?: number;
+  waitingFreeMinutes?: number;
+  waitingPerMinute?: number;
   gst: number;
   coins: number;
   total: number;
@@ -235,6 +245,7 @@ export interface CustomerBootstrap {
 
 export interface PartnerBootstrap {
   user: UserProfile;
+  vehicles: Vehicle[];
   stats: PartnerStats;
   availableOrders: Order[];
   activeOrders: Order[];

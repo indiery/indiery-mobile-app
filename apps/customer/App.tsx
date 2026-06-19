@@ -633,7 +633,7 @@ function statusLabel(language: AppLanguage, status: Order['status']) {
 
 const initialBooking = {
   serviceCategory: 'truck' as ServiceCategory,
-  pickup: 'Hazratganj',
+  pickup: '',
   pickupPlaceId: '',
   pickupLat: undefined as number | undefined,
   pickupLng: undefined as number | undefined,
@@ -641,7 +641,7 @@ const initialBooking = {
   pickupContactPhone: '',
   pickupAddressLine: '',
   extraStops: [] as BookingStop[],
-  drop: 'Gomti Nagar',
+  drop: '',
   dropPlaceId: '',
   dropLat: undefined as number | undefined,
   dropLng: undefined as number | undefined,
@@ -1979,6 +1979,8 @@ function BookScreen({
   const [contactSheetTarget, setContactSheetTarget] = useState<'pickup' | 'drop' | null>(null);
   const [contactError, setContactError] = useState('');
   const [savingAddressType, setSavingAddressType] = useState<'pickup' | 'drop' | null>(null);
+  const hasPickupLocation = booking.pickup.trim().length > 0;
+  const hasDropLocation = booking.drop.trim().length > 0;
 
   useEffect(() => {
     if (vehicleChoices.length && !vehicleChoices.some((vehicle) => vehicle.id === booking.vehicleId)) {
@@ -2050,20 +2052,28 @@ function BookScreen({
   }
 
   function continueFromRouteDetails() {
+    if (!hasPickupLocation || !hasDropLocation) {
+      setContactError(copy.selectLocationFirst);
+      return;
+    }
     if (booking.pickupContactName.trim().length < 2) {
       setContactError(copy.enterSenderName);
+      setContactSheetTarget('pickup');
       return;
     }
     if (!hasValidContactPhone(booking.pickupContactPhone)) {
       setContactError(copy.enterSenderMobile);
+      setContactSheetTarget('pickup');
       return;
     }
     if (booking.dropContactName.trim().length < 2) {
       setContactError(copy.enterReceiverName);
+      setContactSheetTarget('drop');
       return;
     }
     if (!hasValidContactPhone(booking.dropContactPhone)) {
       setContactError(copy.enterReceiverMobile);
+      setContactSheetTarget('drop');
       return;
     }
     setContactError('');
@@ -2274,41 +2284,49 @@ function BookScreen({
             addresses={savedAddresses}
             onSelect={(address) => applySavedAddress('drop', address)}
           />
-          <View style={styles.contactGrid}>
-            <ContactSummaryCard
-              title={copy.senderDetails}
-              subtitle={copy.askedAfterPickup}
-              icon="person-circle"
-              iconColor={colors.customer}
-              name={booking.pickupContactName}
-              phone={booking.pickupContactPhone}
-              addressLine={booking.pickupAddressLine}
-              locationLabel={booking.pickup}
-              onPress={() => setContactSheetTarget('pickup')}
-              onSaveAddress={() => saveCurrentAddress('pickup')}
-              saving={savingAddressType === 'pickup'}
-            />
-            <ContactSummaryCard
-              title={copy.receiverDetails}
-              subtitle={copy.askedAfterDrop}
-              icon="flag"
-              iconColor={colors.green}
-              name={booking.dropContactName}
-              phone={booking.dropContactPhone}
-              addressLine={booking.dropAddressLine}
-              locationLabel={booking.drop}
-              onPress={() => setContactSheetTarget('drop')}
-              onSaveAddress={() => saveCurrentAddress('drop')}
-              saving={savingAddressType === 'drop'}
-            />
-          </View>
+          {hasPickupLocation || hasDropLocation ? (
+            <View style={styles.contactGrid}>
+              {hasPickupLocation ? (
+                <ContactSummaryCard
+                  title={copy.senderDetails}
+                  subtitle={copy.askedAfterPickup}
+                  icon="person-circle"
+                  iconColor={colors.customer}
+                  name={booking.pickupContactName}
+                  phone={booking.pickupContactPhone}
+                  addressLine={booking.pickupAddressLine}
+                  locationLabel={booking.pickup}
+                  onPress={() => setContactSheetTarget('pickup')}
+                  onSaveAddress={() => saveCurrentAddress('pickup')}
+                  saving={savingAddressType === 'pickup'}
+                />
+              ) : null}
+              {hasDropLocation ? (
+                <ContactSummaryCard
+                  title={copy.receiverDetails}
+                  subtitle={copy.askedAfterDrop}
+                  icon="flag"
+                  iconColor={colors.green}
+                  name={booking.dropContactName}
+                  phone={booking.dropContactPhone}
+                  addressLine={booking.dropAddressLine}
+                  locationLabel={booking.drop}
+                  onPress={() => setContactSheetTarget('drop')}
+                  onSaveAddress={() => saveCurrentAddress('drop')}
+                  saving={savingAddressType === 'drop'}
+                />
+              ) : null}
+            </View>
+          ) : null}
           {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
-          <MapPreview
-            pickup={booking.pickup}
-            drop={booking.drop}
-            extraStops={bookingStopsToLocationPoints(booking.extraStops)}
-            eta={fare?.etaMinutes || selectedVehicle?.etaMinutes || 4}
-          />
+          {hasPickupLocation || hasDropLocation ? (
+            <MapPreview
+              pickup={booking.pickup}
+              drop={booking.drop}
+              extraStops={bookingStopsToLocationPoints(booking.extraStops)}
+              eta={fare?.etaMinutes || selectedVehicle?.etaMinutes || 4}
+            />
+          ) : null}
           <View style={styles.row}>
             <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
             <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromRouteDetails} />

@@ -16,6 +16,14 @@ export function notFound(_req: Request, _res: Response, next: NextFunction) {
 }
 
 export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
+  if (
+    error instanceof SyntaxError &&
+    typeof (error as { status?: unknown }).status === 'number' &&
+    (error as { status?: number }).status === 400
+  ) {
+    return res.status(400).json({ message: 'Invalid JSON request body' });
+  }
+
   if (error instanceof ZodError) {
     return res.status(400).json({
       message: 'Validation failed',

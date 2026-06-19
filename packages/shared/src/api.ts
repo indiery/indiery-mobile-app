@@ -43,9 +43,10 @@ export class IndieryApi {
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> | undefined)
     };
+    const hasContentType = Object.keys(headers).some((key) => key.toLowerCase() === 'content-type');
+    if (options.body !== undefined && !hasContentType) headers['Content-Type'] = 'application/json';
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
 
     const response = await fetch(`${this.baseUrl}${path}`, {
@@ -53,9 +54,26 @@ export class IndieryApi {
       headers
     });
 
-    const payload = await response.json().catch(() => ({}));
+    const responseText = await response.text().catch(() => '');
+    let payload: unknown = {};
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText);
+      } catch {
+        const snippet = responseText.trim().slice(0, 180);
+        throw new ApiError(
+          response.status || 0,
+          snippet ? `Server returned invalid JSON: ${snippet}` : 'Server returned invalid JSON',
+          { raw: responseText }
+        );
+      }
+    }
+
     if (!response.ok) {
-      const message = typeof payload?.message === 'string' ? payload.message : 'Request failed';
+      const message =
+        payload && typeof payload === 'object' && 'message' in payload && typeof payload.message === 'string'
+          ? payload.message
+          : 'Request failed';
       throw new ApiError(response.status, message, payload);
     }
     return payload as T;

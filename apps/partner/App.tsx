@@ -102,6 +102,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
+  const activeOrderIds = (data?.activeOrders ?? []).map((order) => order.id).join('|');
 
   useEffect(() => {
     boot();
@@ -118,7 +120,17 @@ export default function App() {
     } else {
       stopLocationStream();
     }
-  }, [data?.user.partnerProfile?.online, data?.activeOrders[0]?.id]);
+  }, [data?.user.partnerProfile?.online, activeOrderIds]);
+
+  useEffect(() => {
+    if (!data?.activeOrders.length) {
+      setSelectedActiveOrderId(undefined);
+      return;
+    }
+    if (!selectedActiveOrderId || !data.activeOrders.some((order) => order.id === selectedActiveOrderId)) {
+      setSelectedActiveOrderId(data.activeOrders[0].id);
+    }
+  }, [activeOrderIds, selectedActiveOrderId]);
 
   async function boot() {
     setLoading(true);
@@ -186,7 +198,10 @@ export default function App() {
         completedOrders
       };
     });
-    if (['accepted', 'arrived_pickup', 'picked_up', 'in_transit'].includes(order.status)) setTab('active');
+    if (['accepted', 'arrived_pickup', 'picked_up', 'in_transit'].includes(order.status)) {
+      setSelectedActiveOrderId(order.id);
+      setTab('active');
+    }
   }
 
   function connectRealtime(token: string) {
@@ -486,7 +501,7 @@ export default function App() {
     );
   }
 
-  const activeOrder = data.activeOrders[0];
+  const activeOrder = data.activeOrders.find((order) => order.id === selectedActiveOrderId) ?? data.activeOrders[0];
 
   return (
     <SafeAreaView style={styles.shell}>
@@ -528,7 +543,8 @@ export default function App() {
                 if (!data.user.partnerProfile?.online) {
                   await api.setAvailability(true);
                 }
-                await api.acceptOrder(orderId);
+                const accepted = await api.acceptOrder(orderId);
+                setSelectedActiveOrderId(accepted.order.id);
                 await refresh();
                 setTab('active');
                 showToast('Order accepted');
@@ -545,9 +561,11 @@ export default function App() {
         )}
         {tab === 'active' && (
           <ActiveScreen
-            order={activeOrder}
+            orders={data.activeOrders}
+            selectedOrderId={activeOrder?.id}
             busy={busy}
             refresh={refresh}
+            onSelectOrder={setSelectedActiveOrderId}
             onOtp={(orderId, type, otp) =>
               withBusy(async () => {
                 await api.verifyOrderOtp(orderId, type, otp);
@@ -1079,21 +1097,26 @@ function OrdersScreen({
 }
 
 function ActiveScreen({
-  order,
+  orders,
+  selectedOrderId,
   busy,
   refresh,
+  onSelectOrder,
   onOtp,
   onPod,
   onStatus
 }: {
-  order?: Order;
+  orders: Order[];
+  selectedOrderId?: string;
   busy: boolean;
   refresh: () => void;
+  onSelectOrder: (orderId: string) => void;
   onOtp: (orderId: string, type: 'pickup' | 'drop', otp: string) => void;
   onPod: (orderId: string, type: 'pickup' | 'drop') => void;
   onStatus: (orderId: string, status: 'arrived_pickup' | 'picked_up' | 'in_transit' | 'delivered') => void;
 }) {
   const [otp, setOtp] = useState('');
+  const order = orders.find((item) => item.id === selectedOrderId) ?? orders[0];
   if (!order) {
     return (
       <View style={styles.emptyFull}>
@@ -1108,6 +1131,29 @@ function ActiveScreen({
   const needsDropOtp = order.status === 'in_transit' && !order.pod.dropOtpVerified;
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
+      {orders.length > 1 ? (
+        <>
+          <SectionTitle title={`Active Trips (${orders.length})`} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeTripSwitchRow}>
+            {orders.map((item) => {
+              const selected = item.id === order.id;
+              return (
+                <Pressable
+                  key={item.id}
+                  style={[styles.activeTripSwitchCard, selected && styles.activeTripSwitchCardSelected]}
+                  onPress={() => onSelectOrder(item.id)}
+                >
+                  <Text style={[styles.activeTripSwitchTitle, selected && styles.activeTripSwitchTitleSelected]}>{item.orderNo}</Text>
+                  <Text style={styles.activeTripSwitchMeta} numberOfLines={1}>
+                    {item.pickup.label} to {item.drop.label}
+                  </Text>
+                  <Text style={styles.activeTripSwitchMeta}>{statusLabels[item.status]}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </>
+      ) : null}
       <MapPreview pickup={order.pickup.label} drop={order.drop.label} eta={order.etaMinutes} />
       <View style={styles.orderCard}>
         <OrderHeader order={order} />
@@ -1955,6 +2001,12 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '900', color: colors.ink, marginTop: 18, marginBottom: 10 },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
+  activeTripSwitchRow: { gap: 10, paddingBottom: 10 },
+  activeTripSwitchCard: { width: 190, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12 },
+  activeTripSwitchCardSelected: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
+  activeTripSwitchTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  activeTripSwitchTitleSelected: { color: colors.partner },
+  activeTripSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 5 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '900' },
   cardTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },

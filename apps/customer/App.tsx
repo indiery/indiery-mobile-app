@@ -811,6 +811,10 @@ function useOrderCountdown(order?: Order) {
   };
 }
 
+function isActiveOrder(order: Order) {
+  return !['delivered', 'cancelled'].includes(order.status);
+}
+
 function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
   const isBrand = variant === 'brand';
   return (
@@ -887,6 +891,7 @@ export default function App() {
   const [fare, setFare] = useState<FareBreakup | null>(null);
   const [language, setLanguage] = useState<AppLanguage>('en');
   const [tripOtpByOrder, setTripOtpByOrder] = useState<Record<string, { pickup: string; drop: string }>>({});
+  const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
 
   useEffect(() => {
     boot();
@@ -900,6 +905,21 @@ export default function App() {
       setBooking((current) => ({ ...current, vehicleId: data.vehicles[0].id }));
     }
   }, [data?.vehicles.length]);
+
+  const activeOrderIds = (data?.activeOrders ?? []).map((order) => order.id).join('|');
+  useEffect(() => {
+    if (!data) return;
+    const activeOrders = data.activeOrders.length
+      ? data.activeOrders
+      : data.orders.filter(isActiveOrder);
+    if (!activeOrders.length) {
+      setSelectedActiveOrderId(undefined);
+      return;
+    }
+    if (!selectedActiveOrderId || !activeOrders.some((order) => order.id === selectedActiveOrderId)) {
+      setSelectedActiveOrderId(activeOrders[0].id);
+    }
+  }, [activeOrderIds, data?.orders.length, selectedActiveOrderId]);
 
   async function boot() {
     setLoading(true);
@@ -934,13 +954,17 @@ export default function App() {
     setData((current) => {
       if (!current) return current;
       const orders = [order, ...current.orders.filter((item) => item.id !== order.id)];
-      const activeOrder = ['delivered', 'cancelled'].includes(order.status) ? undefined : order;
+      const activeOrders = isActiveOrder(order)
+        ? [order, ...current.activeOrders.filter((item) => item.id !== order.id)]
+        : current.activeOrders.filter((item) => item.id !== order.id);
       return {
         ...current,
-        activeOrder: activeOrder ?? current.activeOrder,
+        activeOrder: activeOrders[0],
+        activeOrders,
         orders
       };
     });
+    if (isActiveOrder(order)) setSelectedActiveOrderId(order.id);
   }
 
   function connectRealtime(token: string) {
@@ -1247,9 +1271,11 @@ export default function App() {
               const result = await api.cancelOrder(order.id, 'Cancelled by customer');
               setData((current) => {
                 if (!current || !result.order) return current;
+                const activeOrders = current.activeOrders.filter((item) => item.id !== result.order?.id);
                 return {
                   ...current,
-                  activeOrder: undefined,
+                  activeOrder: activeOrders[0],
+                  activeOrders,
                   orders: [result.order, ...current.orders.filter((item) => item.id !== result.order?.id)]
                 };
               });
@@ -1294,7 +1320,15 @@ export default function App() {
     );
   }
 
-  const activeOrder = data.activeOrder || data.orders.find((order) => !['delivered', 'cancelled'].includes(order.status));
+  const activeOrders = data.activeOrders.length ? data.activeOrders : data.orders.filter(isActiveOrder);
+  const activeOrder =
+    activeOrders.find((order) => order.id === selectedActiveOrderId) ??
+    data.activeOrder ??
+    activeOrders[0];
+  const openActiveOrder = (orderId?: string) => {
+    if (orderId) setSelectedActiveOrderId(orderId);
+    setTab('orders');
+  };
 
   return (
     <LanguageContext.Provider value={language}>
@@ -1315,8 +1349,9 @@ export default function App() {
           <HomeScreen
             data={data}
             activeOrder={activeOrder}
+            activeOrders={activeOrders}
             onBook={() => setTab('book')}
-            onTrack={() => setTab('orders')}
+            onTrack={openActiveOrder}
           />
         )}
         {tab === 'book' && (
@@ -1339,11 +1374,13 @@ export default function App() {
         {tab === 'orders' && (
           <OrdersScreen
             orders={data.orders}
+            activeOrders={activeOrders}
             activeOrder={activeOrder}
             tripOtp={activeOrder ? tripOtpByOrder[activeOrder.id] : undefined}
             busy={busy}
             onBook={() => setTab('book')}
             onRefresh={refresh}
+            onSelectActiveOrder={setSelectedActiveOrderId}
             onShare={activeOrder ? () => shareActiveOrder(activeOrder) : undefined}
             onCancel={activeOrder ? () => cancelActiveOrder(activeOrder) : undefined}
           />
@@ -1391,7 +1428,7 @@ export default function App() {
         )}
       </View>
 
-      <BottomTabs active={tab} onChange={setTab} activeOrder={Boolean(activeOrder)} />
+      <BottomTabs active={tab} onChange={setTab} activeOrder={activeOrders.length > 0} />
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
     </SafeAreaView>
     </LanguageContext.Provider>
@@ -1735,16 +1772,19 @@ function BrandLogo({ title, accentColor }: { title: string; accentColor: string 
 function HomeScreen({
   data,
   activeOrder,
+  activeOrders,
   onBook,
   onTrack
 }: {
   data: CustomerBootstrap;
   activeOrder?: Order;
+  activeOrders: Order[];
   onBook: () => void;
-  onTrack: () => void;
+  onTrack: (orderId?: string) => void;
 }) {
   const copy = useCopy();
   const lastOrder = data.orders[0];
+  const recentOrders = data.orders.filter((order) => !activeOrders.some((active) => active.id === order.id));
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
@@ -1789,20 +1829,27 @@ function HomeScreen({
 
       <View style={styles.statRow}>
         <StatCard title={copy.orders} value={String(data.orders.length)} tone="purple" />
-        <StatCard title={copy.active} value={activeOrder ? '1' : '0'} tone="green" />
+        <StatCard title={copy.active} value={String(activeOrders.length)} tone="green" />
         <StatCard title={copy.coins} value={String(data.user.customerProfile?.coins ?? 0)} tone="amber" />
       </View>
 
-      {activeOrder ? (
+      {activeOrders.length ? (
         <View>
           <SectionTitle title={copy.activeDelivery} />
-          <OrderCard order={activeOrder} />
+          {activeOrders.slice(0, 3).map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              selected={order.id === activeOrder?.id}
+              onPress={() => onTrack(order.id)}
+            />
+          ))}
         </View>
       ) : null}
 
       <SectionTitle title={copy.recentOrders} />
-      {data.orders.length ? (
-        data.orders.slice(0, 5).map((order) => (
+      {recentOrders.length ? (
+        recentOrders.slice(0, 5).map((order) => (
           <OrderCard key={order.id} order={order} />
         ))
       ) : (
@@ -2894,26 +2941,31 @@ function MapLocationPicker({
 
 function OrdersScreen({
   orders,
+  activeOrders,
   activeOrder,
   tripOtp,
   busy,
   onBook,
   onRefresh,
+  onSelectActiveOrder,
   onShare,
   onCancel
 }: {
   orders: Order[];
+  activeOrders: Order[];
   activeOrder?: Order;
   tripOtp?: { pickup: string; drop: string };
   busy: boolean;
   onBook: () => void;
   onRefresh: () => void;
+  onSelectActiveOrder: (orderId: string) => void;
   onShare?: () => void;
   onCancel?: () => void;
 }) {
   const copy = useCopy();
   const language = useLanguage();
-  const pastOrders = activeOrder ? orders.filter((order) => order.id !== activeOrder.id) : orders;
+  const activeOrderIds = new Set(activeOrders.map((order) => order.id));
+  const pastOrders = orders.filter((order) => !activeOrderIds.has(order.id));
   const countdown = useOrderCountdown(activeOrder);
 
   return (
@@ -2930,7 +2982,29 @@ function OrdersScreen({
 
       {activeOrder ? (
         <View>
-          <SectionTitle title={copy.activeDelivery} />
+          <View style={styles.between}>
+            <SectionTitle title={copy.activeDelivery} />
+            <Text style={styles.mutedSmall}>{activeOrders.length} active</Text>
+          </View>
+          {activeOrders.length > 1 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeOrderSwitchRow}>
+              {activeOrders.map((order) => {
+                const selected = order.id === activeOrder.id;
+                return (
+                  <Pressable
+                    key={order.id}
+                    style={[styles.activeOrderSwitchCard, selected && styles.activeOrderSwitchCardActive]}
+                    onPress={() => onSelectActiveOrder(order.id)}
+                  >
+                    <Text style={[styles.activeOrderSwitchTitle, selected && styles.activeOrderSwitchTitleActive]}>{order.orderNo}</Text>
+                    <Text style={styles.activeOrderSwitchMeta} numberOfLines={1}>
+                      {order.pickup.label} to {order.drop.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : null}
           <MapPreview
             pickup={activeOrder.pickup.label}
             drop={activeOrder.drop.label}
@@ -3842,11 +3916,11 @@ function StatCard({ title, value, tone }: { title: string; value: string; tone: 
   );
 }
 
-function OrderCard({ order }: { order: Order }) {
+function OrderCard({ order, onPress, selected = false }: { order: Order; onPress?: () => void; selected?: boolean }) {
   const copy = useCopy();
   const language = useLanguage();
-  return (
-    <View style={styles.orderCard}>
+  const content = (
+    <>
       <View style={styles.between}>
         <Text style={styles.orderNo}>{order.orderNo}</Text>
         <Badge label={statusLabel(language, order.status)} />
@@ -3883,6 +3957,20 @@ function OrderCard({ order }: { order: Order }) {
         <Text style={styles.orderMetaText}>{order.paymentStatus.toUpperCase()}</Text>
         <Text style={styles.orderMetaText}>{order.etaMinutes} min {copy.eta}</Text>
       </View>
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable style={[styles.orderCard, selected && styles.orderCardSelected]} onPress={onPress}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.orderCard, selected && styles.orderCardSelected]}>
+      {content}
     </View>
   );
 }
@@ -4280,6 +4368,13 @@ const styles = StyleSheet.create({
   compactOtpText: { color: colors.customer, fontSize: 18, fontWeight: '900', marginTop: 2 },
   noActiveOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 8 },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
+  orderCardSelected: { borderColor: colors.customer, backgroundColor: colors.customerLight },
+  activeOrderSwitchRow: { gap: 10, paddingBottom: 10 },
+  activeOrderSwitchCard: { width: 190, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12 },
+  activeOrderSwitchCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
+  activeOrderSwitchTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  activeOrderSwitchTitleActive: { color: colors.customer },
+  activeOrderSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 5 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '800' },
   badge: { backgroundColor: colors.customerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },

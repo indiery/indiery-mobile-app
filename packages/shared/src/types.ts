@@ -240,6 +240,7 @@ export interface CustomerBootstrap {
   wallet: CustomerWallet;
   vehicles: Vehicle[];
   activeOrder?: Order;
+  activeOrders: Order[];
   orders: Order[];
 }
 

@@ -256,13 +256,15 @@ customerRouter.get(
       .populate('vehicle')
       .populate('partner')
       .populate('customer');
-    const activeOrder = orders.find((order) => !['delivered', 'cancelled'].includes(order.status));
+    const activeOrders = orders.filter((order) => !['delivered', 'cancelled'].includes(order.status));
+    const activeOrder = activeOrders[0];
     const wallet = await getCustomerWallet(user._id);
     res.json({
       user: serializeUser(user),
       wallet,
       vehicles: vehicles.map(serializeVehicle),
       activeOrder: activeOrder ? serializeOrder(activeOrder) : undefined,
+      activeOrders: activeOrders.map(serializeOrder),
       orders: orders.map(serializeOrder)
     });
   })

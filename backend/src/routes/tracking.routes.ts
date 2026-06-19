@@ -1,9 +1,19 @@
 import { Router } from 'express';
 import { asyncRoute } from '../middleware/error';
 import { Order } from '../models/Order';
-import { statusLabels } from '@indiery/shared';
 
 export const trackingRouter = Router();
+
+const statusLabels: Record<string, string> = {
+  searching: 'Searching',
+  offered: 'Available',
+  accepted: 'Accepted',
+  arrived_pickup: 'At pickup',
+  picked_up: 'Picked up',
+  in_transit: 'In transit',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled'
+};
 
 function escapeHtml(value: string) {
   return value

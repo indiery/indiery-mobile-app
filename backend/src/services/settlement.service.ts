@@ -1,8 +1,16 @@
 import { OrderDocument } from '../models/Order';
 
+function orderTimelineTime(order: OrderDocument, key: string) {
+  const at = order.timeline?.find((item) => item.key === key)?.at;
+  if (!at) return undefined;
+  const time = new Date(at).getTime();
+  return Number.isNaN(time) ? undefined : time;
+}
+
 export function isOrderDelayed(order: OrderDocument, deliveredAt = new Date()) {
-  const createdAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
-  const deadline = createdAt.getTime() + order.etaMinutes * 60 * 1000;
+  const pickedUpAt = orderTimelineTime(order, 'picked_up');
+  const fallbackStartAt = order.createdAt instanceof Date ? order.createdAt.getTime() : new Date(order.createdAt).getTime();
+  const deadline = (pickedUpAt ?? fallbackStartAt) + order.etaMinutes * 60 * 1000;
   return deliveredAt.getTime() > deadline;
 }
 

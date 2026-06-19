@@ -5,11 +5,11 @@ import { ApiError } from '../middleware/error';
 export interface PaymentIntentInput {
   orderNo: string;
   amount: number;
-  paymentMode: 'upi' | 'card' | 'netbanking' | 'cash';
+  paymentMode: 'upi' | 'card' | 'netbanking' | 'cash' | 'wallet';
 }
 
 export interface PaymentIntent {
-  provider: 'razorpay' | 'cash';
+  provider: 'razorpay' | 'cash' | 'wallet';
   reference: string;
   status: 'pending' | 'paid';
   amount: number;
@@ -27,6 +27,16 @@ function requireRazorpayConfig() {
 }
 
 export async function createPaymentIntent(input: PaymentIntentInput): Promise<PaymentIntent> {
+  if (input.paymentMode === 'wallet') {
+    return {
+      provider: 'wallet',
+      reference: `wallet_${input.orderNo}`,
+      status: 'paid',
+      amount: input.amount,
+      currency: 'INR'
+    };
+  }
+
   if (input.paymentMode === 'cash') {
     return {
       provider: 'cash',

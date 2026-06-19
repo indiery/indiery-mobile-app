@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Order } from '../models/Order';
 import { User } from '../models/User';
+import { WalletLedger } from '../models/WalletLedger';
 import { ApiError, asyncRoute } from '../middleware/error';
 import { serializeOrder } from '../services/serialize.service';
 import { sendPush } from '../services/notification.service';
@@ -31,6 +32,24 @@ async function notifyPartners(orderId: string) {
   emitPartnerQueueChanged();
 }
 
+async function settleWalletTopup(razorpayOrderId: string) {
+  const ledger = await WalletLedger.findOneAndUpdate(
+    {
+      reference: razorpayOrderId,
+      kind: 'credit',
+      bucket: 'cash',
+      settled: false
+    },
+    {
+      title: 'Wallet top-up',
+      settled: true
+    },
+    { new: true }
+  );
+  if (!ledger) return;
+  await User.updateOne({ _id: ledger.user }, { $inc: { 'customerProfile.walletBalance': ledger.amount } });
+}
+
 paymentRouter.post(
   '/razorpay/webhook',
   asyncRoute(async (req, res) => {
@@ -56,7 +75,12 @@ paymentRouter.post(
     if (!razorpayOrderId) return res.json({ ok: true });
 
     const order = await Order.findOne({ paymentProvider: 'razorpay', paymentReference: razorpayOrderId });
-    if (!order) return res.json({ ok: true });
+    if (!order) {
+      if (event.event === 'payment.captured' || event.payload?.payment?.entity?.status === 'captured') {
+        await settleWalletTopup(razorpayOrderId);
+      }
+      return res.json({ ok: true });
+    }
 
     const paymentStatus = event.payload?.payment?.entity?.status;
     if (event.event === 'payment.captured' || paymentStatus === 'captured') {
@@ -65,6 +89,16 @@ paymentRouter.post(
       await order.save();
       if (!wasPaid && order.fare.coins > 0) {
         await User.updateOne({ _id: order.customer }, { $inc: { 'customerProfile.coins': -order.fare.coins } });
+        await WalletLedger.create({
+          user: order.customer,
+          order: order._id,
+          amount: order.fare.coins,
+          kind: 'debit',
+          bucket: 'coins',
+          title: `Coins used ${order.orderNo}`,
+          reference: order.orderNo,
+          settled: true
+        });
       }
       const fullOrder = await populatedOrder(String(order._id));
       if (fullOrder) {

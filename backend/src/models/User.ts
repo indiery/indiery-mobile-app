@@ -43,7 +43,8 @@ const PartnerProfileSchema = new Schema(
 const CustomerProfileSchema = new Schema(
   {
     coins: { type: Number, default: 0 },
-    savedAddresses: [{ type: String }]
+    walletBalance: { type: Number, default: 0 },
+    savedAddresses: [{ type: Schema.Types.Mixed }]
   },
   { _id: false }
 );

@@ -8,7 +8,43 @@ function idOf(value: unknown) {
   return String(value || '');
 }
 
+function serializeSavedAddresses(savedAddresses: unknown[] = []) {
+  return savedAddresses
+    .map((item, index) => {
+      if (typeof item === 'string') {
+        return {
+          id: `legacy-${index}`,
+          label: item,
+          address: item,
+          type: 'other' as const
+        };
+      }
+      const address = (item ?? {}) as Record<string, unknown>;
+      const label = typeof address.label === 'string' ? address.label : typeof address.address === 'string' ? address.address : '';
+      const fullAddress = typeof address.address === 'string' ? address.address : label;
+      if (!label || !fullAddress) return undefined;
+      return {
+        id: typeof address.id === 'string' ? address.id : `saved-${index}`,
+        label,
+        address: fullAddress,
+        addressLine: typeof address.addressLine === 'string' ? address.addressLine : undefined,
+        lat: typeof address.lat === 'number' ? address.lat : undefined,
+        lng: typeof address.lng === 'number' ? address.lng : undefined,
+        type: address.type === 'home' || address.type === 'work' || address.type === 'other' ? address.type : 'other'
+      };
+    })
+    .filter(Boolean);
+}
+
 export function serializeUser(user: UserDocument) {
+  const customerProfile = user.customerProfile
+    ? {
+        coins: user.customerProfile.coins ?? 0,
+        walletBalance: user.customerProfile.walletBalance ?? 0,
+        savedAddresses: serializeSavedAddresses(user.customerProfile.savedAddresses as unknown[] | undefined)
+      }
+    : undefined;
+
   return {
     id: String(user._id),
     role: user.role,
@@ -17,7 +53,7 @@ export function serializeUser(user: UserDocument) {
     phone: user.phone,
     email: user.email,
     city: user.city,
-    customerProfile: user.customerProfile,
+    customerProfile,
     partnerProfile: user.partnerProfile
   };
 }
@@ -52,6 +88,7 @@ export function serializeOrder(order: OrderDocument) {
     partner: partner?.name ? serializeUser(partner) : undefined,
     vehicle: vehicle?.name ? serializeVehicle(vehicle) : { id: idOf(order.vehicle) },
     pickup: order.pickup,
+    extraStops: order.extraStops ?? [],
     drop: order.drop,
     goodsType: order.goodsType,
     weightKg: order.weightKg,

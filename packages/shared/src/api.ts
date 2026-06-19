@@ -2,6 +2,7 @@ import type {
   CloudinarySignature,
   CloudinaryUploadResult,
   CreateOrderInput,
+  CustomerWallet,
   CustomerBootstrap,
   FareBreakup,
   LocationDetails,
@@ -11,6 +12,7 @@ import type {
   PartnerBootstrap,
   PartnerLocation,
   Role,
+  SavedAddress,
   UploadPurpose,
   UserProfile,
   Vehicle
@@ -100,12 +102,26 @@ export class IndieryApi {
     });
   }
 
+  addSavedAddress(input: Omit<SavedAddress, 'id'>) {
+    return this.request<{ user: UserProfile; savedAddress: SavedAddress }>('/customer/saved-addresses', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  deleteSavedAddress(addressId: string) {
+    return this.request<{ user: UserProfile }>('/customer/saved-addresses/' + encodeURIComponent(addressId), {
+      method: 'DELETE'
+    });
+  }
+
   estimate(input: {
     pickup: string;
     drop: string;
     vehicleId: string;
     coins?: number;
     weightKg?: number;
+    extraStops?: Array<{ label: string; address?: string; lat?: number; lng?: number }>;
     pickupLat?: number;
     pickupLng?: number;
     dropLat?: number;
@@ -154,6 +170,28 @@ export class IndieryApi {
     return this.request<{ user: UserProfile; addedCoins: number }>('/customer/wallet/coupon', {
       method: 'POST',
       body: JSON.stringify({ code })
+    });
+  }
+
+  customerWallet() {
+    return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet');
+  }
+
+  createWalletTopup(input: { amount: number; paymentMode: 'upi' | 'card' | 'netbanking' }) {
+    return this.request<{ wallet: CustomerWallet; paymentIntent: PaymentIntent }>('/customer/wallet/topup', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  verifyWalletTopup(input: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet/topup/verify', {
+      method: 'POST',
+      body: JSON.stringify(input)
     });
   }
 

@@ -6,6 +6,7 @@ const WalletLedgerSchema = new Schema(
     order: { type: Schema.Types.ObjectId, ref: 'Order' },
     amount: { type: Number, required: true },
     kind: { type: String, enum: ['credit', 'debit'], required: true },
+    bucket: { type: String, enum: ['cash', 'coins'], default: 'cash', index: true },
     title: { type: String, required: true },
     reference: { type: String },
     settled: { type: Boolean, default: false }

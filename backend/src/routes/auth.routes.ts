@@ -29,6 +29,7 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
       city: 'Lucknow',
       customerProfile: {
         coins: 0,
+        walletBalance: 0,
         savedAddresses: []
       }
     });

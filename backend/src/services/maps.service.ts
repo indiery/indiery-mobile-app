@@ -4,6 +4,12 @@ import { stableDistanceKm } from './fare.service';
 export interface DistanceInput {
   pickup: string;
   drop: string;
+  extraStops?: Array<{
+    label: string;
+    address?: string;
+    lat?: number;
+    lng?: number;
+  }>;
   pickupLat?: number;
   pickupLng?: number;
   dropLat?: number;
@@ -28,6 +34,14 @@ export interface LocationDetailsResult {
 function coordinatePair(lat?: number, lng?: number) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return undefined;
   return `${lat},${lng}`;
+}
+
+function routePointValue(point: { label: string; address?: string; lat?: number; lng?: number }) {
+  return coordinatePair(point.lat, point.lng) ?? point.address ?? point.label;
+}
+
+function routePointLabel(point: { label: string; address?: string }) {
+  return point.address ?? point.label;
 }
 
 function googleMapsUrl(path: string, params: Record<string, string>) {
@@ -120,27 +134,49 @@ export async function resolveLocationDetails(placeId: string, sessionToken?: str
 }
 
 export async function resolveDistanceKm(input: DistanceInput) {
-  const fallback = stableDistanceKm(input.pickup, input.drop);
-  if (!env.GOOGLE_MAPS_API_KEY) return fallback;
-
-  const origin = coordinatePair(input.pickupLat, input.pickupLng) ?? input.pickup;
-  const destination = coordinatePair(input.dropLat, input.dropLng) ?? input.drop;
-  const params = new URLSearchParams({
-    origins: origin,
-    destinations: destination,
-    units: 'metric',
-    key: env.GOOGLE_MAPS_API_KEY
-  });
+  const stops = (input.extraStops ?? []).filter((stop) => stop.label.trim().length > 1);
+  const fallbackPoints = [input.pickup, ...stops.map(routePointLabel), input.drop];
+  const fallback =
+    fallbackPoints.length <= 2
+      ? stableDistanceKm(input.pickup, input.drop)
+      : Number(
+          fallbackPoints
+            .slice(0, -1)
+            .reduce((total, point, index) => total + stableDistanceKm(point, fallbackPoints[index + 1] ?? point), 0)
+            .toFixed(1)
+        );
+  const mapsKey = env.GOOGLE_MAPS_API_KEY;
+  if (!mapsKey) return fallback;
 
   try {
-    const response = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`);
-    if (!response.ok) return fallback;
-    const payload = (await response.json()) as {
-      rows?: Array<{ elements?: Array<{ status?: string; distance?: { value?: number } }> }>;
-    };
-    const meters = payload.rows?.[0]?.elements?.[0]?.distance?.value;
-    if (!meters || payload.rows?.[0]?.elements?.[0]?.status !== 'OK') return fallback;
-    return Number(Math.max(0.5, meters / 1000).toFixed(1));
+    const routePoints = [
+      coordinatePair(input.pickupLat, input.pickupLng) ?? input.pickup,
+      ...stops.map(routePointValue),
+      coordinatePair(input.dropLat, input.dropLng) ?? input.drop
+    ];
+    const legDistances = await Promise.all(
+      routePoints.slice(0, -1).map(async (origin, index) => {
+        const destination = routePoints[index + 1];
+        if (!destination) return undefined;
+        const params = new URLSearchParams({
+          origins: origin,
+          destinations: destination,
+          units: 'metric',
+          key: mapsKey
+        });
+        const response = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`);
+        if (!response.ok) return undefined;
+        const payload = (await response.json()) as {
+          rows?: Array<{ elements?: Array<{ status?: string; distance?: { value?: number } }> }>;
+        };
+        const element = payload.rows?.[0]?.elements?.[0];
+        const meters = element?.distance?.value;
+        if (!meters || element?.status !== 'OK') return undefined;
+        return Math.max(0.5, meters / 1000);
+      })
+    );
+    if (legDistances.some((distance) => typeof distance !== 'number')) return fallback;
+    return Number(legDistances.reduce<number>((total, distance) => total + (distance ?? 0), 0).toFixed(1));
   } catch {
     return fallback;
   }

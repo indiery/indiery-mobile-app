@@ -10,8 +10,9 @@ export type OrderStatus =
   | 'delivered'
   | 'cancelled';
 
-export type PaymentMode = 'upi' | 'card' | 'netbanking' | 'cash';
-export type PaymentProvider = 'razorpay' | 'cash';
+export type PaymentMode = 'upi' | 'card' | 'netbanking' | 'cash' | 'wallet';
+export type PaymentProvider = 'razorpay' | 'cash' | 'wallet';
+export type WalletLedgerBucket = 'cash' | 'coins';
 export type UploadPurpose = 'pod' | 'kyc' | 'profile';
 
 export interface PartnerLocation {
@@ -32,7 +33,8 @@ export interface UserProfile {
   city: string;
   customerProfile?: {
     coins: number;
-    savedAddresses: string[];
+    walletBalance: number;
+    savedAddresses: SavedAddress[];
   };
   partnerProfile?: {
     vehicleId?: string;
@@ -46,6 +48,16 @@ export interface UserProfile {
     docUrls?: Partial<Record<'selfie' | 'pan' | 'drivingLicence' | 'rc' | 'insurance' | 'bank', string>>;
     currentLocation?: PartnerLocation;
   };
+}
+
+export interface SavedAddress {
+  id: string;
+  label: string;
+  address: string;
+  addressLine?: string;
+  lat?: number;
+  lng?: number;
+  type?: 'home' | 'work' | 'other';
 }
 
 export interface Vehicle {
@@ -124,6 +136,7 @@ export interface Order {
   partner?: UserProfile;
   vehicle: Vehicle;
   pickup: LocationPoint;
+  extraStops: LocationPoint[];
   drop: LocationPoint;
   goodsType: string;
   weightKg: number;
@@ -192,7 +205,16 @@ export interface LedgerItem {
   kind: 'credit' | 'debit';
   title: string;
   reference?: string;
+  bucket?: WalletLedgerBucket;
+  settled?: boolean;
   createdAt: string;
+}
+
+export interface CustomerWallet {
+  balance: number;
+  coins: number;
+  ledger: LedgerItem[];
+  coinLedger: LedgerItem[];
 }
 
 export interface PartnerStats {
@@ -205,6 +227,7 @@ export interface PartnerStats {
 
 export interface CustomerBootstrap {
   user: UserProfile;
+  wallet: CustomerWallet;
   vehicles: Vehicle[];
   activeOrder?: Order;
   orders: Order[];
@@ -230,6 +253,7 @@ export interface CreateOrderInput {
   pickupContactPhone?: string;
   dropContactName?: string;
   dropContactPhone?: string;
+  extraStops?: LocationPoint[];
   pickupLat?: number;
   pickupLng?: number;
   dropLat?: number;

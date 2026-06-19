@@ -11,6 +11,7 @@ import { mapsRouter } from './routes/maps.routes';
 import { uploadRouter } from './routes/upload.routes';
 import { paymentRouter } from './routes/payment.routes';
 import { legalRouter } from './routes/legal.routes';
+import { trackingRouter } from './routes/tracking.routes';
 import { errorHandler, notFound } from './middleware/error';
 
 const requestBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -52,6 +53,7 @@ export function createApp() {
   });
 
   app.use(legalRouter);
+  app.use(trackingRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/meta', metaRouter);
   app.use('/api/maps', mapsRouter);

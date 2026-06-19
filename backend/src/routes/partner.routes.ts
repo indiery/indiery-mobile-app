@@ -315,6 +315,7 @@ partnerRouter.post(
         order: order._id,
         amount: settlement.partnerCredit,
         kind: 'credit',
+        bucket: 'cash',
         title: settlement.delayed ? `Order ${order.orderNo} delayed payout` : `Order ${order.orderNo} on-time payout`,
         reference: order.orderNo
       });
@@ -329,8 +330,10 @@ partnerRouter.post(
           order: order._id,
           amount: settlement.customerRefundCoins,
           kind: 'credit',
+          bucket: 'coins',
           title: `Late delivery refund ${order.orderNo}`,
-          reference: order.orderNo
+          reference: order.orderNo,
+          settled: true
         });
       }
     }

@@ -1,6 +1,10 @@
 import type { OrderDocument } from '../models/Order';
 
 type TimelineState = 'done' | 'active' | 'pending';
+type ExistingTimelineItem = {
+  key?: string;
+  at?: Date | string | null;
+};
 
 const baseTimeline = [
   ['created', 'Order placed', 'Customer booking confirmed'],
@@ -11,7 +15,15 @@ const baseTimeline = [
   ['delivered', 'Delivered', 'Delivery completed']
 ] as const;
 
-export function createTimeline(status: string) {
+function existingTimelineDates(timeline: ExistingTimelineItem[] = []) {
+  return new Map(
+    timeline
+      .filter((item) => item.key && item.at)
+      .map((item) => [String(item.key), item.at])
+  );
+}
+
+export function createTimeline(status: string, existingTimeline: ExistingTimelineItem[] = []) {
   const activeKeyByStatus: Record<string, string> = {
     searching: 'assigned',
     offered: 'assigned',
@@ -35,6 +47,8 @@ export function createTimeline(status: string) {
 
   const doneIndex = doneUntil[status] ?? 0;
   const activeKey = activeKeyByStatus[status];
+  const existingDates = existingTimelineDates(existingTimeline);
+  const now = new Date();
 
   return baseTimeline.map(([key, title, note], index) => {
     let state: TimelineState = 'pending';
@@ -45,12 +59,12 @@ export function createTimeline(status: string) {
       title,
       note,
       state,
-      at: state === 'done' ? new Date() : undefined
+      at: state === 'done' ? existingDates.get(key) ?? now : undefined
     };
   });
 }
 
 export function setOrderStatusTimeline(order: OrderDocument, status: string) {
   order.set('status', status);
-  order.set('timeline', createTimeline(status));
+  order.set('timeline', createTimeline(status, order.timeline ?? []));
 }

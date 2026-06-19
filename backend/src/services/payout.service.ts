@@ -17,6 +17,7 @@ export async function requestPartnerPayout(partnerId: string, amount: number) {
     user: partner._id,
     amount,
     kind: 'debit',
+    bucket: 'cash',
     title: 'Payout to bank',
     reference
   });

@@ -87,6 +87,7 @@ const OrderSchema = new Schema(
     partner: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     vehicle: { type: Schema.Types.ObjectId, ref: 'Vehicle', required: true },
     pickup: { type: PointSchema, required: true },
+    extraStops: { type: [PointSchema], default: [] },
     drop: { type: PointSchema, required: true },
     goodsType: { type: String, required: true },
     weightKg: { type: Number, required: true },
@@ -94,7 +95,7 @@ const OrderSchema = new Schema(
     fare: { type: FareSchema, required: true },
     paymentMode: {
       type: String,
-      enum: ['upi', 'card', 'netbanking', 'cash'],
+      enum: ['upi', 'card', 'netbanking', 'cash', 'wallet'],
       default: 'upi'
     },
     paymentStatus: {
@@ -102,7 +103,7 @@ const OrderSchema = new Schema(
       enum: ['pending', 'paid', 'failed', 'refunded'],
       default: 'pending'
     },
-    paymentProvider: { type: String, enum: ['razorpay', 'cash'], default: 'razorpay' },
+    paymentProvider: { type: String, enum: ['razorpay', 'cash', 'wallet'], default: 'razorpay' },
     paymentReference: { type: String },
     status: {
       type: String,

@@ -4,9 +4,9 @@ import { User } from '../models/User';
 import { WalletLedger } from '../models/WalletLedger';
 import { ApiError, asyncRoute } from '../middleware/error';
 import { serializeOrder } from '../services/serialize.service';
-import { sendPush } from '../services/notification.service';
 import { verifyRazorpayWebhookSignature } from '../services/payment.service';
-import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
+import { emitOrderChanged } from '../realtime/socket';
+import { offerOrderToNextDrivers } from '../services/order-offers.service';
 
 export const paymentRouter = Router();
 
@@ -15,31 +15,6 @@ async function populatedOrder(orderId: string) {
     .populate('vehicle')
     .populate('partner')
     .populate('customer');
-}
-
-async function notifyPartners(orderId: string) {
-  const order = await populatedOrder(orderId);
-  if (!order) return;
-  const vehicleId =
-    order.vehicle && typeof order.vehicle === 'object' && '_id' in order.vehicle
-      ? String(order.vehicle._id)
-      : String(order.vehicle || '');
-  const onlinePartners = await User.find({
-    role: 'partner',
-    'partnerProfile.online': true,
-    'partnerProfile.kycStatus': 'verified',
-    'partnerProfile.walletBalance': { $gte: 200 },
-    'partnerProfile.vehicleId': vehicleId
-  }).select('expoPushTokens');
-  await Promise.all(
-    onlinePartners.map((partner) =>
-      sendPush(partner.expoPushTokens, 'New Indiery order', `${order.pickup.label} to ${order.drop.label}`, {
-        orderId: String(order._id),
-        orderNo: order.orderNo
-      })
-    )
-  );
-  emitPartnerQueueChanged();
 }
 
 async function settleWalletTopup(razorpayOrderId: string) {
@@ -120,7 +95,7 @@ paymentRouter.post(
         const payload = serializeOrder(fullOrder);
         emitOrderChanged(payload, String(order.customer), order.partner ? String(order.partner) : undefined);
       }
-      if (!wasPaid) await notifyPartners(String(order._id));
+      if (!wasPaid) await offerOrderToNextDrivers(order._id, { reason: 'payment' });
       return res.json({ ok: true });
     }
 

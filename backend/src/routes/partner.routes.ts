@@ -16,15 +16,18 @@ import { sendPush } from '../services/notification.service';
 import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { initialsFromName } from '../services/profile.service';
+import {
+  advanceExpiredOrderOffers,
+  MIN_PARTNER_WALLET_BALANCE,
+  rejectDriverOffer
+} from '../services/order-offers.service';
 
 export const partnerRouter = Router();
 
 partnerRouter.use(requireAuth(['partner']));
 
-const MIN_PARTNER_WALLET_BALANCE = 200;
-
 const baseAvailableOrderQuery = {
-  status: { $in: ['searching', 'offered'] },
+  status: 'offered',
   $or: [{ paymentStatus: 'paid' }, { paymentMode: 'cash' }]
 };
 
@@ -70,9 +73,9 @@ function orderTimelineTime(order: Awaited<ReturnType<typeof loadOrderForPartner>
   return Number.isNaN(time) ? undefined : time;
 }
 
-function availableOrderQueryForVehicle(vehicleId?: string) {
-  if (!vehicleId) return undefined;
-  return { ...baseAvailableOrderQuery, vehicle: vehicleId };
+function availableOrderQueryForVehicle(vehicleId?: string, partnerId?: string) {
+  if (!vehicleId || !partnerId) return undefined;
+  return { ...baseAvailableOrderQuery, vehicle: vehicleId, offeredPartnerIds: partnerId };
 }
 
 function partnerWalletBalance(partner: Awaited<ReturnType<typeof loadPartner>>) {
@@ -132,7 +135,10 @@ partnerRouter.get(
     const partner = await loadPartner(req.auth!.userId);
     const vehicleId = partnerVehicleId(partner);
     const canReceiveOrders = partner.partnerProfile?.kycStatus === 'verified' && hasMinimumPartnerWallet(partner);
-    const availableQuery = canReceiveOrders ? availableOrderQueryForVehicle(vehicleId) : undefined;
+    if (canReceiveOrders && vehicleId) {
+      await advanceExpiredOrderOffers(vehicleId).catch(() => undefined);
+    }
+    const availableQuery = canReceiveOrders ? availableOrderQueryForVehicle(vehicleId, req.auth!.userId) : undefined;
     const stats = await getPartnerStats(req.auth!.userId, availableQuery);
     const [vehicles, availableOrders, activeOrders, completedOrders] = await Promise.all([
       Vehicle.find({ active: true }).sort({ capacityKg: 1 }),
@@ -203,6 +209,9 @@ partnerRouter.post(
       { new: true }
     );
     if (!partner) throw new ApiError(404, 'Partner not found');
+    if (body.online) {
+      await advanceExpiredOrderOffers(idOf(partner.partnerProfile?.vehicleId)).catch(() => undefined);
+    }
     emitPartnerQueueChanged();
     res.json({ user: serializeUser(partner) });
   })
@@ -240,6 +249,9 @@ partnerRouter.post(
       { new: true }
     );
     if (!partner) throw new ApiError(404, 'Partner not found');
+    if (partner.partnerProfile?.online) {
+      await advanceExpiredOrderOffers(idOf(partner.partnerProfile?.vehicleId)).catch(() => undefined);
+    }
 
     const activeOrders = await Order.find({
       partner: req.auth!.userId,
@@ -283,6 +295,14 @@ partnerRouter.post(
       const fullOrder = await loadOrderForPartner(String(order._id));
       return res.json({ order: fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) } });
     }
+    const activeOrder = await Order.findOne({
+      _id: { $ne: order._id },
+      partner: partner._id,
+      status: { $in: activeStatuses }
+    });
+    if (activeOrder) {
+      throw new ApiError(400, 'Complete your active order before accepting another');
+    }
 
     if (!['searching', 'offered'].includes(order.status)) {
       throw new ApiError(404, 'Order no longer available');
@@ -290,21 +310,51 @@ partnerRouter.post(
     if (order.partner && String(order.partner) !== req.auth!.userId) {
       throw new ApiError(409, 'Order already accepted by another partner');
     }
-
-    order.partner = partner._id;
-    setOrderStatusTimeline(order, 'accepted');
-    if (partner.partnerProfile?.currentLocation) {
-      order.partnerLocation = partner.partnerProfile.currentLocation;
+    const offeredPartnerIds = ((order.offeredPartnerIds ?? []) as unknown[]).map(idOf);
+    if (!offeredPartnerIds.includes(req.auth!.userId)) {
+      throw new ApiError(403, 'This order is not currently offered to you');
     }
-    await order.save();
-    const fullOrder = await loadOrderForPartner(String(order._id));
+
+    const updateSet: Record<string, unknown> = {
+      partner: partner._id,
+      status: 'accepted',
+      timeline: createTimeline('accepted', order.timeline ?? []),
+      offeredPartnerIds: []
+    };
+    if (partner.partnerProfile?.currentLocation) {
+      updateSet.partnerLocation = partner.partnerProfile.currentLocation;
+    }
+    const acceptedOrder = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        status: { $in: ['searching', 'offered'] },
+        offeredPartnerIds: partner._id,
+        $or: [{ partner: { $exists: false } }, { partner: null }]
+      },
+      {
+        $set: updateSet,
+        $unset: {
+          offerBatchStartedAt: '',
+          offerExpiresAt: ''
+        }
+      },
+      { new: true }
+    );
+    if (!acceptedOrder) {
+      const latest = await Order.findById(order._id);
+      if (latest?.partner && String(latest.partner) !== req.auth!.userId) {
+        throw new ApiError(409, 'Order already accepted by another partner');
+      }
+      throw new ApiError(404, 'Order no longer available');
+    }
+    const fullOrder = await loadOrderForPartner(String(acceptedOrder._id));
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
     const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
-    await sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${order.orderNo}`, {
-      orderId: String(order._id),
-      orderNo: order.orderNo
+    await sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${acceptedOrder.orderNo}`, {
+      orderId: String(acceptedOrder._id),
+      orderNo: acceptedOrder.orderNo
     }).catch(() => undefined);
-    emitOrderChanged(payload, String(order.customer), String(partner._id));
+    emitOrderChanged(payload, String(acceptedOrder.customer), String(partner._id));
     emitPartnerQueueChanged();
     res.json({ order: payload });
   })
@@ -315,7 +365,13 @@ partnerRouter.post(
   asyncRoute(async (req: AuthRequest, res) => {
     const order = await loadOrderForPartner(String(req.params.orderId));
     if (!order) throw new ApiError(404, 'Order not found');
-    res.json({ order: serializeOrder(order), rejected: true });
+    const offeredPartnerIds = ((order.offeredPartnerIds ?? []) as unknown[]).map(idOf);
+    if (!offeredPartnerIds.includes(req.auth!.userId)) {
+      throw new ApiError(404, 'Order no longer available');
+    }
+    await rejectDriverOffer(String(order._id), req.auth!.userId);
+    const latest = await loadOrderForPartner(String(order._id));
+    res.json({ order: latest ? serializeOrder(latest) : serializeOrder(order), rejected: true });
   })
 );
 

@@ -127,6 +127,12 @@ const OrderSchema = new Schema(
     },
     etaMinutes: { type: Number, default: 10 },
     timeline: { type: [TimelineSchema], default: [] },
+    offeredPartnerIds: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
+    notifiedPartnerIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    rejectedPartnerIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    offerBatch: { type: Number, default: 0 },
+    offerBatchStartedAt: { type: Date },
+    offerExpiresAt: { type: Date },
     pod: { type: PodSchema, default: {} },
     verification: {
       pickupOtpHash: { type: String },

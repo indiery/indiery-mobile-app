@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,8 @@ import {
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as Notifications from 'expo-notifications';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import RazorpayCheckout from 'react-native-razorpay';
 import { io, Socket } from 'socket.io-client';
@@ -51,21 +53,625 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 const minPartnerWalletBalance = 200;
+const expoProjectId = (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false
+  })
+});
 
 type Tab = 'dashboard' | 'orders' | 'active' | 'earnings' | 'profile';
 type KycDoc = 'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc';
 type BankDetailsInput = { accountHolder: string; accountNumber: string; ifsc: string };
 type PartnerProfileInput = { name: string; email: string; city: string; vehicleId: string; vehicleNumber: string };
 type OnboardingStepId = 1 | 2 | 3;
+type AppLanguage = 'en' | 'hi';
 
-function formatPhoneForFirebase(phoneInput: string) {
+const enCopy = {
+  appName: 'Indiery Partner',
+  appEyebrow: 'INDIERY PARTNER',
+  loadingPartner: 'Loading Indiery Partner',
+  partnerSetup: 'Partner setup',
+  welcomeBack: 'Welcome Back',
+  loginSubtitle: 'Login to manage your deliveries',
+  loginHeroCaption: 'Delivering trust, every mile.',
+  mobileNumber: 'Mobile Number',
+  enterMobileNumber: 'Enter your mobile number',
+  otpSent: 'OTP sent. Enter the code to verify.',
+  otpCode: 'OTP code',
+  change: 'Change',
+  verify: 'Verify',
+  verifying: 'Verifying',
+  sending: 'Sending',
+  sendOtp: 'Send OTP',
+  live: 'Live',
+  secure: 'Secure',
+  smart: 'Smart',
+  orders: 'Orders',
+  kyc: 'KYC',
+  payouts: 'Payouts',
+  support: 'Support',
+  completePartnerSetup: 'Complete partner setup',
+  completePartnerSetupText: 'Finish these steps once. Dashboard opens after all required details are submitted.',
+  setupProgress: 'Setup progress',
+  personal: 'Personal',
+  uploads: 'Uploads',
+  vehicle: 'Vehicle',
+  personalDetails: 'Personal details',
+  personalDetailsSubtitle: 'Name, email, phone, and city',
+  fullName: 'Full name',
+  email: 'Email',
+  city: 'City',
+  loginMobileNumber: 'Login mobile number',
+  saveAndNext: 'Save and Next',
+  uploadDetails: 'Upload details',
+  uploadDetailsSubtitle: 'Selfie, identity proof, and driving licence',
+  liveSelfie: 'Live selfie',
+  captureClearFacePhoto: 'Capture a clear face photo',
+  panOrAadhaar: 'PAN or Aadhaar',
+  identityProof: 'Identity proof',
+  oneIdentityProofRequired: 'One identity proof is required',
+  capturePanOrAadhaarRequired: 'Capture PAN or Aadhaar. One is required.',
+  panDone: 'PAN done',
+  capturePan: 'Capture PAN',
+  aadhaarDone: 'Aadhaar done',
+  captureAadhaar: 'Capture Aadhaar',
+  drivingLicence: 'Driving licence',
+  captureLicencePhoto: 'Capture licence photo',
+  captureFrontClearly: 'Capture front side clearly',
+  next: 'Next',
+  back: 'Back',
+  vehicleDetails: 'Vehicle details',
+  vehicleDetailsSubtitle: 'Vehicle type, number, and RC',
+  vehicleType: 'Vehicle type',
+  vehicleNumber: 'Vehicle number',
+  upToKg: 'Up to',
+  rcCaptured: 'RC captured',
+  captureRc: 'Capture RC',
+  saveVehicle: 'Save Vehicle',
+  continue: 'Continue',
+  saving: 'Saving',
+  done: 'Done',
+  opening: 'Opening',
+  capture: 'Capture',
+  rechargeDriverWallet: 'Recharge driver wallet',
+  minimumBalanceRequired: 'Minimum {amount} balance is required to receive new orders.',
+  currentBalance: 'Current balance',
+  recharge: 'Recharge',
+  syncing: 'SYNCING',
+  online: 'ONLINE',
+  offline: 'OFFLINE',
+  rechargeStatus: 'RECHARGE',
+  receivingNearbyOrders: 'Receiving nearby orders',
+  tapToStartReceivingOrders: 'Tap to start receiving orders',
+  walletBelowMinimum: 'Wallet below minimum',
+  today: 'Today',
+  rating: 'Rating',
+  availableJobs: 'Available Jobs',
+  activeTrip: 'Active Trip',
+  nearbyOrders: 'Nearby Orders',
+  availableOrders: 'Available Orders',
+  noOrdersRightNow: 'No orders right now',
+  stayOnlineRefresh: 'Stay online and refresh after a customer books.',
+  skip: 'Skip',
+  wait: 'Wait',
+  accept: 'Accept',
+  noActiveDelivery: 'No active delivery',
+  acceptOrderFromOrdersTab: 'Accept an order from the Orders tab.',
+  refresh: 'Refresh',
+  activeTrips: 'Active Trips',
+  to: 'to',
+  tripActions: 'Trip Actions',
+  pickupOtp: 'Pickup OTP',
+  dropOtp: 'Drop OTP',
+  enter6DigitCode: 'Enter 6 digit code',
+  updating: 'Updating',
+  orderValue: 'Order value',
+  driverCommission: 'Driver commission 80%',
+  reserveReward: 'On-time reserve reward 5%',
+  indieryCommission: 'Indiery commission 15%',
+  youReceiveOnTime: 'You receive if on-time',
+  ifLateReceive: 'If late, you receive',
+  customerLateRefundCoins: 'Customer late refund coins',
+  walletBalance: 'WALLET BALANCE',
+  tripsThisWeek: 'trips this week',
+  rechargeToUnlock: 'Recharge {amount} to unlock new orders',
+  requesting: 'Requesting',
+  requestPayout: 'Request Payout',
+  recentTransactions: 'Recent Transactions',
+  wallet: 'Wallet',
+  earn: 'Earn',
+  home: 'Home',
+  active: 'Active',
+  profile: 'Profile',
+  profileManageText: 'Manage personal details, vehicle details, and uploaded documents.',
+  verification: 'verification',
+  mobile: 'Mobile',
+  notAdded: 'Not added',
+  numberNotAdded: 'Number not added',
+  documentProgress: 'Document progress',
+  status: 'Status',
+  submittedForReview: 'submitted for review',
+  documentsUploaded: 'Documents Uploaded',
+  vehicleRc: 'Vehicle RC',
+  rcRequired: 'Required for vehicle ownership or authorization',
+  bankAccount: 'Bank account',
+  accountSaved: 'Account saved',
+  ifscSaved: 'IFSC saved',
+  usedForPayouts: 'Used for payouts',
+  accountHolder: 'Account holder',
+  nameAsPerBank: 'Name as per bank',
+  accountNumber: 'Account number',
+  enterAccountNumber: 'Enter account number',
+  ifscCode: 'IFSC code',
+  updateBank: 'Update Bank',
+  saveBank: 'Save Bank',
+  profileSubmittedNotice: 'Profile submitted. Indiery will verify documents before order access is enabled.',
+  requestAccountDeletion: 'Request account deletion',
+  requestAccountDeletionBody: 'We will review your request and delete eligible account data. Some order, payout, KYC, fraud prevention, tax, or legal records may be retained where required.',
+  submitRequest: 'Submit request',
+  cancel: 'Cancel',
+  logout: 'Logout',
+  changeLanguage: 'Change language',
+  english: 'English',
+  hindi: 'Hindi',
+  hindiNative: 'हिन्दी',
+  languageSetEnglish: 'Language set to English',
+  languageSetHindi: 'भाषा हिन्दी पर सेट हुई',
+  policiesLegal: 'Policies and Legal',
+  updated: 'Updated',
+  customer: 'Customer',
+  pickup: 'Pickup',
+  drop: 'Drop',
+  min: 'MIN',
+  arrivedAtPickup: 'Arrived at Pickup',
+  capturePickupPod: 'Capture Pickup POD',
+  markPickedUp: 'Mark Picked Up',
+  startTransit: 'Start Transit',
+  captureDropPod: 'Capture Drop POD',
+  markDelivered: 'Mark Delivered',
+  refreshTrip: 'Refresh Trip',
+  searching: 'Searching',
+  offered: 'Available',
+  accepted: 'Accepted',
+  arrived_pickup: 'At pickup',
+  picked_up: 'Picked up',
+  in_transit: 'In transit',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+  not_started: 'not started',
+  verified: 'verified',
+  pending: 'pending',
+  rejected: 'rejected',
+  timelineOrderPlaced: 'Order placed',
+  timelineCustomerBookingConfirmed: 'Customer booking confirmed',
+  timelinePartnerAssigned: 'Partner assigned',
+  timelineWaitingPartnerConfirmation: 'Waiting for partner confirmation',
+  timelineArrivedAtPickup: 'Arrived at pickup',
+  timelinePartnerAtPickup: 'Partner is at pickup location',
+  timelinePickedUp: 'Picked up',
+  timelineGoodsPickedUpProof: 'Goods picked up with proof',
+  timelineInTransit: 'In transit',
+  timelineMovingTowardDrop: 'Moving toward drop location',
+  timelineDelivered: 'Delivered',
+  timelineDeliveryCompleted: 'Delivery completed',
+  unableToLoadPartnerApp: 'Unable to load partner app',
+  refreshFailed: 'Refresh failed',
+  waitingGpsLocation: 'Waiting for GPS location',
+  actionFailed: 'Action failed',
+  profileSaved: 'Profile saved',
+  kycPhotoCaptured: 'KYC photo captured',
+  bankDetailsSaved: 'Bank details saved',
+  walletRecharged: 'Wallet recharged',
+  walletRechargeFailed: 'Wallet recharge failed',
+  logoutFailed: 'Logout failed',
+  deletionRequestSubmitted: 'Deletion request submitted',
+  requestFailed: 'Request failed',
+  youAreOnline: 'You are online',
+  youAreOffline: 'You are offline',
+  orderAccepted: 'Order accepted',
+  orderSkipped: 'Order skipped',
+  otpVerified: 'OTP verified',
+  podCaptured: 'POD captured',
+  orderUpdated: 'Order updated',
+  payoutRequested: 'Payout requested',
+  unableToSendOtp: 'Unable to send OTP',
+  unableToVerifyOtp: 'Unable to verify OTP',
+  invalidOtp: 'Invalid OTP',
+  enterValidMobile: 'Enter a valid mobile number',
+  locationPermissionRequired: 'Location permission is required to receive nearby orders',
+  turnOnGps: 'Turn on device location/GPS to receive nearby orders',
+  gpsTakingTooLong: 'GPS is taking too long',
+  notificationRegisterLater: 'Notifications allowed. Driver alerts will register when network is available',
+  permissionSettings: 'Enable {permissions} permission in phone settings for driver app features',
+  permissionLocation: 'location',
+  permissionNotifications: 'notifications',
+  permissionCamera: 'camera',
+  orderAlerts: 'Order alerts',
+  cameraPermissionRequired: 'Camera permission is required to capture proof',
+  noImageCaptured: 'No image captured',
+  missingPhoto: 'Captured photo is missing. Please retake the photo.',
+  onlyImageSupported: 'Only image capture is supported for proof upload.',
+  photoTooLarge: 'Photo is too large. Please retake a clearer, smaller photo.',
+  walletRechargeUnavailable: 'Wallet recharge is not available',
+  paymentVerificationMissing: 'Payment verification details missing',
+  enterFullName: 'Enter your full name',
+  enterValidEmail: 'Enter a valid email',
+  enterCity: 'Enter your city',
+  vehicleCatalogUnavailable: 'Vehicle catalog is not available yet',
+  captureLiveSelfie: 'Capture your live selfie',
+  capturePanOrAadhaar: 'Capture PAN or Aadhaar',
+  captureDrivingLicence: 'Capture your driving licence',
+  selectVehicleType: 'Select your vehicle type',
+  enterVehicleNumber: 'Enter vehicle number',
+  enterAccountHolderName: 'Enter account holder name',
+  enterValidAccountNumber: 'Enter a valid account number',
+  enterValidIfsc: 'Enter a valid IFSC code'
+} as const;
+
+const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
+  loadingPartner: 'Indiery Partner लोड हो रहा है',
+  partnerSetup: 'पार्टनर सेटअप',
+  welcomeBack: 'वापसी पर स्वागत है',
+  loginSubtitle: 'अपनी डिलीवरी संभालने के लिए लॉगिन करें',
+  loginHeroCaption: 'हर सफर में भरोसेमंद डिलीवरी.',
+  mobileNumber: 'मोबाइल नंबर',
+  enterMobileNumber: 'अपना मोबाइल नंबर डालें',
+  otpSent: 'OTP भेज दिया गया है. सत्यापन के लिए कोड डालें.',
+  otpCode: 'OTP कोड',
+  change: 'बदलें',
+  verify: 'सत्यापित करें',
+  verifying: 'सत्यापन हो रहा है',
+  sending: 'भेज रहे हैं',
+  sendOtp: 'OTP भेजें',
+  live: 'लाइव',
+  secure: 'सुरक्षित',
+  smart: 'स्मार्ट',
+  orders: 'ऑर्डर',
+  kyc: 'KYC',
+  payouts: 'पेआउट',
+  support: 'सपोर्ट',
+  completePartnerSetup: 'पार्टनर सेटअप पूरा करें',
+  completePartnerSetupText: 'ये स्टेप एक बार पूरे करें. सभी जरूरी जानकारी जमा होने के बाद डैशबोर्ड खुलेगा.',
+  setupProgress: 'सेटअप प्रगति',
+  personal: 'व्यक्तिगत',
+  uploads: 'अपलोड',
+  vehicle: 'वाहन',
+  personalDetails: 'व्यक्तिगत जानकारी',
+  personalDetailsSubtitle: 'नाम, ईमेल, फोन और शहर',
+  fullName: 'पूरा नाम',
+  email: 'ईमेल',
+  city: 'शहर',
+  loginMobileNumber: 'लॉगिन मोबाइल नंबर',
+  saveAndNext: 'सेव करें और आगे बढ़ें',
+  uploadDetails: 'दस्तावेज अपलोड',
+  uploadDetailsSubtitle: 'सेल्फी, पहचान पत्र और ड्राइविंग लाइसेंस',
+  liveSelfie: 'लाइव सेल्फी',
+  captureClearFacePhoto: 'चेहरे की साफ फोटो लें',
+  panOrAadhaar: 'PAN या Aadhaar',
+  identityProof: 'पहचान प्रमाण',
+  oneIdentityProofRequired: 'एक पहचान प्रमाण जरूरी है',
+  capturePanOrAadhaarRequired: 'PAN या Aadhaar कैप्चर करें. एक जरूरी है.',
+  panDone: 'PAN हो गया',
+  capturePan: 'PAN कैप्चर करें',
+  aadhaarDone: 'Aadhaar हो गया',
+  captureAadhaar: 'Aadhaar कैप्चर करें',
+  drivingLicence: 'ड्राइविंग लाइसेंस',
+  captureLicencePhoto: 'लाइसेंस की फोटो लें',
+  captureFrontClearly: 'सामने की तरफ साफ कैप्चर करें',
+  next: 'आगे',
+  back: 'वापस',
+  vehicleDetails: 'वाहन जानकारी',
+  vehicleDetailsSubtitle: 'वाहन प्रकार, नंबर और RC',
+  vehicleType: 'वाहन प्रकार',
+  vehicleNumber: 'वाहन नंबर',
+  upToKg: 'अधिकतम',
+  rcCaptured: 'RC कैप्चर हो गया',
+  captureRc: 'RC कैप्चर करें',
+  saveVehicle: 'वाहन सेव करें',
+  continue: 'जारी रखें',
+  saving: 'सेव हो रहा है',
+  done: 'पूरा',
+  opening: 'खुल रहा है',
+  capture: 'कैप्चर',
+  rechargeDriverWallet: 'ड्राइवर वॉलेट रिचार्ज करें',
+  minimumBalanceRequired: 'नए ऑर्डर पाने के लिए कम से कम {amount} बैलेंस जरूरी है.',
+  currentBalance: 'मौजूदा बैलेंस',
+  recharge: 'रिचार्ज',
+  syncing: 'सिंक हो रहा है',
+  online: 'ऑनलाइन',
+  offline: 'ऑफलाइन',
+  rechargeStatus: 'रिचार्ज',
+  receivingNearbyOrders: 'पास के ऑर्डर मिल रहे हैं',
+  tapToStartReceivingOrders: 'ऑर्डर पाने के लिए टैप करें',
+  walletBelowMinimum: 'वॉलेट बैलेंस कम है',
+  today: 'आज',
+  rating: 'रेटिंग',
+  availableJobs: 'उपलब्ध ऑर्डर',
+  activeTrip: 'एक्टिव ट्रिप',
+  nearbyOrders: 'पास के ऑर्डर',
+  availableOrders: 'उपलब्ध ऑर्डर',
+  noOrdersRightNow: 'अभी कोई ऑर्डर नहीं',
+  stayOnlineRefresh: 'ऑनलाइन रहें और ग्राहक बुकिंग के बाद रिफ्रेश करें.',
+  skip: 'छोड़ें',
+  wait: 'रुकें',
+  accept: 'स्वीकार करें',
+  noActiveDelivery: 'कोई एक्टिव डिलीवरी नहीं',
+  acceptOrderFromOrdersTab: 'Orders टैब से कोई ऑर्डर स्वीकार करें.',
+  refresh: 'रिफ्रेश',
+  activeTrips: 'एक्टिव ट्रिप',
+  to: 'से',
+  tripActions: 'ट्रिप एक्शन',
+  pickupOtp: 'पिकअप OTP',
+  dropOtp: 'ड्रॉप OTP',
+  enter6DigitCode: '6 अंकों का कोड डालें',
+  updating: 'अपडेट हो रहा है',
+  orderValue: 'ऑर्डर वैल्यू',
+  driverCommission: 'ड्राइवर कमीशन 80%',
+  reserveReward: 'समय पर रिजर्व रिवॉर्ड 5%',
+  indieryCommission: 'Indiery कमीशन 15%',
+  youReceiveOnTime: 'समय पर आपको मिलेगा',
+  ifLateReceive: 'देरी होने पर आपको मिलेगा',
+  customerLateRefundCoins: 'ग्राहक देरी रिफंड कॉइन',
+  walletBalance: 'वॉलेट बैलेंस',
+  tripsThisWeek: 'इस हफ्ते ट्रिप',
+  rechargeToUnlock: 'नए ऑर्डर अनलॉक करने के लिए {amount} रिचार्ज करें',
+  requesting: 'अनुरोध हो रहा है',
+  requestPayout: 'पेआउट अनुरोध',
+  recentTransactions: 'हाल की ट्रांजैक्शन',
+  wallet: 'वॉलेट',
+  earn: 'कमाई',
+  home: 'होम',
+  active: 'एक्टिव',
+  profile: 'प्रोफाइल',
+  profileManageText: 'व्यक्तिगत जानकारी, वाहन जानकारी और अपलोड दस्तावेज संभालें.',
+  verification: 'सत्यापन',
+  mobile: 'मोबाइल',
+  notAdded: 'जोड़ा नहीं गया',
+  numberNotAdded: 'नंबर नहीं जोड़ा गया',
+  documentProgress: 'दस्तावेज प्रगति',
+  status: 'स्टेटस',
+  submittedForReview: 'रिव्यू के लिए जमा',
+  documentsUploaded: 'अपलोड किए दस्तावेज',
+  vehicleRc: 'वाहन RC',
+  rcRequired: 'वाहन स्वामित्व या अनुमति के लिए जरूरी',
+  bankAccount: 'बैंक अकाउंट',
+  accountSaved: 'अकाउंट सेव है',
+  ifscSaved: 'IFSC सेव है',
+  usedForPayouts: 'पेआउट के लिए उपयोग होगा',
+  accountHolder: 'अकाउंट होल्डर',
+  nameAsPerBank: 'बैंक के अनुसार नाम',
+  accountNumber: 'अकाउंट नंबर',
+  enterAccountNumber: 'अकाउंट नंबर डालें',
+  ifscCode: 'IFSC कोड',
+  updateBank: 'बैंक अपडेट करें',
+  saveBank: 'बैंक सेव करें',
+  profileSubmittedNotice: 'प्रोफाइल जमा हो गई है. ऑर्डर एक्सेस से पहले Indiery दस्तावेज सत्यापित करेगा.',
+  requestAccountDeletion: 'अकाउंट डिलीट अनुरोध',
+  requestAccountDeletionBody: 'हम आपका अनुरोध रिव्यू करेंगे और योग्य अकाउंट डेटा हटाएंगे. कुछ ऑर्डर, पेआउट, KYC, धोखाधड़ी रोकथाम, टैक्स या कानूनी रिकॉर्ड जरूरत के अनुसार रखे जा सकते हैं.',
+  submitRequest: 'अनुरोध भेजें',
+  cancel: 'रद्द करें',
+  logout: 'लॉगआउट',
+  changeLanguage: 'भाषा बदलें',
+  english: 'English',
+  hindi: 'Hindi',
+  hindiNative: 'हिन्दी',
+  policiesLegal: 'पॉलिसी और लीगल',
+  updated: 'अपडेटेड',
+  customer: 'ग्राहक',
+  pickup: 'पिकअप',
+  drop: 'ड्रॉप',
+  min: 'मिनट',
+  arrivedAtPickup: 'पिकअप पर पहुंचा',
+  capturePickupPod: 'पिकअप POD कैप्चर करें',
+  markPickedUp: 'पिकअप मार्क करें',
+  startTransit: 'ट्रांजिट शुरू करें',
+  captureDropPod: 'ड्रॉप POD कैप्चर करें',
+  markDelivered: 'डिलीवर मार्क करें',
+  refreshTrip: 'ट्रिप रिफ्रेश करें',
+  searching: 'खोज जारी',
+  offered: 'उपलब्ध',
+  accepted: 'स्वीकार हुआ',
+  arrived_pickup: 'पिकअप पर',
+  picked_up: 'पिकअप हो गया',
+  in_transit: 'रास्ते में',
+  delivered: 'डिलीवर हुआ',
+  cancelled: 'रद्द',
+  not_started: 'शुरू नहीं',
+  verified: 'सत्यापित',
+  pending: 'पेंडिंग',
+  rejected: 'रिजेक्ट',
+  timelineOrderPlaced: 'ऑर्डर रखा गया',
+  timelineCustomerBookingConfirmed: 'ग्राहक बुकिंग कन्फर्म हुई',
+  timelinePartnerAssigned: 'पार्टनर असाइन हुआ',
+  timelineWaitingPartnerConfirmation: 'पार्टनर कन्फर्मेशन का इंतजार',
+  timelineArrivedAtPickup: 'पिकअप पर पहुंचा',
+  timelinePartnerAtPickup: 'पार्टनर पिकअप लोकेशन पर है',
+  timelinePickedUp: 'पिकअप हो गया',
+  timelineGoodsPickedUpProof: 'प्रूफ के साथ सामान पिकअप हुआ',
+  timelineInTransit: 'रास्ते में',
+  timelineMovingTowardDrop: 'ड्रॉप लोकेशन की तरफ जा रहे हैं',
+  timelineDelivered: 'डिलीवर हुआ',
+  timelineDeliveryCompleted: 'डिलीवरी पूरी हुई',
+  unableToLoadPartnerApp: 'पार्टनर ऐप लोड नहीं हो पाया',
+  refreshFailed: 'रिफ्रेश फेल हुआ',
+  waitingGpsLocation: 'GPS लोकेशन का इंतजार',
+  actionFailed: 'एक्शन फेल हुआ',
+  profileSaved: 'प्रोफाइल सेव हो गई',
+  kycPhotoCaptured: 'KYC फोटो कैप्चर हो गई',
+  bankDetailsSaved: 'बैंक जानकारी सेव हो गई',
+  walletRecharged: 'वॉलेट रिचार्ज हो गया',
+  walletRechargeFailed: 'वॉलेट रिचार्ज फेल हुआ',
+  logoutFailed: 'लॉगआउट फेल हुआ',
+  deletionRequestSubmitted: 'डिलीशन अनुरोध भेज दिया गया',
+  requestFailed: 'अनुरोध फेल हुआ',
+  youAreOnline: 'आप ऑनलाइन हैं',
+  youAreOffline: 'आप ऑफलाइन हैं',
+  orderAccepted: 'ऑर्डर स्वीकार हुआ',
+  orderSkipped: 'ऑर्डर छोड़ा गया',
+  otpVerified: 'OTP सत्यापित हुआ',
+  podCaptured: 'POD कैप्चर हुआ',
+  orderUpdated: 'ऑर्डर अपडेट हुआ',
+  payoutRequested: 'पेआउट अनुरोध भेजा गया',
+  unableToSendOtp: 'OTP नहीं भेज पाए',
+  unableToVerifyOtp: 'OTP सत्यापित नहीं हो पाया',
+  invalidOtp: 'OTP गलत है',
+  enterValidMobile: 'सही मोबाइल नंबर डालें',
+  locationPermissionRequired: 'पास के ऑर्डर पाने के लिए लोकेशन परमिशन जरूरी है',
+  turnOnGps: 'पास के ऑर्डर पाने के लिए डिवाइस लोकेशन/GPS चालू करें',
+  gpsTakingTooLong: 'GPS में ज्यादा समय लग रहा है',
+  notificationRegisterLater: 'नोटिफिकेशन अनुमति मिली. नेटवर्क उपलब्ध होने पर ड्राइवर अलर्ट रजिस्टर होंगे',
+  permissionSettings: 'ड्राइवर ऐप फीचर के लिए फोन सेटिंग में {permissions} परमिशन चालू करें',
+  permissionLocation: 'लोकेशन',
+  permissionNotifications: 'नोटिफिकेशन',
+  permissionCamera: 'कैमरा',
+  orderAlerts: 'ऑर्डर अलर्ट',
+  cameraPermissionRequired: 'प्रूफ कैप्चर करने के लिए कैमरा परमिशन जरूरी है',
+  noImageCaptured: 'कोई फोटो कैप्चर नहीं हुई',
+  missingPhoto: 'कैप्चर फोटो नहीं मिली. कृपया दोबारा फोटो लें.',
+  onlyImageSupported: 'प्रूफ अपलोड के लिए केवल इमेज कैप्चर समर्थित है.',
+  photoTooLarge: 'फोटो बहुत बड़ी है. कृपया साफ और छोटी फोटो दोबारा लें.',
+  walletRechargeUnavailable: 'वॉलेट रिचार्ज उपलब्ध नहीं है',
+  paymentVerificationMissing: 'पेमेंट सत्यापन जानकारी नहीं मिली',
+  enterFullName: 'अपना पूरा नाम डालें',
+  enterValidEmail: 'सही ईमेल डालें',
+  enterCity: 'अपना शहर डालें',
+  vehicleCatalogUnavailable: 'वाहन कैटलॉग अभी उपलब्ध नहीं है',
+  captureLiveSelfie: 'अपनी लाइव सेल्फी कैप्चर करें',
+  capturePanOrAadhaar: 'PAN या Aadhaar कैप्चर करें',
+  captureDrivingLicence: 'अपना ड्राइविंग लाइसेंस कैप्चर करें',
+  selectVehicleType: 'अपना वाहन प्रकार चुनें',
+  enterVehicleNumber: 'वाहन नंबर डालें',
+  enterAccountHolderName: 'अकाउंट होल्डर नाम डालें',
+  enterValidAccountNumber: 'सही अकाउंट नंबर डालें',
+  enterValidIfsc: 'सही IFSC कोड डालें'
+};
+
+const appCopy: Record<AppLanguage, Record<keyof typeof enCopy, string>> = {
+  en: enCopy,
+  hi: { ...enCopy, ...hiCopy }
+};
+type CopyKey = keyof typeof enCopy;
+const LanguageContext = createContext<AppLanguage>('en');
+
+function copyFor(language: AppLanguage, key: CopyKey) {
+  return appCopy[language][key] ?? appCopy.en[key];
+}
+
+function useCopy() {
+  return appCopy[useContext(LanguageContext)];
+}
+
+function useLanguage() {
+  return useContext(LanguageContext);
+}
+
+function languageNativeLabel(language: AppLanguage) {
+  return language === 'hi' ? appCopy.hi.hindiNative : appCopy.en.english;
+}
+
+function fillCopy(value: string, params: Record<string, string | number>) {
+  return Object.entries(params).reduce((text, [key, replacement]) => text.replace(`{${key}}`, String(replacement)), value);
+}
+
+function orderStatusLabel(language: AppLanguage, status: Order['status']) {
+  const keyByStatus: Record<Order['status'], CopyKey> = {
+    searching: 'searching',
+    offered: 'offered',
+    accepted: 'accepted',
+    arrived_pickup: 'arrived_pickup',
+    picked_up: 'picked_up',
+    in_transit: 'in_transit',
+    delivered: 'delivered',
+    cancelled: 'cancelled'
+  };
+  return copyFor(language, keyByStatus[status]) || statusLabels[status] || status;
+}
+
+function kycStatusLabel(language: AppLanguage, status?: string) {
+  const labels: Record<string, CopyKey> = {
+    not_started: 'not_started',
+    pending: 'pending',
+    verified: 'verified',
+    rejected: 'rejected'
+  };
+  return status && labels[status] ? copyFor(language, labels[status]) : status || copyFor(language, 'not_started');
+}
+
+function uploadImageProfile(purpose: 'pod' | 'kyc' | 'profile') {
+  if (purpose === 'kyc') return { maxDimension: 1280, cameraQuality: 0.55, uploadQuality: 0.62 };
+  return { maxDimension: 960, cameraQuality: 0.42, uploadQuality: 0.52 };
+}
+
+async function optimizeUploadImage(asset: ImagePicker.ImagePickerAsset, purpose: 'pod' | 'kyc' | 'profile') {
+  const profile = uploadImageProfile(purpose);
+  const width = asset.width ?? 0;
+  const height = asset.height ?? 0;
+  const resize =
+    width > height
+      ? { width: Math.min(width || profile.maxDimension, profile.maxDimension) }
+      : { height: Math.min(height || profile.maxDimension, profile.maxDimension) };
+
+  try {
+    const optimized = await ImageManipulator.manipulateAsync(
+      asset.uri,
+      width || height ? [{ resize }] : [],
+      {
+        compress: profile.uploadQuality,
+        format: ImageManipulator.SaveFormat.JPEG
+      }
+    );
+    return {
+      uri: optimized.uri,
+      fileName: `indiery-${purpose}-${Date.now()}.jpg`,
+      mimeType: 'image/jpeg'
+    };
+  } catch {
+    return {
+      uri: asset.uri,
+      fileName: asset.fileName ?? `indiery-${purpose}-${Date.now()}.jpg`,
+      mimeType: asset.mimeType ?? 'image/jpeg'
+    };
+  }
+}
+
+function timelineTitle(language: AppLanguage, key?: string, fallback = '') {
+  const labels: Record<string, CopyKey> = {
+    created: 'timelineOrderPlaced',
+    assigned: 'timelinePartnerAssigned',
+    arrived_pickup: 'timelineArrivedAtPickup',
+    picked_up: 'timelinePickedUp',
+    in_transit: 'timelineInTransit',
+    delivered: 'timelineDelivered'
+  };
+  return key && labels[key] ? copyFor(language, labels[key]) : fallback;
+}
+
+function timelineNote(language: AppLanguage, key?: string, fallback = '') {
+  const labels: Record<string, CopyKey> = {
+    created: 'timelineCustomerBookingConfirmed',
+    assigned: 'timelineWaitingPartnerConfirmation',
+    arrived_pickup: 'timelinePartnerAtPickup',
+    picked_up: 'timelineGoodsPickedUpProof',
+    in_transit: 'timelineMovingTowardDrop',
+    delivered: 'timelineDeliveryCompleted'
+  };
+  return key && labels[key] ? copyFor(language, labels[key]) : fallback;
+}
+
+function formatPhoneForFirebase(phoneInput: string, language: AppLanguage = 'en') {
   const trimmed = phoneInput.trim();
   if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
 
   const digits = trimmed.replace(/\D/g, '');
   if (digits.length === 10) return `+91${digits}`;
   if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
-  throw new Error('Enter a valid mobile number');
+  throw new Error(copyFor(language, 'enterValidMobile'));
 }
 
 function partnerSetupProgress(user: UserProfile) {
@@ -98,6 +704,102 @@ function vehicleNameForId(vehicles: Vehicle[], vehicleId?: string) {
   return vehicles.find((vehicle) => vehicle.id === vehicleId)?.shortName || 'Vehicle not selected';
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+async function readDeviceLocation(language: AppLanguage = 'en') {
+  const permission = await Location.requestForegroundPermissionsAsync();
+  if (permission.status !== 'granted') {
+    throw new Error(copyFor(language, 'locationPermissionRequired'));
+  }
+
+  const servicesEnabled = await Location.hasServicesEnabledAsync();
+  if (!servicesEnabled) {
+    throw new Error(copyFor(language, 'turnOnGps'));
+  }
+
+  try {
+    return await withTimeout(
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      8000,
+      copyFor(language, 'gpsTakingTooLong')
+    );
+  } catch (err) {
+    const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
+    if (lastKnown) return lastKnown;
+    throw err;
+  }
+}
+
+async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message: string) => void, language: AppLanguage) {
+  const denied: string[] = [];
+
+  try {
+    const locationPermission = await Location.getForegroundPermissionsAsync();
+    const locationStatus =
+      locationPermission.status === 'granted'
+        ? locationPermission
+        : await Location.requestForegroundPermissionsAsync();
+    if (locationStatus.status !== 'granted') denied.push(copyFor(language, 'permissionLocation'));
+  } catch {
+    denied.push(copyFor(language, 'permissionLocation'));
+  }
+
+  try {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('orders', {
+        name: copyFor(language, 'orderAlerts'),
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: colors.partner
+      });
+    }
+
+    const notificationPermission = await Notifications.getPermissionsAsync();
+    const notificationStatus =
+      notificationPermission.status === 'granted'
+        ? notificationPermission
+        : await Notifications.requestPermissionsAsync();
+
+    if (notificationStatus.status === 'granted') {
+      if (expoProjectId) {
+        try {
+          const token = await Notifications.getExpoPushTokenAsync({ projectId: expoProjectId });
+          await api.registerPartnerPushToken(token.data);
+        } catch {
+          onMessage(copyFor(language, 'notificationRegisterLater'));
+        }
+      }
+    } else {
+      denied.push(copyFor(language, 'permissionNotifications'));
+    }
+  } catch {
+    denied.push(copyFor(language, 'permissionNotifications'));
+  }
+
+  try {
+    const cameraPermission = await ImagePicker.getCameraPermissionsAsync();
+    const cameraStatus =
+      cameraPermission.status === 'granted'
+        ? cameraPermission
+        : await ImagePicker.requestCameraPermissionsAsync();
+    if (cameraStatus.status !== 'granted') denied.push(copyFor(language, 'permissionCamera'));
+  } catch {
+    denied.push(copyFor(language, 'permissionCamera'));
+  }
+
+  if (denied.length) {
+    onMessage(fillCopy(copyFor(language, 'permissionSettings'), { permissions: denied.join(', ') }));
+  }
+}
+
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
@@ -105,6 +807,7 @@ export default function App() {
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const locationSyncInFlightRef = useRef(false);
   const [tab, setTab] = useState<Tab>('dashboard');
+  const [language, setLanguage] = useState<AppLanguage>('en');
   const [data, setData] = useState<PartnerBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -152,7 +855,7 @@ export default function App() {
       const firebaseIdToken = await currentUser.getIdToken();
       await completeFirebaseLogin(firebaseIdToken);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load partner app');
+      setError(err instanceof Error ? err.message : copyFor(language, 'unableToLoadPartnerApp'));
     } finally {
       setLoading(false);
     }
@@ -166,6 +869,7 @@ export default function App() {
     setData(bootstrap);
     setTab('dashboard');
     connectRealtime(login.token);
+    requestPartnerAppPermissions(api, showToast, language).catch(() => undefined);
   }
 
   async function refresh() {
@@ -173,7 +877,7 @@ export default function App() {
       const bootstrap = await api.partnerBootstrap();
       setData(bootstrap);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Refresh failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'refreshFailed'));
     }
   }
 
@@ -261,9 +965,7 @@ export default function App() {
   async function startLocationStream() {
     if (locationSubscriptionRef.current) return;
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') return;
-      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const current = await readDeviceLocation(language);
       sendLocationUpdate(current.coords);
       locationSubscriptionRef.current = await Location.watchPositionAsync(
         {
@@ -275,8 +977,8 @@ export default function App() {
           sendLocationUpdate(currentPosition.coords);
         }
       );
-    } catch {
-      // Keep the delivery flow usable even when device GPS is disabled.
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : copyFor(language, 'waitingGpsLocation'));
     }
   }
 
@@ -287,12 +989,10 @@ export default function App() {
 
   async function syncLocation() {
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') return;
-      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const current = await readDeviceLocation(language);
       await sendLocationUpdate(current.coords);
-    } catch {
-      // Location is helpful but should not block accepting or completing jobs.
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : copyFor(language, 'waitingGpsLocation'));
     }
   }
 
@@ -306,7 +1006,7 @@ export default function App() {
     try {
       await action();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Action failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'actionFailed'));
     } finally {
       setBusy(false);
     }
@@ -315,27 +1015,31 @@ export default function App() {
   async function captureAndUploadImage(input: { purpose: 'pod' | 'kyc' | 'profile'; orderId?: string; documentKey?: string }) {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (permission.status !== 'granted') {
-      throw new Error('Camera permission is required to capture proof');
+      throw new Error(copyFor(language, 'cameraPermissionRequired'));
     }
 
+    const profile = uploadImageProfile(input.purpose);
     const picked = await ImagePicker.launchCameraAsync({
       allowsEditing: false,
-      quality: 0.75
+      quality: profile.cameraQuality,
+      exif: false,
+      base64: false
     });
-    if (picked.canceled || !picked.assets[0]) throw new Error('No image captured');
+    if (picked.canceled || !picked.assets[0]) throw new Error(copyFor(language, 'noImageCaptured'));
 
     const asset = picked.assets[0];
-    if (!asset.uri) throw new Error('Captured photo is missing. Please retake the photo.');
+    if (!asset.uri) throw new Error(copyFor(language, 'missingPhoto'));
     if (asset.mimeType && !asset.mimeType.startsWith('image/')) {
-      throw new Error('Only image capture is supported for proof upload.');
+      throw new Error(copyFor(language, 'onlyImageSupported'));
     }
-    if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-      throw new Error('Photo is too large. Please retake a clearer, smaller photo.');
+    if (asset.fileSize && asset.fileSize > 25 * 1024 * 1024) {
+      throw new Error(copyFor(language, 'photoTooLarge'));
     }
+    const optimizedAsset = await optimizeUploadImage(asset, input.purpose);
     const signature = await api.createCloudinarySignature(input);
-    const uploaded = await uploadFileToCloudinary(asset.uri, signature.upload, {
-      fileName: asset.fileName ?? `indiery-${input.purpose}-${Date.now()}.jpg`,
-      mimeType: asset.mimeType ?? 'image/jpeg'
+    const uploaded = await uploadFileToCloudinary(optimizedAsset.uri, signature.upload, {
+      fileName: optimizedAsset.fileName,
+      mimeType: optimizedAsset.mimeType
     });
     return uploaded.secureUrl;
   }
@@ -346,9 +1050,9 @@ export default function App() {
     try {
       const result = await api.updatePartnerProfile(input);
       setData((current) => current ? { ...current, user: result.user } : current);
-      showToast('Profile saved');
+      showToast(copyFor(language, 'profileSaved'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Profile update failed');
+      setError(err instanceof Error ? err.message : copyFor(language, 'actionFailed'));
     } finally {
       setBusy(false);
     }
@@ -358,13 +1062,13 @@ export default function App() {
     const photoUrl = await captureAndUploadImage({ purpose: 'kyc', documentKey: doc });
     await api.uploadKyc(doc, { photoUrl });
     await refresh();
-    showToast('KYC photo captured');
+    showToast(copyFor(language, 'kycPhotoCaptured'));
   }
 
   async function submitKycBankDetails(bankDetails: BankDetailsInput) {
     await api.uploadKyc('bank', { bankDetails });
     await refresh();
-    showToast('Bank details saved');
+    showToast(copyFor(language, 'bankDetailsSaved'));
   }
 
   async function topUpPartnerWallet(amount: number, paymentMode: 'upi' | 'card' | 'netbanking' = 'upi') {
@@ -373,12 +1077,12 @@ export default function App() {
     try {
       const result = await api.createPartnerWalletTopup({ amount, paymentMode });
       const checkout = result.paymentIntent.checkout;
-      if (!checkout) throw new Error('Wallet recharge is not available');
+      if (!checkout) throw new Error(copyFor(language, 'walletRechargeUnavailable'));
       const payment = await RazorpayCheckout.open({
         key: checkout.keyId,
         amount: Math.round(result.paymentIntent.amount * 100),
         currency: result.paymentIntent.currency,
-        name: 'Indiery Partner',
+        name: copyFor(language, 'appName'),
         description: 'Driver wallet recharge',
         order_id: checkout.orderId,
         prefill: {
@@ -397,9 +1101,7 @@ export default function App() {
           handleback: true
         }
       });
-      if (!payment.razorpay_order_id || !payment.razorpay_signature) {
-        throw new Error('Payment verification details missing');
-      }
+      if (!payment.razorpay_order_id || !payment.razorpay_signature) throw new Error(copyFor(language, 'paymentVerificationMissing'));
       const verified = await api.verifyPartnerWalletTopup({
         razorpayOrderId: payment.razorpay_order_id,
         razorpayPaymentId: payment.razorpay_payment_id,
@@ -407,9 +1109,9 @@ export default function App() {
       });
       setData((current) => current ? { ...current, user: verified.user } : current);
       await refresh();
-      showToast('Wallet recharged');
+      showToast(copyFor(language, 'walletRecharged'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Wallet recharge failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'walletRechargeFailed'));
     } finally {
       setBusy(false);
     }
@@ -430,7 +1132,7 @@ export default function App() {
       setData(null);
       setTab('dashboard');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Logout failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'logoutFailed'));
     } finally {
       setBusy(false);
     }
@@ -438,20 +1140,20 @@ export default function App() {
 
   function requestAccountDeletion() {
     Alert.alert(
-      'Request account deletion',
-      'We will review your request and delete eligible account data. Some order, payout, KYC, fraud prevention, tax, or legal records may be retained where required.',
+      copyFor(language, 'requestAccountDeletion'),
+      copyFor(language, 'requestAccountDeletionBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: copyFor(language, 'cancel'), style: 'cancel' },
         {
-          text: 'Submit request',
+          text: copyFor(language, 'submitRequest'),
           style: 'destructive',
           onPress: async () => {
             setBusy(true);
             try {
               await api.requestAccountDeletion('Requested from partner KYC screen');
-              showToast('Deletion request submitted');
+              showToast(copyFor(language, 'deletionRequestSubmitted'));
             } catch (err) {
-              showToast(err instanceof Error ? err.message : 'Request failed');
+              showToast(err instanceof Error ? err.message : copyFor(language, 'requestFailed'));
             } finally {
               setBusy(false);
             }
@@ -463,26 +1165,36 @@ export default function App() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator color={colors.partner} size="large" />
-        <Text style={styles.muted}>Loading Indiery Partner</Text>
-      </SafeAreaView>
+      <LanguageContext.Provider value={language}>
+        <SafeAreaView style={styles.center}>
+          <ActivityIndicator color={colors.partner} size="large" />
+          <Text style={styles.muted}>{copyFor(language, 'loadingPartner')}</Text>
+        </SafeAreaView>
+      </LanguageContext.Provider>
     );
   }
 
   if (!data) {
     return (
-      <LoginScreen initialError={error} onVerified={completeFirebaseLogin} />
+      <LanguageContext.Provider value={language}>
+        <LoginScreen
+          initialError={error}
+          language={language}
+          onChangeLanguage={setLanguage}
+          onVerified={completeFirebaseLogin}
+        />
+      </LanguageContext.Provider>
     );
   }
 
   if (needsPartnerOnboarding(data.user)) {
     return (
+      <LanguageContext.Provider value={language}>
       <SafeAreaView style={styles.shell}>
         <View style={styles.appHeader}>
           <View>
-            <Text style={styles.eyebrow}>INDIERY PARTNER</Text>
-            <Text style={styles.headerTitle}>Partner setup</Text>
+            <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
+            <Text style={styles.headerTitle}>{copyFor(language, 'partnerSetup')}</Text>
           </View>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{data.user.initials}</Text>
@@ -500,16 +1212,18 @@ export default function App() {
         </View>
         {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
       </SafeAreaView>
+      </LanguageContext.Provider>
     );
   }
 
   const activeOrder = data.activeOrders.find((order) => order.id === selectedActiveOrderId) ?? data.activeOrders[0];
 
   return (
+    <LanguageContext.Provider value={language}>
     <SafeAreaView style={styles.shell}>
       <View style={styles.appHeader}>
         <View>
-          <Text style={styles.eyebrow}>INDIERY PARTNER</Text>
+          <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
           <Text style={styles.headerTitle}>{data.user.name}</Text>
         </View>
         <View style={styles.avatar}>
@@ -528,7 +1242,7 @@ export default function App() {
                 await api.setAvailability(online);
                 if (online) await syncLocation();
                 await refresh();
-                showToast(online ? 'You are online' : 'You are offline');
+                showToast(online ? copyFor(language, 'youAreOnline') : copyFor(language, 'youAreOffline'));
               })
             }
             onOrders={() => setTab('orders')}
@@ -549,14 +1263,14 @@ export default function App() {
                 setSelectedActiveOrderId(accepted.order.id);
                 await refresh();
                 setTab('active');
-                showToast('Order accepted');
+                showToast(copyFor(language, 'orderAccepted'));
               })
             }
             onReject={(orderId) =>
               withBusy(async () => {
                 await api.rejectOrder(orderId);
                 await refresh();
-                showToast('Order skipped');
+                showToast(copyFor(language, 'orderSkipped'));
               })
             }
           />
@@ -572,7 +1286,7 @@ export default function App() {
               withBusy(async () => {
                 await api.verifyOrderOtp(orderId, type, otp);
                 await refresh();
-                showToast(`${type} OTP verified`);
+                showToast(`${type === 'pickup' ? copyFor(language, 'pickup') : copyFor(language, 'drop')} ${copyFor(language, 'otpVerified')}`);
               })
             }
             onPod={(orderId, type) =>
@@ -580,14 +1294,14 @@ export default function App() {
                 const photoUrl = await captureAndUploadImage({ purpose: 'pod', orderId, documentKey: type });
                 await api.uploadPod(orderId, type, photoUrl);
                 await refresh();
-                showToast(`${type} POD captured`);
+                showToast(`${type === 'pickup' ? copyFor(language, 'pickup') : copyFor(language, 'drop')} ${copyFor(language, 'podCaptured')}`);
               })
             }
             onStatus={(orderId, status) =>
               withBusy(async () => {
                 await api.updateOrderStatus(orderId, status);
                 await refresh();
-                showToast(`Order updated: ${statusLabels[status]}`);
+                showToast(`${copyFor(language, 'orderUpdated')}: ${orderStatusLabel(language, status)}`);
               })
             }
           />
@@ -601,7 +1315,7 @@ export default function App() {
                 const balance = data.user.partnerProfile?.walletBalance ?? 0;
                 await api.requestPayout(balance);
                 await refresh();
-                showToast('Payout requested');
+                showToast(copyFor(language, 'payoutRequested'));
               })
             }
             onTopup={(amount) => topUpPartnerWallet(amount)}
@@ -616,6 +1330,11 @@ export default function App() {
             onRequestAccountDeletion={requestAccountDeletion}
             onCapture={(doc) => withBusy(() => captureKycDocument(doc))}
             onSubmitBank={(bankDetails) => withBusy(() => submitKycBankDetails(bankDetails))}
+            language={language}
+            onChangeLanguage={(nextLanguage) => {
+              setLanguage(nextLanguage);
+              showToast(copyFor(nextLanguage, nextLanguage === 'hi' ? 'languageSetHindi' : 'languageSetEnglish'));
+            }}
           />
         )}
       </View>
@@ -623,16 +1342,22 @@ export default function App() {
       <BottomTabs active={tab} onChange={setTab} availableCount={data.availableOrders.length} activeCount={data.activeOrders.length} />
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
     </SafeAreaView>
+    </LanguageContext.Provider>
   );
 }
 
 function LoginScreen({
   initialError,
+  language,
+  onChangeLanguage,
   onVerified
 }: {
   initialError: string;
+  language: AppLanguage;
+  onChangeLanguage: (language: AppLanguage) => void;
   onVerified: (firebaseIdToken: string) => Promise<void>;
 }) {
+  const copy = useCopy();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
@@ -647,10 +1372,10 @@ function LoginScreen({
     setBusy(true);
     setError('');
     try {
-      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone));
+      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone, language));
       setConfirmation(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to send OTP');
+      setError(err instanceof Error ? err.message : copy.unableToSendOtp);
     } finally {
       setBusy(false);
     }
@@ -662,11 +1387,11 @@ function LoginScreen({
     setError('');
     try {
       const credential = await confirmation.confirm(code.trim());
-      if (!credential?.user) throw new Error('Unable to verify OTP');
+      if (!credential?.user) throw new Error(copy.unableToVerifyOtp);
       const firebaseIdToken = await credential.user.getIdToken();
       await onVerified(firebaseIdToken);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid OTP');
+      setError(err instanceof Error ? err.message : copy.invalidOtp);
     } finally {
       setBusy(false);
     }
@@ -676,29 +1401,30 @@ function LoginScreen({
     <SafeAreaView style={styles.loginShell}>
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
-          <LoginHero title="Indiery Partner" caption="Delivering trust, every mile." />
+          <LoginHero title={copy.appName} caption={copy.loginHeroCaption} />
           <View style={styles.authForm}>
-            <Text style={styles.authTitle}>Welcome Back</Text>
-            <Text style={styles.loginSubtitle}>Login to manage your deliveries</Text>
+            <Text style={styles.authTitle}>{copy.welcomeBack}</Text>
+            <Text style={styles.loginSubtitle}>{copy.loginSubtitle}</Text>
+            <LanguageSwitcher language={language} onChangeLanguage={onChangeLanguage} compact />
             <PhoneLoginField value={phone} onChangeText={setPhone} />
             {confirmation ? (
               <>
                 <View style={styles.authNotice}>
                   <Ionicons name="checkmark-circle" size={16} color={colors.partner} />
-                  <Text style={styles.authNoticeText}>OTP sent. Enter the code to verify.</Text>
+                  <Text style={styles.authNoticeText}>{copy.otpSent}</Text>
                 </View>
-                <AuthField label="OTP code" value={code} onChangeText={setCode} keyboardType="numeric" icon="key" maxLength={6} />
+                <AuthField label={copy.otpCode} value={code} onChangeText={setCode} keyboardType="numeric" icon="key" maxLength={6} />
               </>
             ) : null}
             {error ? <Text style={styles.loginError}>{error}</Text> : null}
             <View style={styles.row}>
               {confirmation ? (
                 <>
-                  <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
-                  <AuthActionButton title={busy ? 'Verifying' : 'Verify'} onPress={verifyOtp} />
+                  <SecondaryButton title={copy.change} icon="create" onPress={() => setConfirmation(null)} />
+                  <AuthActionButton title={busy ? copy.verifying : copy.verify} onPress={verifyOtp} />
                 </>
               ) : (
-                <AuthActionButton title={busy ? 'Sending' : 'Send OTP'} onPress={sendOtp} />
+                <AuthActionButton title={busy ? copy.sending : copy.sendOtp} onPress={sendOtp} />
               )}
             </View>
             <AuthDivider />
@@ -757,9 +1483,10 @@ function DeliveryIllustration() {
 }
 
 function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText: (value: string) => void }) {
+  const copy = useCopy();
   return (
     <View style={styles.authFieldGroup}>
-      <Text style={styles.fieldLabel}>Mobile Number</Text>
+      <Text style={styles.fieldLabel}>{copy.mobileNumber}</Text>
       <View style={styles.phoneInputShell}>
         <Ionicons name="phone-portrait-outline" size={18} color={colors.partner} />
         <Text style={styles.countryCode}>+91</Text>
@@ -770,7 +1497,7 @@ function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText:
           onChangeText={onChangeText}
           keyboardType="phone-pad"
           maxLength={10}
-          placeholder="Enter your mobile number"
+          placeholder={copy.enterMobileNumber}
           placeholderTextColor="#9CA3AF"
           style={styles.phoneInputText}
         />
@@ -797,11 +1524,12 @@ function AuthDivider() {
 }
 
 function LoginFeatureRow() {
+  const copy = useCopy();
   const features: Array<{ icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string }> = [
-    { icon: 'cube-outline', title: 'Live', subtitle: 'Orders' },
-    { icon: 'shield-checkmark-outline', title: 'Secure', subtitle: 'KYC' },
-    { icon: 'document-text-outline', title: 'Smart', subtitle: 'Payouts' },
-    { icon: 'headset-outline', title: '24/7', subtitle: 'Support' }
+    { icon: 'cube-outline', title: copy.live, subtitle: copy.orders },
+    { icon: 'shield-checkmark-outline', title: copy.secure, subtitle: copy.kyc },
+    { icon: 'document-text-outline', title: copy.smart, subtitle: copy.payouts },
+    { icon: 'headset-outline', title: '24/7', subtitle: copy.support }
   ];
   return (
     <View style={styles.loginFeatureRow}>
@@ -833,6 +1561,7 @@ function PartnerOnboardingScreen({
   onSaveProfile: (input: PartnerProfileInput) => Promise<void>;
   onCapture: (doc: KycDoc) => void;
 }) {
+  const copy = useCopy();
   const docs = user.partnerProfile?.docs;
   const identityDone = Boolean(docs?.pan || docs?.aadhaar);
   const personalDetailsDone = Boolean(user.email && user.name !== 'Indiery Partner' && user.city);
@@ -851,9 +1580,9 @@ function PartnerOnboardingScreen({
   const [localError, setLocalError] = useState('');
 
   const onboardingSteps: { id: OnboardingStepId; label: string; done: boolean }[] = [
-    { id: 1, label: 'Personal', done: personalDetailsDone },
-    { id: 2, label: 'Uploads', done: documentsDone },
-    { id: 3, label: 'Vehicle', done: vehicleDetailsDone }
+    { id: 1, label: copy.personal, done: personalDetailsDone },
+    { id: 2, label: copy.uploads, done: documentsDone },
+    { id: 3, label: copy.vehicle, done: vehicleDetailsDone }
   ];
   const stepProgress = onboardingSteps.filter((step) => step.done).length;
 
@@ -867,15 +1596,15 @@ function PartnerOnboardingScreen({
     const nextEmail = email.trim();
     const nextCity = city.trim();
     if (nextName.length < 2) {
-      setLocalError('Enter your full name');
+      setLocalError(copy.enterFullName);
       return undefined;
     }
     if (!nextEmail.includes('@')) {
-      setLocalError('Enter a valid email');
+      setLocalError(copy.enterValidEmail);
       return undefined;
     }
     if (nextCity.length < 2) {
-      setLocalError('Enter your city');
+      setLocalError(copy.enterCity);
       return undefined;
     }
     return { name: nextName, email: nextEmail, city: nextCity };
@@ -890,7 +1619,7 @@ function PartnerOnboardingScreen({
     if (!details) return;
     const nextVehicleId = selectedVehicleId();
     if (!nextVehicleId) {
-      setLocalError('Vehicle catalog is not available yet');
+      setLocalError(copy.vehicleCatalogUnavailable);
       return;
     }
     setLocalError('');
@@ -904,15 +1633,15 @@ function PartnerOnboardingScreen({
 
   function continueFromUploads() {
     if (!docs?.selfie) {
-      setLocalError('Capture your live selfie');
+      setLocalError(copy.captureLiveSelfie);
       return;
     }
     if (!identityDone) {
-      setLocalError('Capture PAN or Aadhaar');
+      setLocalError(copy.capturePanOrAadhaar);
       return;
     }
     if (!docs?.drivingLicence) {
-      setLocalError('Capture your driving licence');
+      setLocalError(copy.captureDrivingLicence);
       return;
     }
     setLocalError('');
@@ -928,11 +1657,11 @@ function PartnerOnboardingScreen({
     const nextVehicleId = selectedVehicleId();
     const nextVehicleNumber = vehicleNumber.trim().toUpperCase();
     if (!nextVehicleId) {
-      setLocalError('Select your vehicle type');
+      setLocalError(copy.selectVehicleType);
       return;
     }
     if (nextVehicleNumber.length < 4) {
-      setLocalError('Enter vehicle number');
+      setLocalError(copy.enterVehicleNumber);
       return;
     }
     setLocalError('');
@@ -947,14 +1676,14 @@ function PartnerOnboardingScreen({
             <Ionicons name="shield-checkmark" size={26} color={colors.white} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.kycHeroTitle}>Complete partner setup</Text>
-            <Text style={styles.kycHeroText}>Finish these steps once. Dashboard opens after all required details are submitted.</Text>
+            <Text style={styles.kycHeroTitle}>{copy.completePartnerSetup}</Text>
+            <Text style={styles.kycHeroText}>{copy.completePartnerSetupText}</Text>
           </View>
         </View>
 
         <View style={styles.onboardingStepperCard}>
           <View style={styles.between}>
-            <Text style={styles.cardTitle}>Setup progress</Text>
+            <Text style={styles.cardTitle}>{copy.setupProgress}</Text>
             <Text style={styles.priceText}>{stepProgress}/3</Text>
           </View>
           <OnboardingStepper steps={onboardingSteps} activeStep={activeStep} onSelect={goToStep} />
@@ -967,29 +1696,29 @@ function PartnerOnboardingScreen({
                 <Ionicons name={personalDetailsDone ? 'checkmark' : 'person'} size={20} color={personalDetailsDone ? colors.white : colors.partner} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>Personal details</Text>
-                <Text style={styles.mutedSmall}>Name, email, phone, and city</Text>
+                <Text style={styles.cardTitle}>{copy.personalDetails}</Text>
+                <Text style={styles.mutedSmall}>{copy.personalDetailsSubtitle}</Text>
               </View>
             </View>
-            <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
-            <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
-            <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
-            <AuthField label="Login mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
+            <AuthField label={copy.fullName} value={name} onChangeText={setName} icon="person" />
+            <AuthField label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
+            <AuthField label={copy.city} value={city} onChangeText={setCity} icon="location" />
+            <AuthField label={copy.loginMobileNumber} value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
             {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
-            <PrimaryButton title={busy ? 'Saving' : 'Save and Next'} icon="arrow-forward" onPress={savePersonalDetails} />
+            <PrimaryButton title={busy ? copy.saving : copy.saveAndNext} icon="arrow-forward" onPress={savePersonalDetails} />
           </View>
         ) : null}
 
         {activeStep === 2 ? (
           <>
             <View style={styles.onboardingStepIntro}>
-              <Text style={styles.cardTitle}>Upload details</Text>
-              <Text style={styles.mutedSmall}>Selfie, identity proof, and driving licence</Text>
+              <Text style={styles.cardTitle}>{copy.uploadDetails}</Text>
+              <Text style={styles.mutedSmall}>{copy.uploadDetailsSubtitle}</Text>
             </View>
             <KycStepCard
               icon="person-circle"
-              title="Live selfie"
-              subtitle="Capture a clear face photo"
+              title={copy.liveSelfie}
+              subtitle={copy.captureClearFacePhoto}
               done={Boolean(docs?.selfie)}
               busy={busy}
               onPress={() => onCapture('selfie')}
@@ -997,28 +1726,28 @@ function PartnerOnboardingScreen({
             <View style={styles.kycGroupCard}>
               <View style={styles.between}>
                 <View style={styles.flex}>
-                  <Text style={styles.cardTitle}>PAN or Aadhaar</Text>
-                  <Text style={styles.mutedSmall}>One identity proof is required</Text>
+                  <Text style={styles.cardTitle}>{copy.panOrAadhaar}</Text>
+                  <Text style={styles.mutedSmall}>{copy.oneIdentityProofRequired}</Text>
                 </View>
                 <Ionicons name={identityDone ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={identityDone ? colors.green : colors.muted} />
               </View>
               <View style={styles.row}>
-                <SecondaryButton title={docs?.pan ? 'PAN done' : 'Capture PAN'} icon="card" onPress={() => onCapture('pan')} />
-                <SecondaryButton title={docs?.aadhaar ? 'Aadhaar done' : 'Capture Aadhaar'} icon="card" onPress={() => onCapture('aadhaar')} />
+                <SecondaryButton title={docs?.pan ? copy.panDone : copy.capturePan} icon="card" onPress={() => onCapture('pan')} />
+                <SecondaryButton title={docs?.aadhaar ? copy.aadhaarDone : copy.captureAadhaar} icon="card" onPress={() => onCapture('aadhaar')} />
               </View>
             </View>
             <KycStepCard
               icon="document-text"
-              title="Driving licence"
-              subtitle="Capture licence photo"
+              title={copy.drivingLicence}
+              subtitle={copy.captureLicencePhoto}
               done={Boolean(docs?.drivingLicence)}
               busy={busy}
               onPress={() => onCapture('drivingLicence')}
             />
             {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
             <View style={styles.onboardingNavRow}>
-              <SecondaryButton title="Back" icon="arrow-back" onPress={() => goToStep(1)} />
-              <PrimaryButton title="Next" icon="arrow-forward" onPress={continueFromUploads} />
+              <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => goToStep(1)} />
+              <PrimaryButton title={copy.next} icon="arrow-forward" onPress={continueFromUploads} />
             </View>
           </>
         ) : null}
@@ -1030,17 +1759,17 @@ function PartnerOnboardingScreen({
                 <Ionicons name={vehicleDetailsDone ? 'checkmark' : 'car'} size={20} color={vehicleDetailsDone ? colors.white : colors.partner} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>Vehicle details</Text>
-                <Text style={styles.mutedSmall}>Vehicle type, number, and RC</Text>
+                <Text style={styles.cardTitle}>{copy.vehicleDetails}</Text>
+                <Text style={styles.mutedSmall}>{copy.vehicleDetailsSubtitle}</Text>
               </View>
             </View>
             <VehiclePicker vehicles={vehicles} selectedId={vehicleId} onSelect={setVehicleId} />
-            <AuthField label="Vehicle number" value={vehicleNumber} onChangeText={setVehicleNumber} icon="bicycle" autoCapitalize="characters" />
-            <PrimaryButton title={docs?.rc ? 'RC captured' : 'Capture RC'} icon="camera" onPress={() => onCapture('rc')} />
+            <AuthField label={copy.vehicleNumber} value={vehicleNumber} onChangeText={setVehicleNumber} icon="bicycle" autoCapitalize="characters" />
+            <PrimaryButton title={docs?.rc ? copy.rcCaptured : copy.captureRc} icon="camera" onPress={() => onCapture('rc')} />
             {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
             <View style={styles.onboardingNavRow}>
-              <SecondaryButton title="Back" icon="arrow-back" onPress={() => goToStep(2)} />
-              <PrimaryButton title={busy ? 'Saving' : 'Save Vehicle'} icon="checkmark" onPress={saveVehicleDetails} />
+              <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => goToStep(2)} />
+              <PrimaryButton title={busy ? copy.saving : copy.saveVehicle} icon="checkmark" onPress={saveVehicleDetails} />
             </View>
           </View>
         ) : null}
@@ -1101,6 +1830,7 @@ function ProfileSetupScreen({
   error: string;
   onSave: (input: { name: string; email: string; city: string; vehicleId: string; vehicleNumber: string }) => Promise<void>;
 }) {
+  const copy = useCopy();
   const [name, setName] = useState(user.name === 'Indiery Partner' ? '' : user.name);
   const [email, setEmail] = useState(user.email || '');
   const [city, setCity] = useState(user.city || 'Lucknow');
@@ -1114,19 +1844,19 @@ function ProfileSetupScreen({
     const nextCity = city.trim();
     const nextVehicleNumber = vehicleNumber.trim().toUpperCase();
     if (nextName.length < 2) {
-      setLocalError('Enter your full name');
+      setLocalError(copy.enterFullName);
       return;
     }
     if (!nextEmail.includes('@')) {
-      setLocalError('Enter a valid email');
+      setLocalError(copy.enterValidEmail);
       return;
     }
     if (nextCity.length < 2) {
-      setLocalError('Enter your city');
+      setLocalError(copy.enterCity);
       return;
     }
     if (!vehicleId) {
-      setLocalError('Select your vehicle type');
+      setLocalError(copy.selectVehicleType);
       return;
     }
     setLocalError('');
@@ -1141,20 +1871,20 @@ function ProfileSetupScreen({
             <View style={styles.authTrackOne} />
             <View style={styles.authTrackTwo} />
             <View style={styles.authAccentLine} />
-            <BrandLogo title="Indiery Partner" accentColor={colors.partner} />
+            <BrandLogo title={copy.appName} accentColor={colors.partner} />
           </View>
           <View style={styles.authForm}>
-            <Text style={styles.authKicker}>Almost there</Text>
-            <Text style={styles.authTitle}>Profile</Text>
-            <Text style={styles.loginSubtitle}>Complete your partner profile</Text>
-            <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
-            <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
-            <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
+            <Text style={styles.authKicker}>{copy.partnerSetup}</Text>
+            <Text style={styles.authTitle}>{copy.profile}</Text>
+            <Text style={styles.loginSubtitle}>{copy.completePartnerSetupText}</Text>
+            <AuthField label={copy.fullName} value={name} onChangeText={setName} icon="person" />
+            <AuthField label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
+            <AuthField label={copy.city} value={city} onChangeText={setCity} icon="location" />
             <VehiclePicker vehicles={vehicles} selectedId={vehicleId} onSelect={setVehicleId} />
-            <AuthField label="Vehicle number" value={vehicleNumber} onChangeText={setVehicleNumber} icon="bicycle" autoCapitalize="characters" />
-            <AuthField label="Login mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
+            <AuthField label={copy.vehicleNumber} value={vehicleNumber} onChangeText={setVehicleNumber} icon="bicycle" autoCapitalize="characters" />
+            <AuthField label={copy.loginMobileNumber} value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
             {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
-            <PrimaryButton title={busy ? 'Saving' : 'Continue'} icon="arrow-forward" onPress={submit} />
+            <PrimaryButton title={busy ? copy.saving : copy.continue} icon="arrow-forward" onPress={submit} />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1171,9 +1901,10 @@ function VehiclePicker({
   selectedId: string;
   onSelect: (vehicleId: string) => void;
 }) {
+  const copy = useCopy();
   return (
     <View style={styles.authFieldGroup}>
-      <Text style={styles.fieldLabel}>Vehicle type</Text>
+      <Text style={styles.fieldLabel}>{copy.vehicleType}</Text>
       <View style={styles.vehicleChoiceList}>
         {vehicles.map((vehicle) => {
           const selected = vehicle.id === selectedId;
@@ -1186,7 +1917,7 @@ function VehiclePicker({
               <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={selected ? colors.partner : colors.muted} />
               <View style={styles.flex}>
                 <Text style={styles.vehicleChoiceTitle}>{vehicle.shortName}</Text>
-                <Text style={styles.vehicleChoiceMeta}>Up to {vehicle.capacityKg} kg</Text>
+                <Text style={styles.vehicleChoiceMeta}>{copy.upToKg} {vehicle.capacityKg} kg</Text>
               </View>
             </Pressable>
           );
@@ -1288,6 +2019,7 @@ function DashboardScreen({
   onActive: () => void;
   onTopup: (amount: number) => void;
 }) {
+  const copy = useCopy();
   const profile = data.user.partnerProfile;
   const online = Boolean(profile?.online);
   const balance = profile?.walletBalance ?? 0;
@@ -1300,32 +2032,32 @@ function DashboardScreen({
           <View style={styles.walletBlockHeader}>
             <Ionicons name="wallet-outline" size={22} color={colors.amber} />
             <View style={styles.flex}>
-              <Text style={styles.cardTitle}>Recharge driver wallet</Text>
-              <Text style={styles.mutedSmall}>Minimum {money(minPartnerWalletBalance)} balance is required to receive new orders.</Text>
+              <Text style={styles.cardTitle}>{copy.rechargeDriverWallet}</Text>
+              <Text style={styles.mutedSmall}>{fillCopy(copy.minimumBalanceRequired, { amount: money(minPartnerWalletBalance) })}</Text>
             </View>
           </View>
-          <Text style={styles.walletBlockBalance}>Current balance: {money(balance)}</Text>
-          <PrimaryButton title={`Recharge ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
+          <Text style={styles.walletBlockBalance}>{copy.currentBalance}: {money(balance)}</Text>
+          <PrimaryButton title={`${copy.recharge} ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
         </View>
       ) : null}
 
       <Pressable style={[styles.onlineCard, online && styles.onlineCardActive, !walletReady && styles.onlineCardDisabled]} onPress={walletReady ? onToggle : () => onTopup(rechargeAmount)}>
-        <Text style={[styles.onlineText, online && styles.onlineTextActive]}>{busy ? 'SYNCING' : online ? 'ONLINE' : walletReady ? 'OFFLINE' : 'RECHARGE'}</Text>
-        <Text style={styles.muted}>{walletReady ? (online ? 'Receiving nearby orders' : 'Tap to start receiving orders') : 'Wallet below minimum'}</Text>
+        <Text style={[styles.onlineText, online && styles.onlineTextActive]}>{busy ? copy.syncing : online ? copy.online : walletReady ? copy.offline : copy.rechargeStatus}</Text>
+        <Text style={styles.muted}>{walletReady ? (online ? copy.receivingNearbyOrders : copy.tapToStartReceivingOrders) : copy.walletBelowMinimum}</Text>
       </Pressable>
 
       <View style={styles.statRow}>
-        <StatCard title="Today" value={money(data.stats.todayEarn)} tone="green" />
-        <StatCard title="Orders" value={String(data.stats.completedCount)} tone="blue" />
-        <StatCard title="Rating" value={`${profile?.rating ?? 5}`} tone="amber" />
+        <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
+        <StatCard title={copy.orders} value={String(data.stats.completedCount)} tone="blue" />
+        <StatCard title={copy.rating} value={`${profile?.rating ?? 5}`} tone="amber" />
       </View>
 
       <View style={styles.row}>
-        <PrimaryButton title="Available Jobs" icon="cube" onPress={onOrders} />
-        <SecondaryButton title="Active Trip" icon="navigate" onPress={onActive} />
+        <PrimaryButton title={copy.availableJobs} icon="cube" onPress={onOrders} />
+        <SecondaryButton title={copy.activeTrip} icon="navigate" onPress={onActive} />
       </View>
 
-      <SectionTitle title="Nearby Orders" />
+      <SectionTitle title={copy.nearbyOrders} />
       {data.availableOrders.slice(0, 3).map((order) => (
         <OrderCard key={order.id} order={order} />
       ))}
@@ -1344,11 +2076,12 @@ function OrdersScreen({
   onAccept: (orderId: string) => void;
   onReject: (orderId: string) => void;
 }) {
+  const copy = useCopy();
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <SectionTitle title={`Available Orders (${orders.length})`} />
+      <SectionTitle title={`${copy.availableOrders} (${orders.length})`} />
       {orders.length === 0 ? (
-        <Empty icon="time-outline" title="No orders right now" subtitle="Stay online and refresh after a customer books." />
+        <Empty icon="time-outline" title={copy.noOrdersRightNow} subtitle={copy.stayOnlineRefresh} />
       ) : null}
       {orders.map((order) => (
         <View key={order.id} style={styles.orderCard}>
@@ -1360,8 +2093,8 @@ function OrdersScreen({
             <Chip label={order.goodsType} />
           </View>
           <View style={styles.row}>
-            <SecondaryButton title="Skip" icon="close" onPress={() => onReject(order.id)} />
-            <PrimaryButton title={busy ? 'Wait' : `Accept ${money(order.fare.partnerNet)}`} icon="checkmark" onPress={() => onAccept(order.id)} />
+            <SecondaryButton title={copy.skip} icon="close" onPress={() => onReject(order.id)} />
+            <PrimaryButton title={busy ? copy.wait : `${copy.accept} ${money(order.fare.partnerNet)}`} icon="checkmark" onPress={() => onAccept(order.id)} />
           </View>
         </View>
       ))}
@@ -1388,25 +2121,27 @@ function ActiveScreen({
   onPod: (orderId: string, type: 'pickup' | 'drop') => void;
   onStatus: (orderId: string, status: 'arrived_pickup' | 'picked_up' | 'in_transit' | 'delivered') => void;
 }) {
+  const copy = useCopy();
+  const language = useLanguage();
   const [otp, setOtp] = useState('');
   const order = orders.find((item) => item.id === selectedOrderId) ?? orders[0];
   if (!order) {
     return (
       <View style={styles.emptyFull}>
-        <Empty icon="navigate-outline" title="No active delivery" subtitle="Accept an order from the Orders tab." />
-        <PrimaryButton title="Refresh" icon="refresh" onPress={refresh} />
+        <Empty icon="navigate-outline" title={copy.noActiveDelivery} subtitle={copy.acceptOrderFromOrdersTab} />
+        <PrimaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
       </View>
     );
   }
 
-  const nextActions = getNextActions(order);
+  const nextActions = getNextActions(order, copy);
   const needsPickupOtp = order.status === 'arrived_pickup' && !order.pod.pickupOtpVerified;
   const needsDropOtp = order.status === 'in_transit' && !order.pod.dropOtpVerified;
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       {orders.length > 1 ? (
         <>
-          <SectionTitle title={`Active Trips (${orders.length})`} />
+          <SectionTitle title={`${copy.activeTrips} (${orders.length})`} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeTripSwitchRow}>
             {orders.map((item) => {
               const selected = item.id === order.id;
@@ -1418,9 +2153,9 @@ function ActiveScreen({
                 >
                   <Text style={[styles.activeTripSwitchTitle, selected && styles.activeTripSwitchTitleSelected]}>{item.orderNo}</Text>
                   <Text style={styles.activeTripSwitchMeta} numberOfLines={1}>
-                    {item.pickup.label} to {item.drop.label}
+                    {item.pickup.label} {copy.to} {item.drop.label}
                   </Text>
-                  <Text style={styles.activeTripSwitchMeta}>{statusLabels[item.status]}</Text>
+                  <Text style={styles.activeTripSwitchMeta}>{orderStatusLabel(language, item.status)}</Text>
                 </Pressable>
               );
             })}
@@ -1436,29 +2171,29 @@ function ActiveScreen({
       <Timeline order={order} />
 
       <View style={styles.payoutCard}>
-        <FareLine label="Order value" value={money(order.fare.orderValue)} />
-        <FareLine label="Driver commission 80%" value={money(order.fare.driverCommission)} />
-        <FareLine label="On-time reserve reward 5%" value={money(order.fare.reserveAmount)} />
-        <FareLine label="Indiery commission 15%" value={money(order.fare.platformCommission)} />
-        <FareLine label="You receive if on-time" value={money(order.fare.onTimePartnerPayout)} bold />
-        <FareLine label="If late, you receive" value={money(order.fare.latePartnerPayout)} />
-        <FareLine label="Customer late refund coins" value={money(order.fare.lateRefundCoins)} />
+        <FareLine label={copy.orderValue} value={money(order.fare.orderValue)} />
+        <FareLine label={copy.driverCommission} value={money(order.fare.driverCommission)} />
+        <FareLine label={copy.reserveReward} value={money(order.fare.reserveAmount)} />
+        <FareLine label={copy.indieryCommission} value={money(order.fare.platformCommission)} />
+        <FareLine label={copy.youReceiveOnTime} value={money(order.fare.onTimePartnerPayout)} bold />
+        <FareLine label={copy.ifLateReceive} value={money(order.fare.latePartnerPayout)} />
+        <FareLine label={copy.customerLateRefundCoins} value={money(order.fare.lateRefundCoins)} />
       </View>
 
-      <SectionTitle title="Trip Actions" />
+      <SectionTitle title={copy.tripActions} />
       {needsPickupOtp || needsDropOtp ? (
         <View style={styles.otpPanel}>
-          <Text style={styles.fieldLabel}>{needsPickupOtp ? 'Pickup OTP' : 'Drop OTP'}</Text>
+          <Text style={styles.fieldLabel}>{needsPickupOtp ? copy.pickupOtp : copy.dropOtp}</Text>
           <View style={styles.otpRow}>
             <TextInput
               value={otp}
               onChangeText={setOtp}
               keyboardType="numeric"
-              placeholder="Enter 6 digit code"
+              placeholder={copy.enter6DigitCode}
               style={styles.otpInput}
             />
             <PrimaryButton
-              title="Verify"
+              title={copy.verify}
               icon="key"
               onPress={() => {
                 onOtp(order.id, needsPickupOtp ? 'pickup' : 'drop', otp);
@@ -1471,7 +2206,7 @@ function ActiveScreen({
       {nextActions.map((action) => (
         <PrimaryButton
           key={action.label}
-          title={busy ? 'Updating' : action.label}
+          title={busy ? copy.updating : action.label}
           icon={action.icon}
           onPress={() => {
             if (action.kind === 'pod') onPod(order.id, action.type);
@@ -1479,7 +2214,7 @@ function ActiveScreen({
           }}
         />
       ))}
-      <SecondaryButton title="Refresh" icon="refresh" onPress={refresh} />
+      <SecondaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
     </ScrollView>
   );
 }
@@ -1495,6 +2230,7 @@ function EarningsScreen({
   onPayout: () => void;
   onTopup: (amount: number) => void;
 }) {
+  const copy = useCopy();
   const profile = data.user.partnerProfile;
   const balance = profile?.walletBalance ?? 0;
   const walletReady = balance >= minPartnerWalletBalance;
@@ -1502,21 +2238,23 @@ function EarningsScreen({
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.walletCard}>
-        <Text style={styles.eyebrowDark}>WALLET BALANCE</Text>
+        <Text style={styles.eyebrowDark}>{copy.walletBalance}</Text>
         <Text style={styles.walletValue}>{money(balance)}</Text>
         <Text style={styles.muted}>
-          {walletReady ? `${profile?.weeklyOrders ?? 0} trips this week` : `Recharge ${money(rechargeAmount)} to unlock new orders`}
+          {walletReady
+            ? `${profile?.weeklyOrders ?? 0} ${copy.tripsThisWeek}`
+            : fillCopy(copy.rechargeToUnlock, { amount: money(rechargeAmount) })}
         </Text>
         {!walletReady ? (
-          <PrimaryButton title={busy ? 'Opening' : `Recharge ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
+          <PrimaryButton title={busy ? copy.opening : `${copy.recharge} ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
         ) : null}
-        <PrimaryButton title={busy ? 'Requesting' : 'Request Payout'} icon="send" onPress={onPayout} />
+        <PrimaryButton title={busy ? copy.requesting : copy.requestPayout} icon="send" onPress={onPayout} />
       </View>
       <View style={styles.statRow}>
-        <StatCard title="Today" value={money(data.stats.todayEarn)} tone="green" />
-        <StatCard title="Done" value={String(data.stats.completedCount)} tone="blue" />
+        <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
+        <StatCard title={copy.done} value={String(data.stats.completedCount)} tone="blue" />
       </View>
-      <SectionTitle title="Recent Transactions" />
+      <SectionTitle title={copy.recentTransactions} />
       {data.stats.ledger.map((item) => (
         <View key={item.id} style={styles.ledgerRow}>
           <View style={[styles.ledgerIcon, item.kind === 'credit' ? styles.ledgerCredit : styles.ledgerDebit]}>
@@ -1524,7 +2262,7 @@ function EarningsScreen({
           </View>
           <View style={styles.flex}>
             <Text style={styles.cardTitle}>{item.title}</Text>
-            <Text style={styles.mutedSmall}>{item.reference || 'Wallet'}</Text>
+            <Text style={styles.mutedSmall}>{item.reference || copy.wallet}</Text>
           </View>
           <Text style={[styles.amount, item.kind === 'credit' ? styles.amountGreen : styles.amountRed]}>
             {item.kind === 'credit' ? '+' : '-'}{money(item.amount)}
@@ -1542,7 +2280,9 @@ function ProfileScreen({
   onCapture,
   onSubmitBank,
   onLogout,
-  onRequestAccountDeletion
+  onRequestAccountDeletion,
+  language,
+  onChangeLanguage
 }: {
   user: UserProfile;
   vehicles: Vehicle[];
@@ -1551,7 +2291,10 @@ function ProfileScreen({
   onSubmitBank: (bankDetails: BankDetailsInput) => void;
   onLogout: () => void;
   onRequestAccountDeletion: () => void;
+  language: AppLanguage;
+  onChangeLanguage: (language: AppLanguage) => void;
 }) {
+  const copy = useCopy();
   const docs = user.partnerProfile?.docs;
   const bankDetails = user.partnerProfile?.bankDetails;
   const progress = partnerSetupProgress(user);
@@ -1567,15 +2310,15 @@ function ProfileScreen({
     const nextAccountNumber = accountNumber.replace(/\D/g, '');
     const nextIfsc = ifsc.trim().toUpperCase();
     if (nextAccountHolder.length < 2) {
-      setBankError('Enter account holder name');
+      setBankError(copy.enterAccountHolderName);
       return;
     }
     if (!/^\d{9,18}$/.test(nextAccountNumber)) {
-      setBankError('Enter a valid account number');
+      setBankError(copy.enterValidAccountNumber);
       return;
     }
     if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(nextIfsc)) {
-      setBankError('Enter a valid IFSC code');
+      setBankError(copy.enterValidIfsc);
       return;
     }
     setBankError('');
@@ -1590,12 +2333,12 @@ function ProfileScreen({
           <Ionicons name="shield-checkmark" size={26} color={colors.white} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.kycHeroTitle}>Profile</Text>
-          <Text style={styles.kycHeroText}>
-            Manage personal details, vehicle details, and uploaded documents.
-          </Text>
+          <Text style={styles.kycHeroTitle}>{copy.profile}</Text>
+          <Text style={styles.kycHeroText}>{copy.profileManageText}</Text>
         </View>
       </View>
+
+      <LanguageSwitcher language={language} onChangeLanguage={onChangeLanguage} />
 
       <View style={styles.profileInfoCard}>
         <View style={styles.profileInfoHeader}>
@@ -1604,34 +2347,34 @@ function ProfileScreen({
           </View>
           <View style={styles.flex}>
             <Text style={styles.profileName}>{user.name}</Text>
-            <Text style={styles.mutedSmall}>{user.partnerProfile?.kycStatus || 'not_started'} verification</Text>
+            <Text style={styles.mutedSmall}>{kycStatusLabel(language, user.partnerProfile?.kycStatus)} {copy.verification}</Text>
           </View>
         </View>
-        <ProfileInfoRow icon="call" label="Mobile" value={user.phone} />
-        <ProfileInfoRow icon="mail" label="Email" value={user.email || 'Not added'} />
-        <ProfileInfoRow icon="location" label="City" value={user.city || 'Not added'} />
-        <ProfileInfoRow icon="car" label="Vehicle" value={`${vehicleName} - ${user.partnerProfile?.vehicleNumber || 'Number not added'}`} />
+        <ProfileInfoRow icon="call" label={copy.mobile} value={user.phone} />
+        <ProfileInfoRow icon="mail" label={copy.email} value={user.email || copy.notAdded} />
+        <ProfileInfoRow icon="location" label={copy.city} value={user.city || copy.notAdded} />
+        <ProfileInfoRow icon="car" label={copy.vehicle} value={`${vehicleName} - ${user.partnerProfile?.vehicleNumber || copy.numberNotAdded}`} />
       </View>
 
       <View style={styles.kycProgressCard}>
         <View style={styles.between}>
-          <Text style={styles.cardTitle}>Document progress</Text>
+          <Text style={styles.cardTitle}>{copy.documentProgress}</Text>
           <Text style={styles.priceText}>{progress.completed}/{progress.total}</Text>
         </View>
         <View style={styles.kycProgressTrack}>
           <View style={[styles.kycProgressFill, { width: `${(progress.completed / progress.total) * 100}%` }]} />
         </View>
         <Text style={styles.mutedSmall}>
-          Status: {user.partnerProfile?.kycStatus || 'not_started'}
-          {progress.complete && user.partnerProfile?.kycStatus !== 'verified' ? ' - submitted for review' : ''}
+          {copy.status}: {kycStatusLabel(language, user.partnerProfile?.kycStatus)}
+          {progress.complete && user.partnerProfile?.kycStatus !== 'verified' ? ` - ${copy.submittedForReview}` : ''}
         </Text>
       </View>
 
-      <SectionTitle title="Documents Uploaded" />
+      <SectionTitle title={copy.documentsUploaded} />
       <KycStepCard
         icon="person-circle"
-        title="Live selfie"
-        subtitle="Take a clear face photo with camera"
+        title={copy.liveSelfie}
+        subtitle={copy.captureClearFacePhoto}
         done={Boolean(docs?.selfie)}
         busy={busy}
         onPress={() => onCapture('selfie')}
@@ -1640,29 +2383,29 @@ function ProfileScreen({
       <View style={styles.kycGroupCard}>
         <View style={styles.between}>
           <View>
-            <Text style={styles.cardTitle}>Identity proof</Text>
-            <Text style={styles.mutedSmall}>Capture PAN or Aadhaar. One is required.</Text>
+            <Text style={styles.cardTitle}>{copy.identityProof}</Text>
+            <Text style={styles.mutedSmall}>{copy.capturePanOrAadhaarRequired}</Text>
           </View>
           <Ionicons name={identityDone ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={identityDone ? colors.green : colors.muted} />
         </View>
         <View style={styles.row}>
-          <SecondaryButton title={docs?.pan ? 'PAN done' : 'Capture PAN'} icon="card" onPress={() => onCapture('pan')} />
-          <SecondaryButton title={docs?.aadhaar ? 'Aadhaar done' : 'Capture Aadhaar'} icon="card" onPress={() => onCapture('aadhaar')} />
+          <SecondaryButton title={docs?.pan ? copy.panDone : copy.capturePan} icon="card" onPress={() => onCapture('pan')} />
+          <SecondaryButton title={docs?.aadhaar ? copy.aadhaarDone : copy.captureAadhaar} icon="card" onPress={() => onCapture('aadhaar')} />
         </View>
       </View>
 
       <KycStepCard
         icon="document-text"
-        title="Driving licence"
-        subtitle="Capture front side clearly"
+        title={copy.drivingLicence}
+        subtitle={copy.captureFrontClearly}
         done={Boolean(docs?.drivingLicence)}
         busy={busy}
         onPress={() => onCapture('drivingLicence')}
       />
       <KycStepCard
         icon="car"
-        title="Vehicle RC"
-        subtitle="Required for vehicle ownership or authorization"
+        title={copy.vehicleRc}
+        subtitle={copy.rcRequired}
         done={Boolean(docs?.rc)}
         busy={busy}
         onPress={() => onCapture('rc')}
@@ -1671,51 +2414,51 @@ function ProfileScreen({
       <View style={[styles.kycGroupCard, docs?.bank && styles.kycStepDone]}>
         <View style={styles.between}>
           <View>
-            <Text style={styles.cardTitle}>Bank account</Text>
+            <Text style={styles.cardTitle}>{copy.bankAccount}</Text>
             <Text style={styles.mutedSmall}>
-              {docs?.bank ? `${bankDetails?.accountNumberMasked || 'Account saved'} - ${bankDetails?.ifsc || 'IFSC saved'}` : 'Used for payouts'}
+              {docs?.bank ? `${bankDetails?.accountNumberMasked || copy.accountSaved} - ${bankDetails?.ifsc || copy.ifscSaved}` : copy.usedForPayouts}
             </Text>
           </View>
           <Ionicons name={docs?.bank ? 'checkmark-circle' : 'wallet-outline'} size={22} color={docs?.bank ? colors.green : colors.partner} />
         </View>
         <View style={styles.kycInputGroup}>
-          <Text style={styles.fieldLabel}>Account holder</Text>
-          <TextInput value={accountHolder} onChangeText={setAccountHolder} style={styles.kycInput} placeholder="Name as per bank" />
+          <Text style={styles.fieldLabel}>{copy.accountHolder}</Text>
+          <TextInput value={accountHolder} onChangeText={setAccountHolder} style={styles.kycInput} placeholder={copy.nameAsPerBank} />
         </View>
         <View style={styles.kycInputGroup}>
-          <Text style={styles.fieldLabel}>Account number</Text>
+          <Text style={styles.fieldLabel}>{copy.accountNumber}</Text>
           <TextInput
             value={accountNumber}
             onChangeText={setAccountNumber}
             style={styles.kycInput}
-            placeholder={bankDetails?.accountNumberMasked || 'Enter account number'}
+            placeholder={bankDetails?.accountNumberMasked || copy.enterAccountNumber}
             keyboardType="numeric"
             secureTextEntry
           />
         </View>
         <View style={styles.kycInputGroup}>
-          <Text style={styles.fieldLabel}>IFSC code</Text>
+          <Text style={styles.fieldLabel}>{copy.ifscCode}</Text>
           <TextInput value={ifsc} onChangeText={setIfsc} style={styles.kycInput} autoCapitalize="characters" placeholder="ABCD0123456" />
         </View>
         {bankError ? <Text style={styles.loginError}>{bankError}</Text> : null}
-        <PrimaryButton title={busy ? 'Saving' : docs?.bank ? 'Update Bank' : 'Save Bank'} icon="checkmark" onPress={submitBank} />
+        <PrimaryButton title={busy ? copy.saving : docs?.bank ? copy.updateBank : copy.saveBank} icon="checkmark" onPress={submitBank} />
       </View>
 
       {progress.complete ? (
         <View style={styles.notice}>
           <Ionicons name="time" size={18} color={colors.partner} />
-          <Text style={styles.noticeText}>Profile submitted. Indiery will verify documents before order access is enabled.</Text>
+          <Text style={styles.noticeText}>{copy.profileSubmittedNotice}</Text>
         </View>
       ) : null}
 
       <PolicyList />
       <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
         <Ionicons name="trash-outline" size={18} color={colors.red} />
-        <Text style={styles.deleteAccountButtonText}>Request account deletion</Text>
+        <Text style={styles.deleteAccountButtonText}>{copy.requestAccountDeletion}</Text>
       </Pressable>
       <Pressable style={styles.logoutButton} onPress={onLogout}>
         <Ionicons name="log-out-outline" size={18} color={colors.red} />
-        <Text style={styles.logoutButtonText}>Logout</Text>
+        <Text style={styles.logoutButtonText}>{copy.logout}</Text>
       </Pressable>
     </ScrollView>
   );
@@ -1728,6 +2471,45 @@ function ProfileInfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.gl
       <View style={styles.flex}>
         <Text style={styles.mutedSmall}>{label}</Text>
         <Text style={styles.profileInfoValue}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function LanguageSwitcher({
+  language,
+  onChangeLanguage,
+  compact
+}: {
+  language: AppLanguage;
+  onChangeLanguage: (language: AppLanguage) => void;
+  compact?: boolean;
+}) {
+  const copy = useCopy();
+  return (
+    <View style={[styles.languageCard, compact && styles.languageCardCompact]}>
+      <View style={styles.languageHeader}>
+        <Ionicons name="language-outline" size={18} color={colors.partner} />
+        <View style={styles.flex}>
+          <Text style={styles.cardTitle}>{copy.changeLanguage}</Text>
+          <Text style={styles.mutedSmall}>{languageNativeLabel(language)}</Text>
+        </View>
+      </View>
+      <View style={styles.languageOptionRow}>
+        {(['en', 'hi'] as AppLanguage[]).map((option) => {
+          const active = option === language;
+          return (
+            <Pressable
+              key={option}
+              style={[styles.languagePill, active && styles.languagePillActive]}
+              onPress={() => onChangeLanguage(option)}
+            >
+              <Text style={[styles.languagePillText, active && styles.languagePillTextActive]}>
+                {option === 'hi' ? copy.hindiNative : copy.english}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -1748,6 +2530,7 @@ function KycStepCard({
   busy: boolean;
   onPress: () => void;
 }) {
+  const copy = useCopy();
   return (
     <Pressable style={[styles.kycStepCard, done && styles.kycStepDone]} onPress={onPress}>
       <View style={[styles.kycStepIcon, done && styles.kycStepIconDone]}>
@@ -1758,18 +2541,19 @@ function KycStepCard({
         <Text style={styles.mutedSmall}>{subtitle}</Text>
       </View>
       <Text style={[styles.kycActionText, done && styles.docDoneText]}>
-        {done ? 'Done' : busy ? 'Opening' : 'Capture'}
+        {done ? copy.done : busy ? copy.opening : copy.capture}
       </Text>
     </Pressable>
   );
 }
 
 function PolicyList() {
+  const copy = useCopy();
   const [openPolicy, setOpenPolicy] = useState<LegalPolicy['id'] | null>(null);
 
   return (
     <View style={styles.policyList}>
-      <SectionTitle title="Policies and Legal" />
+      <SectionTitle title={copy.policiesLegal} />
       {legalPolicies.map((policy) => (
         <PolicyCard
           key={policy.id}
@@ -1791,6 +2575,7 @@ function PolicyCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const copy = useCopy();
   const icons: Record<LegalPolicy['id'], keyof typeof Ionicons.glyphMap> = {
     privacy: 'lock-closed',
     terms: 'document-text',
@@ -1805,7 +2590,7 @@ function PolicyCard({
         </View>
         <View style={styles.flex}>
           <Text style={styles.cardTitle}>{policy.title}</Text>
-          <Text style={styles.mutedSmall}>Updated {policy.updatedAt}</Text>
+          <Text style={styles.mutedSmall}>{copy.updated} {policy.updatedAt}</Text>
           <Text style={styles.policySummary}>{policy.summary}</Text>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
@@ -1837,12 +2622,13 @@ function BottomTabs({
   availableCount: number;
   activeCount: number;
 }) {
+  const copy = useCopy();
   const tabs: Array<[Tab, keyof typeof Ionicons.glyphMap, string, number?]> = [
-    ['dashboard', 'home', 'Home'],
-    ['orders', 'cube', 'Orders', availableCount],
-    ['active', 'navigate', 'Active', activeCount],
-    ['earnings', 'wallet', 'Earn'],
-    ['profile', 'person', 'Profile']
+    ['dashboard', 'home', copy.home],
+    ['orders', 'cube', copy.orders, availableCount],
+    ['active', 'navigate', copy.active, activeCount],
+    ['earnings', 'wallet', copy.earn],
+    ['profile', 'person', copy.profile]
   ];
   return (
     <View style={styles.tabs}>
@@ -1866,30 +2652,30 @@ function BottomTabs({
   );
 }
 
-function getNextActions(order: Order) {
+function getNextActions(order: Order, copy: Record<CopyKey, string>) {
   if (order.status === 'accepted') {
-    return [{ kind: 'status' as const, label: 'Arrived at Pickup', status: 'arrived_pickup' as const, icon: 'location' as const }];
+    return [{ kind: 'status' as const, label: copy.arrivedAtPickup, status: 'arrived_pickup' as const, icon: 'location' as const }];
   }
   if (order.status === 'arrived_pickup') {
     return [
-      { kind: 'pod' as const, label: 'Capture Pickup POD', type: 'pickup' as const, icon: 'camera' as const },
+      { kind: 'pod' as const, label: copy.capturePickupPod, type: 'pickup' as const, icon: 'camera' as const },
       ...(order.pod.pickupOtpVerified
-        ? [{ kind: 'status' as const, label: 'Mark Picked Up', status: 'picked_up' as const, icon: 'cube' as const }]
+        ? [{ kind: 'status' as const, label: copy.markPickedUp, status: 'picked_up' as const, icon: 'cube' as const }]
         : [])
     ];
   }
   if (order.status === 'picked_up') {
-    return [{ kind: 'status' as const, label: 'Start Transit', status: 'in_transit' as const, icon: 'navigate' as const }];
+    return [{ kind: 'status' as const, label: copy.startTransit, status: 'in_transit' as const, icon: 'navigate' as const }];
   }
   if (order.status === 'in_transit') {
     return [
-      { kind: 'pod' as const, label: 'Capture Drop POD', type: 'drop' as const, icon: 'camera' as const },
+      { kind: 'pod' as const, label: copy.captureDropPod, type: 'drop' as const, icon: 'camera' as const },
       ...(order.pod.dropOtpVerified
-        ? [{ kind: 'status' as const, label: 'Mark Delivered', status: 'delivered' as const, icon: 'checkmark' as const }]
+        ? [{ kind: 'status' as const, label: copy.markDelivered, status: 'delivered' as const, icon: 'checkmark' as const }]
         : [])
     ];
   }
-  return [{ kind: 'status' as const, label: 'Refresh Trip', status: 'in_transit' as const, icon: 'refresh' as const }];
+  return [{ kind: 'status' as const, label: copy.refreshTrip, status: 'in_transit' as const, icon: 'refresh' as const }];
 }
 
 function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
@@ -1942,32 +2728,35 @@ function OrderCard({ order }: { order: Order }) {
 }
 
 function OrderHeader({ order }: { order: Order }) {
+  const copy = useCopy();
+  const language = useLanguage();
   return (
     <View style={styles.between}>
       <View>
         <Text style={styles.orderNo}>{order.orderNo}</Text>
-        <Text style={styles.cardTitle}>{order.customer?.name || 'Customer'}</Text>
+        <Text style={styles.cardTitle}>{order.customer?.name || copy.customer}</Text>
       </View>
-      <Badge label={statusLabels[order.status]} />
+      <Badge label={orderStatusLabel(language, order.status)} />
     </View>
   );
 }
 
 function RouteBlock({ order }: { order: Order }) {
+  const copy = useCopy();
   return (
     <View>
       <View style={styles.route}>
         <View style={styles.routeDot} />
         <View style={styles.flex}>
           <Text style={styles.routeText}>{order.pickup.label}</Text>
-          <Text style={styles.mutedSmall}>Pickup</Text>
+          <Text style={styles.mutedSmall}>{copy.pickup}</Text>
         </View>
       </View>
       <View style={styles.route}>
         <View style={[styles.routeDot, styles.routeDotGreen]} />
         <View style={styles.flex}>
           <Text style={styles.routeText}>{order.drop.label}</Text>
-          <Text style={styles.mutedSmall}>Drop</Text>
+          <Text style={styles.mutedSmall}>{copy.drop}</Text>
         </View>
       </View>
     </View>
@@ -1991,6 +2780,7 @@ function Chip({ label }: { label: string }) {
 }
 
 function MapPreview({ pickup, drop, eta }: { pickup: string; drop: string; eta: number }) {
+  const copy = useCopy();
   return (
     <View style={styles.map}>
       <View style={styles.mapRoad} />
@@ -2000,7 +2790,7 @@ function MapPreview({ pickup, drop, eta }: { pickup: string; drop: string; eta: 
       <View style={styles.mapPinB} />
       <View style={styles.etaChip}>
         <Text style={styles.etaValue}>{eta}</Text>
-        <Text style={styles.etaLabel}>MIN</Text>
+        <Text style={styles.etaLabel}>{copy.min}</Text>
       </View>
       <Text style={styles.mapText}>{pickup} {'->'} {drop}</Text>
     </View>
@@ -2008,6 +2798,7 @@ function MapPreview({ pickup, drop, eta }: { pickup: string; drop: string; eta: 
 }
 
 function Timeline({ order }: { order: Order }) {
+  const language = useLanguage();
   return (
     <View style={styles.orderCard}>
       {order.timeline.map((item) => (
@@ -2022,8 +2813,8 @@ function Timeline({ order }: { order: Order }) {
             {item.state === 'done' ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
           </View>
           <View style={styles.flex}>
-            <Text style={styles.timelineTitle}>{item.title}</Text>
-            <Text style={styles.mutedSmall}>{item.note}</Text>
+            <Text style={styles.timelineTitle}>{timelineTitle(language, item.key, item.title)}</Text>
+            {item.note ? <Text style={styles.mutedSmall}>{timelineNote(language, item.key, item.note)}</Text> : null}
           </View>
         </View>
       ))}
@@ -2399,6 +3190,14 @@ const styles = StyleSheet.create({
   profileName: { color: colors.ink, fontSize: 18, fontWeight: '900' },
   profileInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.line },
   profileInfoValue: { color: colors.ink, fontSize: 13, fontWeight: '900', marginTop: 2 },
+  languageCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 12, marginBottom: 12 },
+  languageCardCompact: { marginTop: -10, marginBottom: 16 },
+  languageHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  languageOptionRow: { flexDirection: 'row', gap: 8 },
+  languagePill: { flex: 1, minHeight: 38, borderRadius: 12, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  languagePillActive: { backgroundColor: colors.partnerLight, borderWidth: 1, borderColor: colors.partner },
+  languagePillText: { color: colors.muted, fontSize: 12, fontWeight: '900' },
+  languagePillTextActive: { color: colors.partner },
   kycProgressCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
   kycProgressTrack: { height: 8, borderRadius: 8, backgroundColor: colors.faint, overflow: 'hidden', marginBottom: 8 },
   kycProgressFill: { height: 8, borderRadius: 8, backgroundColor: colors.partner },

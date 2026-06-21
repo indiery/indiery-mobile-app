@@ -12,19 +12,23 @@ import { estimateFare } from '../services/fare.service';
 import { resolveDistanceKm } from '../services/maps.service';
 import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { hashOtp, makeTripOtp } from '../services/otp.service';
-import { sendPush } from '../services/notification.service';
 import { createTimeline, setOrderStatusTimeline } from '../services/timeline.service';
 import { serializeOrder, serializeUser, serializeVehicle } from '../services/serialize.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { initialsFromName } from '../services/profile.service';
+import { offerOrderToNextDrivers } from '../services/order-offers.service';
 
 export const customerRouter = Router();
 
 customerRouter.use(requireAuth(['customer']));
 
 const customerVehicleCodes = ['bike', 'loader90', 'mini500', 'mini750'];
-const MIN_PARTNER_WALLET_BALANCE = 200;
-
+const customerVehicleMaxWeight: Record<string, number> = {
+  bike: 20,
+  loader90: 90,
+  mini500: 500,
+  mini750: 750
+};
 const ExtraStopSchema = z.object({
   label: z.string().trim().min(2),
   address: z.string().trim().optional(),
@@ -196,10 +200,10 @@ async function debitCustomerWallet(input: {
 
 async function customerVehicleForWeight(weightKg: number) {
   const requiredCode =
-    weightKg >= 40 && weightKg <= 90
-      ? 'loader90'
-      : weightKg <= 40
-        ? 'bike'
+    weightKg <= 20
+      ? 'bike'
+      : weightKg <= 90
+        ? 'loader90'
         : weightKg <= 500
           ? 'mini500'
           : weightKg <= 750
@@ -209,39 +213,14 @@ async function customerVehicleForWeight(weightKg: number) {
   return Vehicle.findOne({ active: true, code: requiredCode });
 }
 
-function assertVehicleMatchesWeight(vehicle: VehicleDocument | null, requiredVehicle: VehicleDocument | null | undefined) {
+function assertVehicleMatchesWeight(vehicle: VehicleDocument | null, requiredVehicle: VehicleDocument | null | undefined, weightKg: number) {
   if (!vehicle) throw new ApiError(404, 'Vehicle not found');
   if (!customerVehicleCodes.includes(vehicle.code)) throw new ApiError(400, 'This vehicle is not available for customer booking');
   if (!requiredVehicle) throw new ApiError(400, 'No customer vehicle is available for this weight');
-  if (String(vehicle._id) !== String(requiredVehicle._id)) {
+  const maxWeight = customerVehicleMaxWeight[vehicle.code] ?? vehicle.capacityKg;
+  if (weightKg > maxWeight) {
     throw new ApiError(400, `Use ${requiredVehicle.shortName} for this weight`);
   }
-}
-
-async function notifyAvailableOrder(order: Awaited<ReturnType<typeof populatedOrder>>) {
-  if (!order) return;
-  const payload = serializeOrder(order);
-  const vehicleId =
-    order.vehicle && typeof order.vehicle === 'object' && '_id' in order.vehicle
-      ? String(order.vehicle._id)
-      : String(order.vehicle || '');
-  const onlinePartners = await User.find({
-    role: 'partner',
-    'partnerProfile.online': true,
-    'partnerProfile.kycStatus': 'verified',
-    'partnerProfile.walletBalance': { $gte: MIN_PARTNER_WALLET_BALANCE },
-    'partnerProfile.vehicleId': vehicleId
-  }).select('expoPushTokens');
-  await Promise.all(
-    onlinePartners.map((partner) =>
-      sendPush(partner.expoPushTokens, 'New Indiery order', `${order.pickup.label} to ${order.drop.label}`, {
-        orderId: String(order._id),
-        orderNo: order.orderNo
-      })
-    )
-  );
-  emitPartnerQueueChanged();
-  return payload;
 }
 
 customerRouter.get(
@@ -333,7 +312,7 @@ customerRouter.post(
     const vehicle = await Vehicle.findById(body.vehicleId);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
     const requiredVehicle = await customerVehicleForWeight(body.weightKg);
-    assertVehicleMatchesWeight(vehicle, requiredVehicle);
+    assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
     const distanceKm = await resolveDistanceKm(body);
     const fare = estimateFare({
       pickup: body.pickup,
@@ -356,7 +335,7 @@ customerRouter.post(
     const vehicle = await Vehicle.findById(body.vehicleId);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
     const requiredVehicle = await customerVehicleForWeight(body.weightKg);
-    assertVehicleMatchesWeight(vehicle, requiredVehicle);
+    assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
 
     const distanceKm = await resolveDistanceKm(body);
     const fare = estimateFare({
@@ -416,9 +395,9 @@ customerRouter.post(
       paymentStatus: paymentIntent.status,
       paymentProvider: paymentIntent.provider,
       paymentReference: paymentIntent.reference,
-      status: 'offered',
+      status: 'searching',
       etaMinutes: fare.etaMinutes,
-      timeline: createTimeline('offered'),
+      timeline: createTimeline('searching'),
       verification: {
         pickupOtpHash: await hashOtp(pickupOtp),
         dropOtpHash: await hashOtp(dropOtp)
@@ -460,9 +439,12 @@ customerRouter.post(
     if (!fullOrder) throw new ApiError(500, 'Order could not be loaded');
     const payload = serializeOrder(fullOrder);
     emitOrderChanged(payload, String(user._id));
-    if (paymentIntent.provider === 'cash' || paymentIntent.status === 'paid') await notifyAvailableOrder(fullOrder);
+    const dispatchPayload =
+      paymentIntent.provider === 'cash' || paymentIntent.status === 'paid'
+        ? await offerOrderToNextDrivers(order._id, { reason: 'new' })
+        : undefined;
     res.status(201).json({
-      order: payload,
+      order: dispatchPayload ?? payload,
       paymentIntent,
       tripOtp: {
         pickup: pickupOtp,
@@ -524,8 +506,8 @@ customerRouter.post(
     const fullOrder = await populatedOrder(order._id);
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
     emitOrderChanged(payload, req.auth!.userId, order.partner ? String(order.partner) : undefined);
-    await notifyAvailableOrder(fullOrder);
-    res.json({ order: payload });
+    const dispatchPayload = await offerOrderToNextDrivers(order._id, { reason: 'payment' });
+    res.json({ order: dispatchPayload ?? payload });
   })
 );
 

@@ -93,6 +93,7 @@ type MapPickerTarget = {
   value: string;
   lat?: number;
   lng?: number;
+  openContact?: boolean;
 };
 
 const serviceOptions: Array<{
@@ -107,9 +108,46 @@ const serviceOptions: Array<{
   { id: 'enterprise', title: 'Business', subtitle: 'Bulk logistics', icon: 'briefcase' }
 ];
 
-const goodsOptions = ['Documents', 'Groceries', 'Electronics', 'Furniture', 'Business stock', 'Household items'];
+const presetGoodsOptions = ['Documents', 'Groceries', 'Electronics', 'Furniture', 'Business stock', 'Household items'];
+const goodsOptions = [...presetGoodsOptions, 'Other'];
+const allowedGoodsItems = [
+  'Documents',
+  'Groceries and packed food',
+  'Electronics and accessories',
+  'Furniture and household items',
+  'Business stock',
+  'Clothes and personal items',
+  'Books and stationery',
+  'Packed tools and hardware'
+];
+const restrictedGoodsItems = [
+  'Illegal items',
+  'Cash, gold, jewellery, or valuables',
+  'Weapons, ammunition, or sharp arms',
+  'Explosives, fireworks, or flammable items',
+  'Alcohol, tobacco, drugs, or narcotics',
+  'Human remains or body parts',
+  'Live animals or plants',
+  'Hazardous chemicals',
+  'Medical waste or biohazards',
+  'Perishable items without packing',
+  'Loose liquids or leaking goods',
+  'Stolen or counterfeit goods'
+];
 const maxExtraStops = 3;
 const customerVehicleCodes = ['bike', 'loader90', 'mini500', 'mini750'];
+type PorterVehicleRule = {
+  maxWeightKg: number;
+  minWeightKg?: number;
+  baseFare: number;
+  perKmAfterFirst: number;
+};
+const porterVehicleRules: Record<string, PorterVehicleRule> = {
+  bike: { maxWeightKg: 20, baseFare: 40, perKmAfterFirst: 10 },
+  loader90: { minWeightKg: 20, maxWeightKg: 90, baseFare: 75, perKmAfterFirst: 13 },
+  mini500: { minWeightKg: 90, maxWeightKg: 500, baseFare: 200, perKmAfterFirst: 20 },
+  mini750: { minWeightKg: 500, maxWeightKg: 750, baseFare: 300, perKmAfterFirst: 30 }
+};
 const languageOptions: Array<{ id: AppLanguage; label: string; nativeLabel: string }> = [
   { id: 'en', label: 'English', nativeLabel: 'English' },
   { id: 'hi', label: 'Hindi', nativeLabel: 'हिन्दी' }
@@ -135,7 +173,7 @@ const enCopy = {
   ordersTab: 'Orders',
   walletTab: 'Wallet',
   accountTab: 'Account',
-  whereTo: 'WHERE TO?',
+  whereTo: 'Pickup location',
   enterDropLocation: 'Enter drop location',
   repeatLastRoute: 'Repeat last route',
   instantBooking: 'Instant booking',
@@ -181,6 +219,30 @@ const enCopy = {
   goodsType: 'Goods type',
   weightKg: 'Weight kg',
   restrictedGoods: 'Restricted goods, hazardous items, and illegal materials are not allowed.',
+  other: 'Other',
+  describeGoods: 'Describe goods',
+  enterGoodsType: 'Enter goods type',
+  enterWeight: 'Enter weight',
+  goodsRules: 'Goods rules',
+  viewGoodsRules: 'View allowed and restricted goods',
+  allowedGoods: 'Allowed goods',
+  notAllowedGoods: 'Not allowed goods',
+  goodsRulesIntro: 'Check what can and cannot be shipped before booking.',
+  okayUnderstood: 'Okay, understood',
+  chooseVehicle: 'Choose vehicle',
+  suggested: 'Suggested',
+  unavailableForWeight: 'Too heavy',
+  fareBeforeTax: 'Fare',
+  settingPickupLocation: 'Setting current pickup location',
+  allVehiclePrices: 'All vehicle prices',
+  changeRoute: 'Change route',
+  routeAndContacts: 'Route and contacts',
+  sender: 'Sender',
+  receiver: 'Receiver',
+  sameAsAppUser: 'Sender is same as app user?',
+  yesUseMine: 'Yes, use mine',
+  noEnterManually: 'No, enter manually',
+  pricedAfterRoute: 'Price is calculated from this route and weight.',
   routeSummary: 'Route summary',
   service: 'Service',
   vehicle: 'Vehicle',
@@ -231,7 +293,7 @@ const enCopy = {
   dropOtp: 'Drop OTP',
   deliveryOtp: 'Delivery OTP',
   liveGps: 'Live GPS',
-  waitingGps: 'Waiting GPS',
+  waitingGps: 'Waiting for driver GPS',
   min: 'MIN',
   indieryCoins: 'INDIERY COINS',
   useCoinsDiscount: 'Use coins as discount on bookings.',
@@ -343,7 +405,7 @@ const enCopy = {
   locationHint: 'Select a suggestion for accurate fare and tracking, or continue with typed text.'
 } as const;
 
-const hiCopy: Record<keyof typeof enCopy, string> = {
+const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   hi: 'नमस्ते',
   loading: 'Indiery लोड हो रहा है',
   continue: 'जारी रखें',
@@ -363,7 +425,7 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
   ordersTab: 'ऑर्डर',
   walletTab: 'वॉलेट',
   accountTab: 'अकाउंट',
-  whereTo: 'कहाँ भेजना है?',
+  whereTo: 'पिकअप लोकेशन',
   enterDropLocation: 'ड्रॉप लोकेशन डालें',
   repeatLastRoute: 'पिछला रूट दोहराएं',
   instantBooking: 'तुरंत बुकिंग',
@@ -459,7 +521,7 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
   dropOtp: 'ड्रॉप OTP',
   deliveryOtp: 'डिलीवरी OTP',
   liveGps: 'लाइव GPS',
-  waitingGps: 'GPS का इंतजार',
+  waitingGps: 'ड्राइवर GPS का इंतजार',
   min: 'मिनट',
   indieryCoins: 'INDIERY कॉइन',
   useCoinsDiscount: 'बुकिंग पर छूट के लिए कॉइन उपयोग करें.',
@@ -573,7 +635,7 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
 
 const appCopy: Record<AppLanguage, Record<keyof typeof enCopy, string>> = {
   en: enCopy,
-  hi: hiCopy
+  hi: { ...enCopy, ...hiCopy }
 };
 type CopyKey = keyof typeof enCopy;
 const LanguageContext = createContext<AppLanguage>('en');
@@ -621,10 +683,21 @@ function goodsLabel(language: AppLanguage, item: string) {
     Electronics: 'electronics',
     Furniture: 'furniture',
     'Business stock': 'businessStock',
-    'Household items': 'householdItems'
+    'Household items': 'householdItems',
+    Other: 'other'
   };
   const key = labels[item];
   return key ? copyFor(language, key) : item;
+}
+
+function isPresetGoodsType(item: string) {
+  return presetGoodsOptions.includes(item);
+}
+
+function bookingGoodsLabel(language: AppLanguage, item: string) {
+  const trimmed = item.trim();
+  if (!trimmed) return copyFor(language, 'other');
+  return goodsLabel(language, trimmed);
 }
 
 function statusLabel(language: AppLanguage, status: Order['status']) {
@@ -679,21 +752,42 @@ function parseBookingWeight(value: string) {
 }
 
 function customerVehicleCodeForWeight(weightKg: number) {
-  if (weightKg >= 40 && weightKg <= 90) return 'loader90';
-  if (weightKg <= 40) return 'bike';
+  if (weightKg <= 20) return 'bike';
+  if (weightKg <= 90) return 'loader90';
   if (weightKg <= 500) return 'mini500';
   if (weightKg <= 750) return 'mini750';
   return undefined;
 }
 
-function customerVehiclesForWeight(vehicles: Vehicle[], weightKg?: number) {
-  const customerVehicles = vehicles
+function customerVehicles(vehicles: Vehicle[]) {
+  return vehicles
     .filter((vehicle) => customerVehicleCodes.includes(vehicle.code))
-    .sort((left, right) => left.capacityKg - right.capacityKg);
-  if (!weightKg) return customerVehicles;
+    .sort((left, right) => customerVehicleCodes.indexOf(left.code) - customerVehicleCodes.indexOf(right.code));
+}
+
+function suggestedCustomerVehicle(vehicles: Vehicle[], weightKg?: number) {
+  if (!weightKg) return undefined;
   const requiredCode = customerVehicleCodeForWeight(weightKg);
-  const smallestMatch = customerVehicles.find((vehicle) => vehicle.code === requiredCode);
-  return smallestMatch ? [smallestMatch] : [];
+  if (!requiredCode) return undefined;
+  return customerVehicles(vehicles).find((vehicle) => vehicle.code === requiredCode);
+}
+
+function vehicleRule(vehicle: Vehicle) {
+  return porterVehicleRules[vehicle.code];
+}
+
+function vehicleCanCarryWeight(vehicle: Vehicle, weightKg?: number) {
+  if (!weightKg) return true;
+  const rule = vehicleRule(vehicle);
+  return weightKg <= (rule?.maxWeightKg ?? vehicle.capacityKg);
+}
+
+function porterVehicleQuote(vehicle: Vehicle, distanceKm?: number) {
+  const rule = vehicleRule(vehicle);
+  const billableKm = Math.max(1, Math.ceil(distanceKm || 1));
+  const baseFare = rule?.baseFare ?? vehicle.baseFare;
+  const perKmAfterFirst = rule?.perKmAfterFirst ?? vehicle.perKm;
+  return baseFare + Math.max(0, billableKm - 1) * perKmAfterFirst;
 }
 
 function vehicleIcon(vehicle: Vehicle): keyof typeof Ionicons.glyphMap {
@@ -705,7 +799,9 @@ function vehicleIcon(vehicle: Vehicle): keyof typeof Ionicons.glyphMap {
 }
 
 function vehicleCapacityText(vehicle: Vehicle, upTo: string) {
-  if (vehicle.code === 'loader90') return '40-90 kg';
+  const rule = vehicleRule(vehicle);
+  if (vehicle.code === 'loader90') return '20-90 kg';
+  if (rule) return `${upTo} ${rule.maxWeightKg} kg`;
   return `${upTo} ${vehicle.capacityKg} kg`;
 }
 
@@ -748,6 +844,40 @@ function formatReverseAddress(place?: Location.LocationGeocodedAddress) {
   ]
     .filter(Boolean)
     .join(', ');
+}
+
+function withLocationTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+async function readDeviceLocation() {
+  const permission = await Location.requestForegroundPermissionsAsync();
+  if (permission.status !== 'granted') {
+    throw new Error('Location permission is required');
+  }
+
+  const servicesEnabled = await Location.hasServicesEnabledAsync();
+  if (!servicesEnabled) {
+    throw new Error('Turn on device location/GPS');
+  }
+
+  try {
+    return await withLocationTimeout(
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      8000,
+      'GPS is taking too long'
+    );
+  } catch (err) {
+    const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
+    if (lastKnown) return lastKnown;
+    throw err;
+  }
 }
 
 function formatCountdown(ms: number) {
@@ -1004,8 +1134,8 @@ export default function App() {
     setTimeout(() => setToast(''), 2600);
   }
 
-  async function estimateNow(nextStep = step) {
-    if (!booking.vehicleId || !booking.pickup || !booking.drop) return;
+  async function estimateNow(nextStep = step, vehicleId = booking.vehicleId) {
+    if (!vehicleId || !booking.pickup || !booking.drop) return;
     setBusy(true);
     try {
       const extraStops = bookingStopsToLocationPoints(booking.extraStops);
@@ -1014,7 +1144,7 @@ export default function App() {
       const result = await api.estimate({
         pickup,
         drop,
-        vehicleId: booking.vehicleId,
+        vehicleId,
         coins: Number(booking.coins || 0),
         weightKg: Number(booking.weightKg || 1),
         extraStops,
@@ -1043,7 +1173,7 @@ export default function App() {
         pickup,
         drop,
         vehicleId: booking.vehicleId,
-        goodsType: booking.goodsType,
+        goodsType: booking.goodsType.trim() || 'Other',
         weightKg: Number(booking.weightKg || 1),
         coins: Number(booking.coins || 0),
         paymentMode: booking.paymentMode,
@@ -1870,6 +2000,7 @@ function LocationPickerField({
   selected,
   onChangeText,
   onSelect,
+  onDoneTyping,
   onOpenMap
 }: {
   api: IndieryApi;
@@ -1878,6 +2009,7 @@ function LocationPickerField({
   selected: boolean;
   onChangeText: (value: string) => void;
   onSelect: (location: LocationDetails) => void;
+  onDoneTyping?: (value: string) => void;
   onOpenMap?: () => void;
 }) {
   const copy = useCopy();
@@ -1888,6 +2020,7 @@ function LocationPickerField({
   const [localError, setLocalError] = useState('');
   const requestSeqRef = useRef(0);
   const sessionTokenRef = useRef(`loc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const skipDoneTypingRef = useRef(false);
 
   useEffect(() => {
     const query = value.trim();
@@ -1951,6 +2084,15 @@ function LocationPickerField({
         <TextInput
           value={value}
           onFocus={() => setFocused(true)}
+          onBlur={() => {
+            setFocused(false);
+            if (skipDoneTypingRef.current) {
+              skipDoneTypingRef.current = false;
+              return;
+            }
+            if (!suggestions.length) onDoneTyping?.(value);
+          }}
+          onSubmitEditing={() => onDoneTyping?.(value)}
           onChangeText={(nextValue) => {
             setFocused(true);
             onChangeText(nextValue);
@@ -1963,7 +2105,13 @@ function LocationPickerField({
       </View>
       {localError ? <Text style={styles.locationError}>{localError}</Text> : null}
       {onOpenMap ? (
-        <Pressable style={styles.mapSelectButton} onPress={onOpenMap}>
+        <Pressable
+          style={styles.mapSelectButton}
+          onPressIn={() => {
+            skipDoneTypingRef.current = true;
+          }}
+          onPress={onOpenMap}
+        >
           <Ionicons name="map-outline" size={17} color={colors.customer} />
           <Text style={styles.mapSelectText}>{copy.selectOnMap}</Text>
         </Pressable>
@@ -1971,7 +2119,14 @@ function LocationPickerField({
       {suggestions.length ? (
         <View style={styles.locationSuggestionBox}>
           {suggestions.map((suggestion) => (
-            <Pressable key={suggestion.placeId} style={styles.locationSuggestionItem} onPress={() => chooseSuggestion(suggestion)}>
+            <Pressable
+              key={suggestion.placeId}
+              style={styles.locationSuggestionItem}
+              onPressIn={() => {
+                skipDoneTypingRef.current = true;
+              }}
+              onPress={() => chooseSuggestion(suggestion)}
+            >
               <Ionicons name="location-outline" size={18} color={colors.customer} />
               <View style={styles.flex}>
                 <Text style={styles.locationSuggestionTitle}>{suggestion.mainText}</Text>
@@ -2017,6 +2172,56 @@ function SavedAddressStrip({
   );
 }
 
+function VehicleChoiceCard({
+  vehicle,
+  selected,
+  suggested,
+  disabled,
+  price,
+  onPress
+}: {
+  vehicle: Vehicle;
+  selected: boolean;
+  suggested: boolean;
+  disabled?: boolean;
+  price?: number;
+  onPress: () => void;
+}) {
+  const copy = useCopy();
+
+  return (
+    <Pressable
+      style={[
+        styles.vehicleCard,
+        suggested && styles.vehicleCardSuggested,
+        selected && styles.vehicleCardActive,
+        disabled && styles.vehicleCardDisabled
+      ]}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      <View style={styles.vehicleCardHeader}>
+        <Ionicons name={vehicleIcon(vehicle)} size={24} color={disabled ? colors.muted : colors.customer} />
+        <View style={styles.vehicleBadgeRow}>
+          {suggested ? (
+            <View style={styles.vehicleSuggestedBadge}>
+              <Text style={styles.vehicleSuggestedText}>{copy.suggested}</Text>
+            </View>
+          ) : null}
+          <Text style={styles.vehicleEta}>{vehicle.etaMinutes} min</Text>
+        </View>
+      </View>
+      <Text style={[styles.vehicleName, disabled && styles.vehicleNameDisabled]}>{vehicle.shortName}</Text>
+      <Text style={styles.mutedSmall}>{vehicleCapacityText(vehicle, copy.upTo)}</Text>
+      <Text style={styles.vehiclePriceLine}>
+        {copy.fareBeforeTax}: {money(price ?? porterVehicleQuote(vehicle))}
+      </Text>
+      {selected ? <Text style={styles.vehicleSelectedText}>{copy.selected}</Text> : null}
+      {disabled ? <Text style={styles.vehicleUnavailableText}>{copy.unavailableForWeight}</Text> : null}
+    </Pressable>
+  );
+}
+
 function BookScreen({
   api,
   user,
@@ -2043,20 +2248,25 @@ function BookScreen({
   fare: FareBreakup | null;
   busy: boolean;
   onSaveAddress: (input: Omit<SavedAddress, 'id'>) => Promise<void>;
-  estimateNow: (nextStep?: number) => Promise<void>;
+  estimateNow: (nextStep?: number, vehicleId?: string) => Promise<void>;
   placeOrder: () => Promise<void>;
 }) {
   const copy = useCopy();
   const language = useLanguage();
   const bookingWeightKg = parseBookingWeight(booking.weightKg);
-  const vehicleChoices = customerVehiclesForWeight(vehicles, bookingWeightKg);
-  const selectedVehicle = vehicleChoices.find((vehicle) => vehicle.id === booking.vehicleId) ?? vehicleChoices[0];
+  const vehicleChoices = customerVehicles(vehicles);
+  const suggestedVehicle = suggestedCustomerVehicle(vehicles, bookingWeightKg);
+  const selectedVehicle = vehicleChoices.find((vehicle) => vehicle.id === booking.vehicleId) ?? suggestedVehicle ?? vehicleChoices[0];
   const vehicleChoiceIds = vehicleChoices.map((vehicle) => vehicle.id).join('|');
+  const routeDistanceKm = fare?.distanceKm;
   const walletBalance = user.customerProfile?.walletBalance ?? 0;
+  const selectedGoodsIsOther = !isPresetGoodsType(booking.goodsType);
   const [mapPickerTarget, setMapPickerTarget] = useState<MapPickerTarget | null>(null);
   const [contactSheetTarget, setContactSheetTarget] = useState<'pickup' | 'drop' | null>(null);
+  const [goodsRulesOpen, setGoodsRulesOpen] = useState(false);
   const [contactError, setContactError] = useState('');
-  const [savingAddressType, setSavingAddressType] = useState<'pickup' | 'drop' | null>(null);
+  const [autoPickupLoading, setAutoPickupLoading] = useState(false);
+  const autoPickupAttemptedRef = useRef(false);
   const hasPickupLocation = booking.pickup.trim().length > 0;
   const hasDropLocation = booking.drop.trim().length > 0;
 
@@ -2065,10 +2275,77 @@ function BookScreen({
       if (booking.vehicleId) setBooking((current) => ({ ...current, vehicleId: '' }));
       return;
     }
-    if (vehicleChoices.length && !vehicleChoices.some((vehicle) => vehicle.id === booking.vehicleId)) {
-      setBooking((current) => ({ ...current, vehicleId: vehicleChoices[0].id }));
+    const currentVehicle = vehicleChoices.find((vehicle) => vehicle.id === booking.vehicleId);
+    if (!currentVehicle) {
+      setBooking((current) => ({ ...current, vehicleId: (suggestedVehicle ?? vehicleChoices[0]).id }));
+      return;
     }
-  }, [booking.serviceCategory, booking.vehicleId, bookingWeightKg, setBooking, vehicleChoiceIds]);
+    if (!vehicleCanCarryWeight(currentVehicle, bookingWeightKg) && suggestedVehicle) {
+      setBooking((current) => ({ ...current, vehicleId: suggestedVehicle.id }));
+    } else if (!vehicleCanCarryWeight(currentVehicle, bookingWeightKg) && !suggestedVehicle) {
+      setBooking((current) => ({ ...current, vehicleId: '' }));
+    }
+  }, [booking.serviceCategory, booking.vehicleId, bookingWeightKg, setBooking, suggestedVehicle?.id, vehicleChoiceIds]);
+
+  useEffect(() => {
+    if (autoPickupAttemptedRef.current || hasPickupLocation) return undefined;
+    autoPickupAttemptedRef.current = true;
+    let cancelled = false;
+
+    async function setCurrentPickup() {
+      setAutoPickupLoading(true);
+      try {
+        const current = await readDeviceLocation();
+        const nextLat = current.coords.latitude;
+        const nextLng = current.coords.longitude;
+        const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
+        const address = formatReverseAddress(reverse[0]) || 'Current location';
+        if (cancelled) return;
+        setBooking((currentBooking) => (
+          currentBooking.pickup
+            ? currentBooking
+            : {
+                ...currentBooking,
+                pickup: address,
+                pickupPlaceId: `current-${nextLat.toFixed(6)}-${nextLng.toFixed(6)}`,
+                pickupLat: nextLat,
+                pickupLng: nextLng
+              }
+        ));
+      } catch {
+        // The pickup field remains editable if current location cannot be read.
+      } finally {
+        if (!cancelled) setAutoPickupLoading(false);
+      }
+    }
+
+    setCurrentPickup();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPickupLocation, setBooking]);
+
+  function updateBookingWeight(weightKg: string) {
+    const nextWeight = parseBookingWeight(weightKg);
+    const nextSuggestedVehicle = suggestedCustomerVehicle(vehicles, nextWeight);
+    setBooking((current) => {
+      const currentVehicle = vehicleChoices.find((vehicle) => vehicle.id === current.vehicleId);
+      const keepCurrentVehicle = currentVehicle && vehicleCanCarryWeight(currentVehicle, nextWeight);
+      return {
+        ...current,
+        weightKg,
+        vehicleId: keepCurrentVehicle ? current.vehicleId : nextSuggestedVehicle?.id || ''
+      };
+    });
+  }
+
+  function selectGoodsType(item: string) {
+    if (item === 'Other') {
+      setBooking((current) => ({ ...current, goodsType: isPresetGoodsType(current.goodsType) ? '' : current.goodsType }));
+      return;
+    }
+    setBooking((current) => ({ ...current, goodsType: item }));
+  }
 
   function addStop() {
     if (booking.extraStops.length >= maxExtraStops) return;
@@ -2095,7 +2372,7 @@ function BookScreen({
     }));
   }
 
-  function applyRouteLocation(target: 'pickup' | 'drop', location: LocationDetails) {
+  function applyRouteLocation(target: 'pickup' | 'drop', location: LocationDetails, openContact = true) {
     setBooking((current) => ({
       ...current,
       ...(target === 'pickup'
@@ -2113,15 +2390,15 @@ function BookScreen({
           })
     }));
     setContactError('');
-    setContactSheetTarget(target);
+    if (openContact) setContactSheetTarget(target);
   }
 
   function applyMapLocation(location: LocationDetails) {
     if (!mapPickerTarget) return;
     if (mapPickerTarget.kind === 'pickup') {
-      applyRouteLocation('pickup', location);
+      applyRouteLocation('pickup', location, mapPickerTarget.openContact !== false);
     } else if (mapPickerTarget.kind === 'drop') {
-      applyRouteLocation('drop', location);
+      applyRouteLocation('drop', location, mapPickerTarget.openContact !== false);
     } else if (mapPickerTarget.stopId) {
       updateStop(mapPickerTarget.stopId, {
         label: location.address || location.label,
@@ -2131,6 +2408,31 @@ function BookScreen({
       });
     }
     setMapPickerTarget(null);
+  }
+
+  function chooseVehicle(vehicle: Vehicle, refreshFare = false) {
+    if (!vehicleCanCarryWeight(vehicle, bookingWeightKg)) {
+      setContactError(copy.unavailableForWeight);
+      return;
+    }
+    setContactError('');
+    setBooking((current) => ({ ...current, vehicleId: vehicle.id }));
+    if (refreshFare && hasPickupLocation && hasDropLocation && bookingWeightKg) {
+      estimateNow(4, vehicle.id);
+    }
+  }
+
+  function continueFromPickupAndVehicle() {
+    if (!hasPickupLocation) {
+      setContactError(copy.selectLocationFirst);
+      return;
+    }
+    if (!selectedVehicle) {
+      setContactError(copy.selectVehicleValue);
+      return;
+    }
+    setContactError('');
+    setStep(2);
   }
 
   function continueFromRouteDetails() {
@@ -2159,10 +2461,32 @@ function BookScreen({
       return;
     }
     setContactError('');
-    estimateNow(3);
+    setStep(3);
   }
 
-  function applySavedAddress(target: 'pickup' | 'drop', savedAddress: SavedAddress) {
+  function continueFromGoodsDetails() {
+    const goodsType = booking.goodsType.trim();
+    if (goodsType.length < 2) {
+      setContactError(copy.enterGoodsType);
+      return;
+    }
+    if (!bookingWeightKg) {
+      setContactError(copy.enterWeight);
+      return;
+    }
+    if (!suggestedVehicle) {
+      setContactError(`No customer vehicle is available for ${bookingWeightKg} kg.`);
+      return;
+    }
+    if (!selectedVehicle || !vehicleCanCarryWeight(selectedVehicle, bookingWeightKg)) {
+      setContactError(copy.selectVehicleValue);
+      return;
+    }
+    setContactError('');
+    estimateNow(4);
+  }
+
+  function applySavedAddress(target: 'pickup' | 'drop', savedAddress: SavedAddress, openContact = true) {
     setBooking((current) => ({
       ...current,
       ...(target === 'pickup'
@@ -2182,29 +2506,7 @@ function BookScreen({
           })
     }));
     setContactError('');
-    setContactSheetTarget(target);
-  }
-
-  async function saveCurrentAddress(target: 'pickup' | 'drop') {
-    const isPickup = target === 'pickup';
-    const address = isPickup ? booking.pickup : booking.drop;
-    const addressLine = isPickup ? booking.pickupAddressLine : booking.dropAddressLine;
-    const lat = isPickup ? booking.pickupLat : booking.dropLat;
-    const lng = isPickup ? booking.pickupLng : booking.dropLng;
-    if (!address.trim()) {
-      setContactError(copy.selectLocationFirst);
-      return;
-    }
-    setSavingAddressType(target);
-    await onSaveAddress({
-      label: addressLine.trim() || address.split(',')[0] || `${target} address`,
-      address,
-      addressLine,
-      lat,
-      lng,
-      type: 'other'
-    });
-    setSavingAddressType(null);
+    if (openContact) setContactSheetTarget(target);
   }
 
   return (
@@ -2220,6 +2522,61 @@ function BookScreen({
 
       {step === 1 && (
         <View>
+          <SectionTitle title={copy.pickup} />
+          {autoPickupLoading ? (
+            <View style={styles.noticeInfo}>
+              <ActivityIndicator size="small" color={colors.blue} />
+              <Text style={styles.noticeInfoText}>{copy.settingPickupLocation}</Text>
+            </View>
+          ) : null}
+          <LocationPickerField
+            api={api}
+            label={copy.pickup}
+            value={booking.pickup}
+            selected={typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number'}
+            onChangeText={(pickup) =>
+              setBooking((current) => ({
+                ...current,
+                pickup,
+                pickupPlaceId: '',
+                pickupLat: undefined,
+                pickupLng: undefined
+              }))
+            }
+            onSelect={(location) => applyRouteLocation('pickup', location, false)}
+            onOpenMap={() =>
+              setMapPickerTarget({
+                kind: 'pickup',
+                title: copy.setPickupLocation,
+                value: booking.pickup,
+                lat: booking.pickupLat,
+                lng: booking.pickupLng,
+                openContact: false
+              })
+            }
+          />
+          <SavedAddressStrip
+            title={copy.savedPickupAddresses}
+            addresses={savedAddresses}
+            onSelect={(address) => applySavedAddress('pickup', address, false)}
+          />
+          <SectionTitle title={copy.selectVehicle} />
+          <View style={styles.vehicleGrid}>
+            {vehicleChoices.map((vehicle) => {
+              const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
+              return (
+                <VehicleChoiceCard
+                  key={vehicle.id}
+                  vehicle={vehicle}
+                  selected={booking.vehicleId === vehicle.id}
+                  suggested={suggestedVehicle?.id === vehicle.id}
+                  disabled={disabled}
+                  price={porterVehicleQuote(vehicle)}
+                  onPress={() => chooseVehicle(vehicle)}
+                />
+              );
+            })}
+          </View>
           <SectionTitle title={copy.chooseService} />
           <View style={styles.serviceGridCompact}>
             {serviceOptions.map((service) => (
@@ -2236,79 +2593,36 @@ function BookScreen({
               </Pressable>
             ))}
           </View>
-
-          <SectionTitle title={copy.selectVehicle} />
-          <Field
-            label={copy.weightKg}
-            keyboardType="numeric"
-            value={booking.weightKg}
-            onChangeText={(weightKg) => setBooking((current) => ({ ...current, weightKg }))}
-          />
-          <View style={styles.vehicleGrid}>
-            {vehicleChoices.map((vehicle) => (
-              <Pressable
-                key={vehicle.id}
-                style={[styles.vehicleCard, booking.vehicleId === vehicle.id && styles.vehicleCardActive]}
-                onPress={() => setBooking((current) => ({ ...current, vehicleId: vehicle.id }))}
-              >
-                <View style={styles.vehicleCardHeader}>
-                  <Ionicons name={vehicleIcon(vehicle)} size={24} color={colors.customer} />
-                  <Text style={styles.vehicleEta}>{vehicle.etaMinutes} min</Text>
-                </View>
-                <Text style={styles.vehicleName}>{vehicle.shortName}</Text>
-                <Text style={styles.mutedSmall}>{vehicleCapacityText(vehicle, copy.upTo)}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {bookingWeightKg && !vehicleChoices.length ? (
-            <View style={styles.notice}>
-              <Ionicons name="warning" size={16} color={colors.amber} />
-              <Text style={styles.noticeText}>No customer vehicle is available for {bookingWeightKg} kg.</Text>
-            </View>
-          ) : null}
+          {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
           {booking.serviceCategory === 'movers' ? (
             <View style={styles.noticeInfo}>
               <Ionicons name="information-circle" size={16} color={colors.blue} />
               <Text style={styles.noticeInfoText}>{copy.moversNotice}</Text>
             </View>
           ) : null}
-          <PrimaryButton title={copy.continue} icon="arrow-forward" onPress={() => setStep(2)} />
+          <PrimaryButton title={copy.continue} icon="arrow-forward" onPress={continueFromPickupAndVehicle} />
         </View>
       )}
 
       {step === 2 && (
         <View>
           <SectionTitle title={copy.pickupAndDrop} />
-          <LocationPickerField
-            api={api}
-            label={copy.pickup}
-            value={booking.pickup}
-            selected={typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number'}
-            onChangeText={(pickup) =>
-              setBooking((current) => ({
-                ...current,
-                pickup,
-                pickupPlaceId: '',
-                pickupLat: undefined,
-                pickupLng: undefined
-              }))
-            }
-            onSelect={(location) => applyRouteLocation('pickup', location)}
-            onOpenMap={() =>
-              setMapPickerTarget({
-                kind: 'pickup',
-                title: copy.setPickupLocation,
-                value: booking.pickup,
-                lat: booking.pickupLat,
-                lng: booking.pickupLng
-              })
-            }
-          />
-          <SavedAddressStrip
-            title={copy.savedPickupAddresses}
-            addresses={savedAddresses}
-            onSelect={(address) => applySavedAddress('pickup', address)}
-          />
+          <View style={styles.routeReviewCard}>
+            <View style={styles.routeReviewHeader}>
+              <Text style={styles.summaryTitle}>{copy.pickup}</Text>
+              <Pressable style={styles.changeRouteButton} onPress={() => setStep(1)}>
+                <Ionicons name="create-outline" size={14} color={colors.customer} />
+                <Text style={styles.changeRouteText}>{copy.changeRoute}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.routeReviewLine}>
+              <View style={styles.routeReviewDot} />
+              <View style={styles.flex}>
+                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                <Text style={styles.mutedSmall}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+              </View>
+            </View>
+          </View>
           {booking.extraStops.map((stop, index) => (
             <View key={stop.id} style={styles.stopFieldWrap}>
               <LocationPickerField
@@ -2363,6 +2677,9 @@ function BookScreen({
               }))
             }
             onSelect={(location) => applyRouteLocation('drop', location)}
+            onDoneTyping={(value) => {
+              if (value.trim().length >= 2) setContactSheetTarget('drop');
+            }}
             onOpenMap={() =>
               setMapPickerTarget({
                 kind: 'drop',
@@ -2378,40 +2695,6 @@ function BookScreen({
             addresses={savedAddresses}
             onSelect={(address) => applySavedAddress('drop', address)}
           />
-          {hasPickupLocation || hasDropLocation ? (
-            <View style={styles.contactGrid}>
-              {hasPickupLocation ? (
-                <ContactSummaryCard
-                  title={copy.senderDetails}
-                  subtitle={copy.askedAfterPickup}
-                  icon="person-circle"
-                  iconColor={colors.customer}
-                  name={booking.pickupContactName}
-                  phone={booking.pickupContactPhone}
-                  addressLine={booking.pickupAddressLine}
-                  locationLabel={booking.pickup}
-                  onPress={() => setContactSheetTarget('pickup')}
-                  onSaveAddress={() => saveCurrentAddress('pickup')}
-                  saving={savingAddressType === 'pickup'}
-                />
-              ) : null}
-              {hasDropLocation ? (
-                <ContactSummaryCard
-                  title={copy.receiverDetails}
-                  subtitle={copy.askedAfterDrop}
-                  icon="flag"
-                  iconColor={colors.green}
-                  name={booking.dropContactName}
-                  phone={booking.dropContactPhone}
-                  addressLine={booking.dropAddressLine}
-                  locationLabel={booking.drop}
-                  onPress={() => setContactSheetTarget('drop')}
-                  onSaveAddress={() => saveCurrentAddress('drop')}
-                  saving={savingAddressType === 'drop'}
-                />
-              ) : null}
-            </View>
-          ) : null}
           {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
           {hasPickupLocation || hasDropLocation ? (
             <MapPreview
@@ -2432,31 +2715,43 @@ function BookScreen({
         <View>
           <SectionTitle title={copy.goodsDetails} />
           <View style={styles.goodsChipWrap}>
-            {goodsOptions.map((item) => (
-              <Pressable
-                key={item}
-                style={[styles.goodsChip, booking.goodsType === item && styles.goodsChipActive]}
-                onPress={() => setBooking((current) => ({ ...current, goodsType: item }))}
-              >
-                <Text style={[styles.goodsChipText, booking.goodsType === item && styles.goodsChipTextActive]}>{goodsLabel(language, item)}</Text>
-              </Pressable>
-            ))}
+            {goodsOptions.map((item) => {
+              const active = item === 'Other' ? selectedGoodsIsOther : booking.goodsType === item;
+              return (
+                <Pressable
+                  key={item}
+                  style={[styles.goodsChip, active && styles.goodsChipActive]}
+                  onPress={() => selectGoodsType(item)}
+                >
+                  <Text style={[styles.goodsChipText, active && styles.goodsChipTextActive]}>{goodsLabel(language, item)}</Text>
+                </Pressable>
+              );
+            })}
           </View>
           <Field
-            label={copy.goodsType}
-            value={goodsLabel(language, booking.goodsType)}
+            label={selectedGoodsIsOther ? copy.describeGoods : copy.goodsType}
+            value={selectedGoodsIsOther ? booking.goodsType : goodsLabel(language, booking.goodsType)}
             onChangeText={(goodsType) => setBooking((current) => ({ ...current, goodsType }))}
+            editable={selectedGoodsIsOther}
           />
           <Field
             label={copy.weightKg}
             keyboardType="numeric"
             value={booking.weightKg}
-            onChangeText={(weightKg) => setBooking((current) => ({ ...current, weightKg }))}
+            onChangeText={updateBookingWeight}
           />
-          <View style={styles.notice}>
+          <Pressable style={styles.notice} onPress={() => setGoodsRulesOpen(true)}>
             <Ionicons name="warning" size={16} color={colors.amber} />
-            <Text style={styles.noticeText}>{copy.restrictedGoods}</Text>
-          </View>
+            <Text style={styles.noticeText}>{copy.viewGoodsRules}</Text>
+            <Ionicons name="chevron-up" size={16} color={colors.amber} />
+          </Pressable>
+          {bookingWeightKg && !suggestedVehicle ? (
+            <View style={styles.notice}>
+              <Ionicons name="warning" size={16} color={colors.amber} />
+              <Text style={styles.noticeText}>No customer vehicle is available for {bookingWeightKg} kg.</Text>
+            </View>
+          ) : null}
+          {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
           <View style={styles.bookingSummaryCard}>
             <Text style={styles.summaryTitle}>{copy.routeSummary}</Text>
             <SummaryRow label={copy.service} value={serviceTitle(language, booking.serviceCategory)} />
@@ -2465,7 +2760,7 @@ function BookScreen({
           </View>
           <View style={styles.row}>
             <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(2)} />
-            <PrimaryButton title={copy.continue} icon="arrow-forward" onPress={() => estimateNow(4)} />
+            <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromGoodsDetails} />
           </View>
         </View>
       )}
@@ -2473,6 +2768,70 @@ function BookScreen({
       {step === 4 && (
         <View>
           <SectionTitle title={copy.payment} />
+          <View style={styles.routeReviewCard}>
+            <View style={styles.routeReviewHeader}>
+              <Text style={styles.summaryTitle}>{copy.routeAndContacts}</Text>
+              <Pressable style={styles.changeRouteButton} onPress={() => setStep(2)}>
+                <Ionicons name="create-outline" size={14} color={colors.customer} />
+                <Text style={styles.changeRouteText}>{copy.changeRoute}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.routeReviewLine}>
+              <View style={styles.routeReviewDot} />
+              <View style={styles.flex}>
+                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                <Text style={styles.mutedSmall}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+              </View>
+            </View>
+            <View style={styles.routeReviewLine}>
+              <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
+              <View style={styles.flex}>
+                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                <Text style={styles.mutedSmall}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
+              </View>
+            </View>
+          </View>
+
+          <SectionTitle title={copy.allVehiclePrices} />
+          <View style={styles.vehicleGrid}>
+            {vehicleChoices.map((vehicle) => {
+              const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
+              return (
+                <VehicleChoiceCard
+                  key={vehicle.id}
+                  vehicle={vehicle}
+                  selected={booking.vehicleId === vehicle.id}
+                  suggested={suggestedVehicle?.id === vehicle.id}
+                  disabled={disabled}
+                  price={porterVehicleQuote(vehicle, routeDistanceKm)}
+                  onPress={() => chooseVehicle(vehicle, true)}
+                />
+              );
+            })}
+          </View>
+
+          {selectedVehicle ? (
+            <View style={styles.vehicleFareCard}>
+              <View style={styles.vehicleFareIcon}>
+                <Ionicons name={vehicleIcon(selectedVehicle)} size={26} color={colors.customer} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.vehicleName}>{selectedVehicle.shortName}</Text>
+                <Text style={styles.vehicleFareMeta}>
+                  {vehicleCapacityText(selectedVehicle, copy.upTo)} - {fare?.etaMinutes || selectedVehicle.etaMinutes} min
+                </Text>
+                <Text style={styles.mutedSmall}>{copy.pricedAfterRoute}</Text>
+              </View>
+              <Text style={styles.vehicleFarePrice}>{fare ? money(fare.total) : money(porterVehicleQuote(selectedVehicle, routeDistanceKm))}</Text>
+            </View>
+          ) : null}
+
+          <Pressable style={styles.notice} onPress={() => setGoodsRulesOpen(true)}>
+            <Ionicons name="warning" size={16} color={colors.amber} />
+            <Text style={styles.noticeText}>{copy.viewGoodsRules}</Text>
+            <Ionicons name="chevron-up" size={16} color={colors.amber} />
+          </Pressable>
+
           <View style={styles.bookingSummaryCard}>
             <Text style={styles.summaryTitle}>{copy.bookingSummary}</Text>
             <SummaryRow
@@ -2480,7 +2839,7 @@ function BookScreen({
               value={`${composeBookingAddress(booking.pickup, booking.pickupAddressLine)} to ${composeBookingAddress(booking.drop, booking.dropAddressLine)}`}
             />
             <SummaryRow label={copy.vehicle} value={selectedVehicle?.shortName || copy.vehicle} />
-            <SummaryRow label={copy.goods} value={`${goodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} kg`} />
+            <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} kg`} />
             <SummaryRow label={copy.eta} value={`${fare?.etaMinutes || selectedVehicle?.etaMinutes || 0} min`} />
           </View>
           <Field
@@ -2556,6 +2915,7 @@ function BookScreen({
         }}
       />
     ) : null}
+    {goodsRulesOpen ? <GoodsRulesSheet onClose={() => setGoodsRulesOpen(false)} /> : null}
     </>
   );
 }
@@ -2613,6 +2973,56 @@ function ContactSummaryCard({
   );
 }
 
+function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
+  const copy = useCopy();
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.contactSheetOverlay}>
+        <Pressable style={styles.contactSheetBackdrop} onPress={onClose} />
+        <View style={[styles.contactSheet, styles.goodsRulesSheet]}>
+          <View style={styles.contactSheetHandle} />
+          <View style={styles.contactSheetHeader}>
+            <View>
+              <Text style={styles.contactSheetTitle}>{copy.goodsRules}</Text>
+              <Text style={styles.contactSheetSubtitle}>{copy.goodsRulesIntro}</Text>
+            </View>
+            <Pressable style={styles.mapPickerClose} onPress={onClose}>
+              <Ionicons name="close" size={20} color={colors.ink} />
+            </Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.goodsRulesScroll}>
+            <View style={[styles.goodsRulesPanel, styles.goodsRulesAllowedPanel]}>
+              <View style={styles.goodsRulesPanelHeader}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.green} />
+                <Text style={styles.goodsRulesPanelTitle}>{copy.allowedGoods}</Text>
+              </View>
+              {allowedGoodsItems.map((item) => (
+                <View key={item} style={styles.goodsRulesItem}>
+                  <View style={[styles.goodsRulesBullet, styles.goodsRulesBulletAllowed]} />
+                  <Text style={styles.goodsRulesItemText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={[styles.goodsRulesPanel, styles.goodsRulesRestrictedPanel]}>
+              <View style={styles.goodsRulesPanelHeader}>
+                <Ionicons name="ban" size={18} color={colors.red} />
+                <Text style={styles.goodsRulesPanelTitle}>{copy.notAllowedGoods}</Text>
+              </View>
+              {restrictedGoodsItems.map((item) => (
+                <View key={item} style={styles.goodsRulesItem}>
+                  <View style={[styles.goodsRulesBullet, styles.goodsRulesBulletRestricted]} />
+                  <Text style={styles.goodsRulesItemText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+          <PrimaryButton title={copy.okayUnderstood} icon="checkmark" onPress={onClose} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ContactDetailsModal({
   target,
   user,
@@ -2648,6 +3058,13 @@ function ContactDetailsModal({
     });
   }
 
+  function enterManually() {
+    updateContact({
+      pickupContactName: '',
+      pickupContactPhone: ''
+    });
+  }
+
   function saveDetails() {
     if (name.trim().length < 2) {
       setLocalError(isPickup ? copy.enterSenderName : copy.enterReceiverName);
@@ -2680,9 +3097,19 @@ function ContactDetailsModal({
             <Text style={styles.contactPlaceText} numberOfLines={2}>{place || copy.selectedLocation}</Text>
           </View>
           {isPickup ? (
-            <Pressable style={styles.useMyDetailsButton} onPress={useMine}>
-              <Text style={styles.useMyDetailsText}>{copy.useMine}</Text>
-            </Pressable>
+            <View style={styles.sameAsUserPanel}>
+              <Text style={styles.sameAsUserTitle}>{copy.sameAsAppUser}</Text>
+              <View style={styles.sameAsUserActions}>
+                <Pressable style={styles.sameAsUserButton} onPress={useMine}>
+                  <Ionicons name="checkmark-circle" size={16} color={colors.customer} />
+                  <Text style={styles.sameAsUserButtonText}>{copy.yesUseMine}</Text>
+                </Pressable>
+                <Pressable style={[styles.sameAsUserButton, styles.sameAsUserButtonAlt]} onPress={enterManually}>
+                  <Ionicons name="create-outline" size={16} color={colors.ink} />
+                  <Text style={[styles.sameAsUserButtonText, styles.sameAsUserButtonAltText]}>{copy.noEnterManually}</Text>
+                </Pressable>
+              </View>
+            </View>
           ) : null}
           <Field
             label={isPickup ? copy.senderName : copy.receiverName}
@@ -2801,12 +3228,7 @@ function MapLocationPicker({
     setLocating(true);
     setLocalError('');
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setLocalError('Location permission is required to use current location');
-        return;
-      }
-      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const current = await readDeviceLocation();
       const nextLat = current.coords.latitude;
       const nextLng = current.coords.longitude;
       const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
@@ -2819,8 +3241,8 @@ function MapLocationPicker({
       setPinLabel(address);
       setQuery(address);
       setSuggestions([]);
-    } catch {
-      setLocalError('Could not read current location');
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Could not read current location');
     } finally {
       setLocating(false);
     }
@@ -4400,9 +4822,18 @@ const styles = StyleSheet.create({
   vehicleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
   vehicleCard: { width: '48%', borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
   vehicleCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
+  vehicleCardSuggested: { borderColor: colors.green, backgroundColor: colors.partnerLight },
+  vehicleCardDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   vehicleCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  vehicleBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
+  vehicleSuggestedBadge: { backgroundColor: colors.green, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  vehicleSuggestedText: { color: colors.white, fontSize: 9, fontWeight: '900' },
   vehicleEta: { color: colors.green, fontSize: 11, fontWeight: '900', backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   vehicleName: { color: colors.ink, fontWeight: '800', fontSize: 14 },
+  vehicleNameDisabled: { color: colors.muted },
+  vehiclePriceLine: { color: colors.customer, fontSize: 13, fontWeight: '900' },
+  vehicleSelectedText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  vehicleUnavailableText: { color: colors.red, fontSize: 11, fontWeight: '900' },
   fieldGroup: { marginBottom: 12 },
   fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginBottom: 6 },
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.ink },
@@ -4486,6 +4917,13 @@ const styles = StyleSheet.create({
   contactPlaceBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.faint, borderRadius: 14, padding: 12, marginBottom: 12 },
   contactPlaceText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800', lineHeight: 17 },
   contactSheetActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 },
+  sameAsUserPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.faint, padding: 12, marginBottom: 12 },
+  sameAsUserTitle: { color: colors.ink, fontSize: 13, fontWeight: '900', marginBottom: 9 },
+  sameAsUserActions: { flexDirection: 'row', gap: 8 },
+  sameAsUserButton: { flex: 1, minHeight: 38, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  sameAsUserButtonAlt: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  sameAsUserButtonText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  sameAsUserButtonAltText: { color: colors.ink },
   useMyDetailsButton: { alignSelf: 'flex-start', borderRadius: 999, backgroundColor: colors.customerLight, paddingVertical: 7, paddingHorizontal: 10, marginBottom: 8 },
   useMyDetailsText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
   contactDivider: { height: 1, backgroundColor: colors.line, marginTop: 4, marginBottom: 14 },
@@ -4502,6 +4940,30 @@ const styles = StyleSheet.create({
   goodsChipActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   goodsChipText: { color: colors.muted, fontSize: 12, fontWeight: '900' },
   goodsChipTextActive: { color: colors.customer },
+  goodsRulesSheet: { maxHeight: '82%' },
+  goodsRulesScroll: { gap: 12, paddingBottom: 12 },
+  goodsRulesPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 12 },
+  goodsRulesAllowedPanel: { backgroundColor: colors.partnerLight, borderColor: '#BBF7D0' },
+  goodsRulesRestrictedPanel: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  goodsRulesPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
+  goodsRulesPanelTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  goodsRulesItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 4 },
+  goodsRulesBullet: { width: 6, height: 6, borderRadius: 3, marginTop: 6 },
+  goodsRulesBulletAllowed: { backgroundColor: colors.green },
+  goodsRulesBulletRestricted: { backgroundColor: colors.red },
+  goodsRulesItemText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '700', lineHeight: 17 },
+  routeReviewCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
+  routeReviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  changeRouteButton: { minHeight: 34, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9 },
+  changeRouteText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  routeReviewLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7 },
+  routeReviewDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.customer },
+  routeReviewDotDrop: { backgroundColor: colors.green },
+  routeReviewTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  vehicleFareCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 16, backgroundColor: colors.customerLight, padding: 14, marginBottom: 14 },
+  vehicleFareIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  vehicleFareMeta: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2, marginBottom: 2 },
+  vehicleFarePrice: { color: colors.ink, fontSize: 18, fontWeight: '900' },
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginBottom: 8 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },

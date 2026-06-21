@@ -11,7 +11,8 @@
     ],
     "plugins": [
       "@react-native-firebase/app",
-      "@react-native-firebase/auth"
+      "@react-native-firebase/auth",
+      "expo-notifications"
     ],
     "extra": {
       "apiBaseUrl": "https://indiery-mobile-app-bp9h.onrender.com/api",
@@ -23,12 +24,22 @@
       }
     },
     "ios": {
-      "bundleIdentifier": "com.indiery.partner"
+      "bundleIdentifier": "com.indiery.partner",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Indiery Partner uses your location to offer nearby deliveries and share live trip tracking.",
+        "NSCameraUsageDescription": "Indiery Partner uses your camera to capture KYC documents and proof of delivery."
+      }
     },
     "android": {
       "package": "com.indiery.partner",
       "googleServicesFile": "./google-services.json",
-      "usesCleartextTraffic": false
+      "usesCleartextTraffic": false,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "POST_NOTIFICATIONS"
+      ]
     }
   }
 }

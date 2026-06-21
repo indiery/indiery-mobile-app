@@ -260,12 +260,16 @@ export class IndieryApi {
   }
 
   acceptOrder(orderId: string) {
-    return this.request<{ order: Order }>(`/partner/orders/${orderId}/accept`, { method: 'POST' });
+    return this.request<{ order: Order }>(`/partner/orders/${orderId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
   }
 
   rejectOrder(orderId: string) {
     return this.request<{ order: Order; rejected: boolean }>(`/partner/orders/${orderId}/reject`, {
-      method: 'POST'
+      method: 'POST',
+      body: JSON.stringify({})
     });
   }
 

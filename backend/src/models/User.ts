@@ -52,7 +52,8 @@ const CustomerProfileSchema = new Schema(
   {
     coins: { type: Number, default: 0 },
     walletBalance: { type: Number, default: 0 },
-    savedAddresses: [{ type: Schema.Types.Mixed }]
+    savedAddresses: [{ type: Schema.Types.Mixed }],
+    usedCoupons: [{ type: String }]
   },
   { _id: false }
 );

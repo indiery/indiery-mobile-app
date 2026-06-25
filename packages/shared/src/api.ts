@@ -185,7 +185,7 @@ export class IndieryApi {
   }
 
   applyCoupon(code: string) {
-    return this.request<{ user: UserProfile; addedCoins: number }>('/customer/wallet/coupon', {
+    return this.request<{ user: UserProfile; addedCoins: number; alreadyApplied?: boolean }>('/customer/wallet/coupon', {
       method: 'POST',
       body: JSON.stringify({ code })
     });

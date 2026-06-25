@@ -35,6 +35,7 @@ export interface UserProfile {
     coins: number;
     walletBalance: number;
     savedAddresses: SavedAddress[];
+    usedCoupons?: string[];
   };
   partnerProfile?: {
     vehicleId?: string;

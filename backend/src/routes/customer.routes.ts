@@ -652,12 +652,36 @@ customerRouter.post(
     };
     const coins = coinsByCode[code];
     if (!coins) throw new ApiError(400, 'Invalid coupon');
-    const user = await User.findByIdAndUpdate(
-      req.auth!.userId,
-      { $inc: { 'customerProfile.coins': coins } },
+    const existingCouponLedger = await WalletLedger.findOne({
+      user: req.auth!.userId,
+      bucket: 'coins',
+      kind: 'credit',
+      reference: code,
+      title: `Coupon ${code}`
+    });
+    if (existingCouponLedger) {
+      const user = await User.findByIdAndUpdate(
+        req.auth!.userId,
+        { $addToSet: { 'customerProfile.usedCoupons': code } },
+        { new: true }
+      );
+      if (!user) throw new ApiError(404, 'Customer not found');
+      return res.json({ user: serializeUser(user), addedCoins: 0, alreadyApplied: true });
+    }
+
+    const user = await User.findOneAndUpdate(
+      { _id: req.auth!.userId, 'customerProfile.usedCoupons': { $ne: code } },
+      {
+        $inc: { 'customerProfile.coins': coins },
+        $addToSet: { 'customerProfile.usedCoupons': code }
+      },
       { new: true }
     );
-    if (!user) throw new ApiError(404, 'Customer not found');
+    if (!user) {
+      const currentUser = await User.findById(req.auth!.userId);
+      if (!currentUser) throw new ApiError(404, 'Customer not found');
+      return res.json({ user: serializeUser(currentUser), addedCoins: 0, alreadyApplied: true });
+    }
     await addCoinLedger({
       userId: req.auth!.userId,
       amount: coins,
@@ -665,6 +689,6 @@ customerRouter.post(
       title: `Coupon ${code}`,
       reference: code
     });
-    res.json({ user: serializeUser(user), addedCoins: coins });
+    res.json({ user: serializeUser(user), addedCoins: coins, alreadyApplied: false });
   })
 );

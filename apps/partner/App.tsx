@@ -7,6 +7,7 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -54,6 +55,7 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 const minPartnerWalletBalance = 200;
 const expoProjectId = (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+const androidStatusBarInset = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -65,12 +67,13 @@ Notifications.setNotificationHandler({
   })
 });
 
-type Tab = 'dashboard' | 'orders' | 'active' | 'earnings' | 'profile';
+type Tab = 'dashboard' | 'active' | 'earnings' | 'profile';
 type KycDoc = 'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc';
 type BankDetailsInput = { accountHolder: string; accountNumber: string; ifsc: string };
 type PartnerProfileInput = { name: string; email: string; city: string; vehicleId: string; vehicleNumber: string };
 type OnboardingStepId = 1 | 2 | 3;
 type AppLanguage = 'en' | 'hi';
+type ProfilePage = 'overview' | 'personal' | 'vehicle' | 'documents' | 'bank' | 'language' | 'legal';
 
 const enCopy = {
   appName: 'Indiery Partner',
@@ -162,9 +165,13 @@ const enCopy = {
   wait: 'Wait',
   accept: 'Accept',
   noActiveDelivery: 'No active delivery',
-  acceptOrderFromOrdersTab: 'Accept an order from the Orders tab.',
+  acceptOrderFromHome: 'Accept an order from Home to start a delivery.',
   refresh: 'Refresh',
+  activeOrders: 'Active Orders',
   activeTrips: 'Active Trips',
+  orderHistory: 'Order History',
+  noOrderHistory: 'No completed deliveries yet',
+  completedDeliveriesAppearHere: 'Your completed deliveries will appear here.',
   to: 'to',
   tripActions: 'Trip Actions',
   pickupOtp: 'Pickup OTP',
@@ -190,6 +197,19 @@ const enCopy = {
   active: 'Active',
   profile: 'Profile',
   profileManageText: 'Manage personal details, vehicle details, and uploaded documents.',
+  account: 'Account',
+  accountSubtitle: 'Manage your partner profile',
+  profileComplete: 'Profile complete',
+  personalInformation: 'Personal Information',
+  personalInformationSubtitle: 'Name, phone, email and city',
+  keepDetailsUpdated: 'Keep your details up to date',
+  mobileLinkedToAccount: 'Your mobile number is linked to your verified account.',
+  saveChanges: 'Save Changes',
+  documentsKyc: 'Documents & KYC',
+  allDocumentsVerified: 'All documents verified',
+  documentsNeedAttention: 'Review and complete your documents',
+  languageSubtitle: 'Choose your preferred app language',
+  policiesLegalSubtitle: 'Privacy, terms and refunds',
   verification: 'verification',
   mobile: 'Mobile',
   notAdded: 'Not added',
@@ -402,9 +422,13 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   wait: 'रुकें',
   accept: 'स्वीकार करें',
   noActiveDelivery: 'कोई एक्टिव डिलीवरी नहीं',
-  acceptOrderFromOrdersTab: 'Orders टैब से कोई ऑर्डर स्वीकार करें.',
+  acceptOrderFromHome: 'डिलीवरी शुरू करने के लिए होम से ऑर्डर स्वीकार करें.',
   refresh: 'रिफ्रेश',
+  activeOrders: 'एक्टिव ऑर्डर',
   activeTrips: 'एक्टिव ट्रिप',
+  orderHistory: 'ऑर्डर हिस्ट्री',
+  noOrderHistory: 'अभी कोई पूरी हुई डिलीवरी नहीं',
+  completedDeliveriesAppearHere: 'आपकी पूरी हुई डिलीवरी यहां दिखाई देगी.',
   to: 'से',
   tripActions: 'ट्रिप एक्शन',
   pickupOtp: 'पिकअप OTP',
@@ -429,6 +453,19 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   home: 'होम',
   active: 'एक्टिव',
   profile: 'प्रोफाइल',
+  account: 'अकाउंट',
+  accountSubtitle: 'अपनी पार्टनर प्रोफाइल मैनेज करें',
+  profileComplete: 'प्रोफाइल पूरी',
+  personalInformation: 'व्यक्तिगत जानकारी',
+  personalInformationSubtitle: 'नाम, फोन, ईमेल और शहर',
+  keepDetailsUpdated: 'अपनी जानकारी अपडेट रखें',
+  mobileLinkedToAccount: 'आपका मोबाइल नंबर आपके सत्यापित अकाउंट से जुड़ा है.',
+  saveChanges: 'बदलाव सेव करें',
+  documentsKyc: 'दस्तावेज और KYC',
+  allDocumentsVerified: 'सभी दस्तावेज सत्यापित हैं',
+  documentsNeedAttention: 'अपने दस्तावेज जांचें और पूरे करें',
+  languageSubtitle: 'ऐप की पसंदीदा भाषा चुनें',
+  policiesLegalSubtitle: 'प्राइवेसी, नियम और रिफंड',
   profileManageText: 'व्यक्तिगत जानकारी, वाहन जानकारी और अपलोड दस्तावेज संभालें.',
   verification: 'सत्यापन',
   mobile: 'मोबाइल',
@@ -813,6 +850,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [profileDetailOpen, setProfileDetailOpen] = useState(false);
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
   const activeOrderIds = (data?.activeOrders ?? []).map((order) => order.id).join('|');
 
@@ -868,6 +906,7 @@ export default function App() {
     const bootstrap = await api.partnerBootstrap();
     setData(bootstrap);
     setTab('dashboard');
+    setProfileDetailOpen(false);
     connectRealtime(login.token);
     requestPartnerAppPermissions(api, showToast, language).catch(() => undefined);
   }
@@ -1131,6 +1170,7 @@ export default function App() {
       await auth().signOut();
       setData(null);
       setTab('dashboard');
+      setProfileDetailOpen(false);
     } catch (err) {
       showToast(err instanceof Error ? err.message : copyFor(language, 'logoutFailed'));
     } finally {
@@ -1167,6 +1207,7 @@ export default function App() {
     return (
       <LanguageContext.Provider value={language}>
         <SafeAreaView style={styles.center}>
+          <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
           <ActivityIndicator color={colors.partner} size="large" />
           <Text style={styles.muted}>{copyFor(language, 'loadingPartner')}</Text>
         </SafeAreaView>
@@ -1191,6 +1232,7 @@ export default function App() {
     return (
       <LanguageContext.Provider value={language}>
       <SafeAreaView style={styles.shell}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.partner} translucent={false} />
         <View style={styles.appHeader}>
           <View>
             <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
@@ -1221,17 +1263,20 @@ export default function App() {
   return (
     <LanguageContext.Provider value={language}>
     <SafeAreaView style={styles.shell}>
-      <View style={styles.appHeader}>
-        <View>
-          <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
-          <Text style={styles.headerTitle}>{data.user.name}</Text>
+      <StatusBar barStyle="light-content" backgroundColor={colors.partner} translucent={false} />
+      {tab !== 'profile' ? (
+        <View style={styles.appHeader}>
+          <View>
+            <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
+            <Text style={styles.headerTitle}>{data.user.name}</Text>
+          </View>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{data.user.initials}</Text>
+          </View>
         </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{data.user.initials}</Text>
-        </View>
-      </View>
+      ) : null}
 
-      <View style={styles.content}>
+      <View style={[styles.content, tab === 'profile' && styles.accountContent]}>
         {tab === 'dashboard' && (
           <DashboardScreen
             data={data}
@@ -1245,15 +1290,8 @@ export default function App() {
                 showToast(online ? copyFor(language, 'youAreOnline') : copyFor(language, 'youAreOffline'));
               })
             }
-            onOrders={() => setTab('orders')}
             onActive={() => setTab('active')}
             onTopup={(amount) => topUpPartnerWallet(amount)}
-          />
-        )}
-        {tab === 'orders' && (
-          <OrdersScreen
-            orders={data.availableOrders}
-            busy={busy}
             onAccept={(orderId) =>
               withBusy(async () => {
                 if (!data.user.partnerProfile?.online) {
@@ -1278,6 +1316,7 @@ export default function App() {
         {tab === 'active' && (
           <ActiveScreen
             orders={data.activeOrders}
+            completedOrders={data.completedOrders}
             selectedOrderId={activeOrder?.id}
             busy={busy}
             refresh={refresh}
@@ -1326,6 +1365,8 @@ export default function App() {
             user={data.user}
             vehicles={data.vehicles}
             busy={busy}
+            onSaveProfile={saveProfile}
+            onDetailChange={setProfileDetailOpen}
             onLogout={logout}
             onRequestAccountDeletion={requestAccountDeletion}
             onCapture={(doc) => withBusy(() => captureKycDocument(doc))}
@@ -1339,7 +1380,16 @@ export default function App() {
         )}
       </View>
 
-      <BottomTabs active={tab} onChange={setTab} availableCount={data.availableOrders.length} activeCount={data.activeOrders.length} />
+      {!profileDetailOpen ? (
+        <BottomTabs
+          active={tab}
+          onChange={(nextTab) => {
+            setTab(nextTab);
+            if (nextTab !== 'profile') setProfileDetailOpen(false);
+          }}
+          activeCount={data.activeOrders.length}
+        />
+      ) : null}
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
     </SafeAreaView>
     </LanguageContext.Provider>
@@ -1399,6 +1449,7 @@ function LoginScreen({
 
   return (
     <SafeAreaView style={styles.loginShell}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
           <LoginHero title={copy.appName} caption={copy.loginHeroCaption} />
@@ -2008,16 +2059,18 @@ function DashboardScreen({
   data,
   busy,
   onToggle,
-  onOrders,
   onActive,
-  onTopup
+  onTopup,
+  onAccept,
+  onReject
 }: {
   data: PartnerBootstrap;
   busy: boolean;
   onToggle: () => void;
-  onOrders: () => void;
   onActive: () => void;
   onTopup: (amount: number) => void;
+  onAccept: (orderId: string) => void;
+  onReject: (orderId: string) => void;
 }) {
   const copy = useCopy();
   const profile = data.user.partnerProfile;
@@ -2053,19 +2106,16 @@ function DashboardScreen({
       </View>
 
       <View style={styles.row}>
-        <PrimaryButton title={copy.availableJobs} icon="cube" onPress={onOrders} />
         <SecondaryButton title={copy.activeTrip} icon="navigate" onPress={onActive} />
       </View>
 
-      <SectionTitle title={copy.nearbyOrders} />
-      {data.availableOrders.slice(0, 3).map((order) => (
-        <OrderCard key={order.id} order={order} />
-      ))}
+      <SectionTitle title={`${copy.availableOrders} (${data.availableOrders.length})`} />
+      <AvailableOrdersList orders={data.availableOrders} busy={busy} onAccept={onAccept} onReject={onReject} />
     </ScrollView>
   );
 }
 
-function OrdersScreen({
+function AvailableOrdersList({
   orders,
   busy,
   onAccept,
@@ -2078,8 +2128,7 @@ function OrdersScreen({
 }) {
   const copy = useCopy();
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <SectionTitle title={`${copy.availableOrders} (${orders.length})`} />
+    <>
       {orders.length === 0 ? (
         <Empty icon="time-outline" title={copy.noOrdersRightNow} subtitle={copy.stayOnlineRefresh} />
       ) : null}
@@ -2098,12 +2147,13 @@ function OrdersScreen({
           </View>
         </View>
       ))}
-    </ScrollView>
+    </>
   );
 }
 
 function ActiveScreen({
   orders,
+  completedOrders,
   selectedOrderId,
   busy,
   refresh,
@@ -2113,6 +2163,7 @@ function ActiveScreen({
   onStatus
 }: {
   orders: Order[];
+  completedOrders: Order[];
   selectedOrderId?: string;
   busy: boolean;
   refresh: () => void;
@@ -2125,23 +2176,20 @@ function ActiveScreen({
   const language = useLanguage();
   const [otp, setOtp] = useState('');
   const order = orders.find((item) => item.id === selectedOrderId) ?? orders[0];
-  if (!order) {
-    return (
-      <View style={styles.emptyFull}>
-        <Empty icon="navigate-outline" title={copy.noActiveDelivery} subtitle={copy.acceptOrderFromOrdersTab} />
-        <PrimaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
-      </View>
-    );
-  }
-
-  const nextActions = getNextActions(order, copy);
-  const needsPickupOtp = order.status === 'arrived_pickup' && !order.pod.pickupOtpVerified;
-  const needsDropOtp = order.status === 'in_transit' && !order.pod.dropOtpVerified;
+  const nextActions = order ? getNextActions(order, copy) : [];
+  const needsPickupOtp = order?.status === 'arrived_pickup' && !order.pod.pickupOtpVerified;
+  const needsDropOtp = order?.status === 'in_transit' && !order.pod.dropOtpVerified;
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      {orders.length > 1 ? (
+      <SectionTitle title={`${copy.activeOrders} (${orders.length})`} />
+      {!order ? (
         <>
-          <SectionTitle title={`${copy.activeTrips} (${orders.length})`} />
+          <Empty icon="navigate-outline" title={copy.noActiveDelivery} subtitle={copy.acceptOrderFromHome} />
+          <SecondaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
+        </>
+      ) : (
+        <>
+      {orders.length > 1 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeTripSwitchRow}>
             {orders.map((item) => {
               const selected = item.id === order.id;
@@ -2160,7 +2208,6 @@ function ActiveScreen({
               );
             })}
           </ScrollView>
-        </>
       ) : null}
       <MapPreview pickup={order.pickup.label} drop={order.drop.label} eta={order.etaMinutes} />
       <View style={styles.orderCard}>
@@ -2215,6 +2262,16 @@ function ActiveScreen({
         />
       ))}
       <SecondaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
+        </>
+      )}
+
+      <SectionTitle title={`${copy.orderHistory} (${completedOrders.length})`} />
+      {completedOrders.length === 0 ? (
+        <Empty icon="time-outline" title={copy.noOrderHistory} subtitle={copy.completedDeliveriesAppearHere} />
+      ) : null}
+      {completedOrders.map((completedOrder) => (
+        <OrderCard key={completedOrder.id} order={completedOrder} />
+      ))}
     </ScrollView>
   );
 }
@@ -2277,6 +2334,8 @@ function ProfileScreen({
   user,
   vehicles,
   busy,
+  onSaveProfile,
+  onDetailChange,
   onCapture,
   onSubmitBank,
   onLogout,
@@ -2287,6 +2346,8 @@ function ProfileScreen({
   user: UserProfile;
   vehicles: Vehicle[];
   busy: boolean;
+  onSaveProfile: (input: PartnerProfileInput) => Promise<void>;
+  onDetailChange: (open: boolean) => void;
   onCapture: (doc: KycDoc) => void;
   onSubmitBank: (bankDetails: BankDetailsInput) => void;
   onLogout: () => void;
@@ -2300,10 +2361,80 @@ function ProfileScreen({
   const progress = partnerSetupProgress(user);
   const identityDone = Boolean(docs?.pan || docs?.aadhaar);
   const vehicleName = vehicleNameForId(vehicles, user.partnerProfile?.vehicleId);
+  const [page, setPage] = useState<ProfilePage>('overview');
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email || '');
+  const [city, setCity] = useState(user.city || '');
+  const [vehicleId, setVehicleId] = useState(user.partnerProfile?.vehicleId || vehicles[0]?.id || '');
+  const [vehicleNumber, setVehicleNumber] = useState(user.partnerProfile?.vehicleNumber || '');
   const [accountHolder, setAccountHolder] = useState(bankDetails?.accountHolder || user.name);
   const [accountNumber, setAccountNumber] = useState('');
   const [ifsc, setIfsc] = useState(bankDetails?.ifsc || '');
+  const [profileError, setProfileError] = useState('');
+  const [vehicleError, setVehicleError] = useState('');
   const [bankError, setBankError] = useState('');
+
+  const accountCompleted = progress.completed + (docs?.bank ? 1 : 0);
+  const accountTotal = progress.total + 1;
+  const documentsVerified = progress.complete && user.partnerProfile?.kycStatus === 'verified';
+
+  function openPage(nextPage: ProfilePage) {
+    setProfileError('');
+    setVehicleError('');
+    setBankError('');
+    setPage(nextPage);
+    onDetailChange(nextPage !== 'overview');
+  }
+
+  async function submitPersonalDetails() {
+    const nextName = name.trim();
+    const nextEmail = email.trim();
+    const nextCity = city.trim();
+    if (nextName.length < 2) {
+      setProfileError(copy.enterFullName);
+      return;
+    }
+    if (!nextEmail.includes('@')) {
+      setProfileError(copy.enterValidEmail);
+      return;
+    }
+    if (nextCity.length < 2) {
+      setProfileError(copy.enterCity);
+      return;
+    }
+    if (!vehicleId) {
+      setProfileError(copy.vehicleCatalogUnavailable);
+      return;
+    }
+    setProfileError('');
+    await onSaveProfile({
+      name: nextName,
+      email: nextEmail,
+      city: nextCity,
+      vehicleId,
+      vehicleNumber: vehicleNumber.trim().toUpperCase()
+    });
+  }
+
+  async function submitVehicleDetails() {
+    const nextVehicleNumber = vehicleNumber.trim().toUpperCase();
+    if (!vehicleId) {
+      setVehicleError(copy.selectVehicleType);
+      return;
+    }
+    if (nextVehicleNumber.length < 4) {
+      setVehicleError(copy.enterVehicleNumber);
+      return;
+    }
+    setVehicleError('');
+    await onSaveProfile({
+      name: name.trim() || user.name,
+      email: email.trim() || user.email || '',
+      city: city.trim() || user.city,
+      vehicleId,
+      vehicleNumber: nextVehicleNumber
+    });
+  }
 
   function submitBank() {
     const nextAccountHolder = accountHolder.trim();
@@ -2326,151 +2457,257 @@ function ProfileScreen({
     setAccountNumber('');
   }
 
-  return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.kycHero}>
-        <View style={styles.kycHeroIcon}>
-          <Ionicons name="shield-checkmark" size={26} color={colors.white} />
-        </View>
-        <View style={styles.flex}>
-          <Text style={styles.kycHeroTitle}>{copy.profile}</Text>
-          <Text style={styles.kycHeroText}>{copy.profileManageText}</Text>
-        </View>
-      </View>
-
-      <LanguageSwitcher language={language} onChangeLanguage={onChangeLanguage} />
-
-      <View style={styles.profileInfoCard}>
-        <View style={styles.profileInfoHeader}>
-          <View style={styles.avatarDark}>
-            <Text style={styles.avatarDarkText}>{user.initials}</Text>
+  if (page === 'overview') {
+    return (
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.accountHero}>
+          <View style={styles.accountHeroGlow} />
+          <Text style={styles.accountEyebrow}>{copy.account}</Text>
+          <Text style={styles.accountHeroSubtitle}>{copy.accountSubtitle}</Text>
+          <View style={styles.accountIdentityCard}>
+            <View style={styles.accountAvatar}>
+              <Text style={styles.accountAvatarText}>{user.initials}</Text>
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.accountName}>{user.name}</Text>
+              <Text style={styles.accountPhone}>{user.phone}</Text>
+              <View style={styles.accountVerifiedBadge}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.partner} />
+                <Text style={styles.accountVerifiedText}>{kycStatusLabel(language, user.partnerProfile?.kycStatus)} {copy.verification}</Text>
+              </View>
+            </View>
+            <Pressable style={styles.accountEditButton} onPress={() => openPage('personal')}>
+              <Ionicons name="create-outline" size={18} color={colors.partner} />
+            </Pressable>
           </View>
-          <View style={styles.flex}>
-            <Text style={styles.profileName}>{user.name}</Text>
-            <Text style={styles.mutedSmall}>{kycStatusLabel(language, user.partnerProfile?.kycStatus)} {copy.verification}</Text>
+        </View>
+
+        <View style={styles.accountProgressCard}>
+          <View style={styles.between}>
+            <Text style={styles.cardTitle}>{copy.profileComplete}</Text>
+            <Text style={styles.priceText}>{accountCompleted}/{accountTotal}</Text>
+          </View>
+          <View style={styles.kycProgressTrack}>
+            <View style={[styles.kycProgressFill, { width: `${(accountCompleted / accountTotal) * 100}%` }]} />
           </View>
         </View>
-        <ProfileInfoRow icon="call" label={copy.mobile} value={user.phone} />
-        <ProfileInfoRow icon="mail" label={copy.email} value={user.email || copy.notAdded} />
-        <ProfileInfoRow icon="location" label={copy.city} value={user.city || copy.notAdded} />
-        <ProfileInfoRow icon="car" label={copy.vehicle} value={`${vehicleName} - ${user.partnerProfile?.vehicleNumber || copy.numberNotAdded}`} />
-      </View>
 
-      <View style={styles.kycProgressCard}>
-        <View style={styles.between}>
-          <Text style={styles.cardTitle}>{copy.documentProgress}</Text>
-          <Text style={styles.priceText}>{progress.completed}/{progress.total}</Text>
-        </View>
-        <View style={styles.kycProgressTrack}>
-          <View style={[styles.kycProgressFill, { width: `${(progress.completed / progress.total) * 100}%` }]} />
-        </View>
-        <Text style={styles.mutedSmall}>
-          {copy.status}: {kycStatusLabel(language, user.partnerProfile?.kycStatus)}
-          {progress.complete && user.partnerProfile?.kycStatus !== 'verified' ? ` - ${copy.submittedForReview}` : ''}
-        </Text>
-      </View>
-
-      <SectionTitle title={copy.documentsUploaded} />
-      <KycStepCard
-        icon="person-circle"
-        title={copy.liveSelfie}
-        subtitle={copy.captureClearFacePhoto}
-        done={Boolean(docs?.selfie)}
-        busy={busy}
-        onPress={() => onCapture('selfie')}
-      />
-
-      <View style={styles.kycGroupCard}>
-        <View style={styles.between}>
-          <View>
-            <Text style={styles.cardTitle}>{copy.identityProof}</Text>
-            <Text style={styles.mutedSmall}>{copy.capturePanOrAadhaarRequired}</Text>
-          </View>
-          <Ionicons name={identityDone ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={identityDone ? colors.green : colors.muted} />
-        </View>
-        <View style={styles.row}>
-          <SecondaryButton title={docs?.pan ? copy.panDone : copy.capturePan} icon="card" onPress={() => onCapture('pan')} />
-          <SecondaryButton title={docs?.aadhaar ? copy.aadhaarDone : copy.captureAadhaar} icon="card" onPress={() => onCapture('aadhaar')} />
-        </View>
-      </View>
-
-      <KycStepCard
-        icon="document-text"
-        title={copy.drivingLicence}
-        subtitle={copy.captureFrontClearly}
-        done={Boolean(docs?.drivingLicence)}
-        busy={busy}
-        onPress={() => onCapture('drivingLicence')}
-      />
-      <KycStepCard
-        icon="car"
-        title={copy.vehicleRc}
-        subtitle={copy.rcRequired}
-        done={Boolean(docs?.rc)}
-        busy={busy}
-        onPress={() => onCapture('rc')}
-      />
-
-      <View style={[styles.kycGroupCard, docs?.bank && styles.kycStepDone]}>
-        <View style={styles.between}>
-          <View>
-            <Text style={styles.cardTitle}>{copy.bankAccount}</Text>
-            <Text style={styles.mutedSmall}>
-              {docs?.bank ? `${bankDetails?.accountNumberMasked || copy.accountSaved} - ${bankDetails?.ifsc || copy.ifscSaved}` : copy.usedForPayouts}
-            </Text>
-          </View>
-          <Ionicons name={docs?.bank ? 'checkmark-circle' : 'wallet-outline'} size={22} color={docs?.bank ? colors.green : colors.partner} />
-        </View>
-        <View style={styles.kycInputGroup}>
-          <Text style={styles.fieldLabel}>{copy.accountHolder}</Text>
-          <TextInput value={accountHolder} onChangeText={setAccountHolder} style={styles.kycInput} placeholder={copy.nameAsPerBank} />
-        </View>
-        <View style={styles.kycInputGroup}>
-          <Text style={styles.fieldLabel}>{copy.accountNumber}</Text>
-          <TextInput
-            value={accountNumber}
-            onChangeText={setAccountNumber}
-            style={styles.kycInput}
-            placeholder={bankDetails?.accountNumberMasked || copy.enterAccountNumber}
-            keyboardType="numeric"
-            secureTextEntry
+        <View style={styles.accountMenuCard}>
+          <AccountMenuRow
+            icon="person-outline"
+            title={copy.personalInformation}
+            subtitle={copy.personalInformationSubtitle}
+            onPress={() => openPage('personal')}
+          />
+          <AccountMenuRow
+            icon="car-outline"
+            title={copy.vehicleDetails}
+            subtitle={`${vehicleName} • ${user.partnerProfile?.vehicleNumber || copy.numberNotAdded}`}
+            onPress={() => openPage('vehicle')}
+          />
+          <AccountMenuRow
+            icon="shield-checkmark-outline"
+            title={copy.documentsKyc}
+            subtitle={documentsVerified ? copy.allDocumentsVerified : copy.documentsNeedAttention}
+            onPress={() => openPage('documents')}
+          />
+          <AccountMenuRow
+            icon="wallet-outline"
+            title={copy.bankAccount}
+            subtitle={docs?.bank ? `${bankDetails?.accountNumberMasked || copy.accountSaved} • ${bankDetails?.ifsc || copy.ifscSaved}` : copy.usedForPayouts}
+            onPress={() => openPage('bank')}
+          />
+          <AccountMenuRow
+            icon="language-outline"
+            title={copy.changeLanguage}
+            subtitle={languageNativeLabel(language)}
+            onPress={() => openPage('language')}
+          />
+          <AccountMenuRow
+            icon="document-text-outline"
+            title={copy.policiesLegal}
+            subtitle={copy.policiesLegalSubtitle}
+            onPress={() => openPage('legal')}
+            last
           />
         </View>
-        <View style={styles.kycInputGroup}>
-          <Text style={styles.fieldLabel}>{copy.ifscCode}</Text>
-          <TextInput value={ifsc} onChangeText={setIfsc} style={styles.kycInput} autoCapitalize="characters" placeholder="ABCD0123456" />
-        </View>
-        {bankError ? <Text style={styles.loginError}>{bankError}</Text> : null}
-        <PrimaryButton title={busy ? copy.saving : docs?.bank ? copy.updateBank : copy.saveBank} icon="checkmark" onPress={submitBank} />
-      </View>
 
-      {progress.complete ? (
-        <View style={styles.notice}>
-          <Ionicons name="time" size={18} color={colors.partner} />
-          <Text style={styles.noticeText}>{copy.profileSubmittedNotice}</Text>
-        </View>
-      ) : null}
+        {progress.complete && user.partnerProfile?.kycStatus !== 'verified' ? (
+          <View style={styles.notice}>
+            <Ionicons name="time" size={18} color={colors.partner} />
+            <Text style={styles.noticeText}>{copy.profileSubmittedNotice}</Text>
+          </View>
+        ) : null}
 
-      <PolicyList />
-      <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
-        <Ionicons name="trash-outline" size={18} color={colors.red} />
-        <Text style={styles.deleteAccountButtonText}>{copy.requestAccountDeletion}</Text>
-      </Pressable>
-      <Pressable style={styles.logoutButton} onPress={onLogout}>
-        <Ionicons name="log-out-outline" size={18} color={colors.red} />
-        <Text style={styles.logoutButtonText}>{copy.logout}</Text>
-      </Pressable>
-    </ScrollView>
+        <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
+          <Ionicons name="trash-outline" size={18} color={colors.red} />
+          <Text style={styles.deleteAccountButtonText}>{copy.requestAccountDeletion}</Text>
+        </Pressable>
+        <Pressable style={styles.logoutButton} onPress={onLogout}>
+          <Ionicons name="log-out-outline" size={18} color={colors.red} />
+          <Text style={styles.logoutButtonText}>{copy.logout}</Text>
+        </Pressable>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <AccountDetailHeader
+          title={
+            page === 'personal' ? copy.personalInformation
+              : page === 'vehicle' ? copy.vehicleDetails
+                : page === 'documents' ? copy.documentsKyc
+                  : page === 'bank' ? copy.bankAccount
+                    : page === 'language' ? copy.changeLanguage
+                      : copy.policiesLegal
+          }
+          subtitle={
+            page === 'personal' ? copy.keepDetailsUpdated
+              : page === 'vehicle' ? copy.vehicleDetailsSubtitle
+                : page === 'documents' ? copy.uploadDetailsSubtitle
+                  : page === 'bank' ? copy.usedForPayouts
+                    : page === 'language' ? copy.languageSubtitle
+                      : copy.policiesLegalSubtitle
+          }
+          onBack={() => openPage('overview')}
+        />
+
+        {page === 'personal' ? (
+          <View style={styles.accountDetailCard}>
+            <AuthField label={copy.fullName} value={name} onChangeText={setName} icon="person" />
+            <AuthField label={copy.loginMobileNumber} value={user.phone} editable={false} keyboardType="phone-pad" icon="lock-closed" />
+            <AuthField label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" icon="mail" />
+            <AuthField label={copy.city} value={city} onChangeText={setCity} icon="location" />
+            <View style={styles.accountInfoStrip}>
+              <Ionicons name="shield-checkmark" size={20} color={colors.partner} />
+              <Text style={styles.accountInfoText}>{copy.mobileLinkedToAccount}</Text>
+            </View>
+            {profileError ? <Text style={styles.loginError}>{profileError}</Text> : null}
+            <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitPersonalDetails} />
+          </View>
+        ) : null}
+
+        {page === 'vehicle' ? (
+          <View style={styles.accountDetailCard}>
+            <VehiclePicker vehicles={vehicles} selectedId={vehicleId} onSelect={setVehicleId} />
+            <AuthField label={copy.vehicleNumber} value={vehicleNumber} onChangeText={setVehicleNumber} icon="car" autoCapitalize="characters" />
+            <KycStepCard
+              icon="document-text"
+              title={copy.vehicleRc}
+              subtitle={copy.rcRequired}
+              done={Boolean(docs?.rc)}
+              busy={busy}
+              onPress={() => onCapture('rc')}
+            />
+            {vehicleError ? <Text style={styles.loginError}>{vehicleError}</Text> : null}
+            <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitVehicleDetails} />
+          </View>
+        ) : null}
+
+        {page === 'documents' ? (
+          <>
+            <View style={styles.kycProgressCard}>
+              <View style={styles.between}>
+                <Text style={styles.cardTitle}>{copy.documentProgress}</Text>
+                <Text style={styles.priceText}>{progress.completed}/{progress.total}</Text>
+              </View>
+              <View style={styles.kycProgressTrack}>
+                <View style={[styles.kycProgressFill, { width: `${(progress.completed / progress.total) * 100}%` }]} />
+              </View>
+              <Text style={styles.mutedSmall}>{copy.status}: {kycStatusLabel(language, user.partnerProfile?.kycStatus)}</Text>
+            </View>
+            <KycStepCard icon="person-circle" title={copy.liveSelfie} subtitle={copy.captureClearFacePhoto} done={Boolean(docs?.selfie)} busy={busy} onPress={() => onCapture('selfie')} />
+            <View style={styles.kycGroupCard}>
+              <View style={styles.between}>
+                <View style={styles.flex}>
+                  <Text style={styles.cardTitle}>{copy.identityProof}</Text>
+                  <Text style={styles.mutedSmall}>{copy.capturePanOrAadhaarRequired}</Text>
+                </View>
+                <Ionicons name={identityDone ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={identityDone ? colors.green : colors.muted} />
+              </View>
+              <View style={styles.row}>
+                <SecondaryButton title={docs?.pan ? copy.panDone : copy.capturePan} icon="card" onPress={() => onCapture('pan')} />
+                <SecondaryButton title={docs?.aadhaar ? copy.aadhaarDone : copy.captureAadhaar} icon="card" onPress={() => onCapture('aadhaar')} />
+              </View>
+            </View>
+            <KycStepCard icon="document-text" title={copy.drivingLicence} subtitle={copy.captureFrontClearly} done={Boolean(docs?.drivingLicence)} busy={busy} onPress={() => onCapture('drivingLicence')} />
+            <KycStepCard icon="car" title={copy.vehicleRc} subtitle={copy.rcRequired} done={Boolean(docs?.rc)} busy={busy} onPress={() => onCapture('rc')} />
+          </>
+        ) : null}
+
+        {page === 'bank' ? (
+          <View style={[styles.accountDetailCard, docs?.bank && styles.accountDetailCardComplete]}>
+            <View style={styles.accountBankStatus}>
+              <View style={[styles.accountMenuIcon, docs?.bank && styles.accountMenuIconComplete]}>
+                <Ionicons name={docs?.bank ? 'checkmark' : 'wallet-outline'} size={20} color={docs?.bank ? colors.white : colors.partner} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.cardTitle}>{docs?.bank ? copy.accountSaved : copy.bankAccount}</Text>
+                <Text style={styles.mutedSmall}>{docs?.bank ? `${bankDetails?.accountNumberMasked || ''} • ${bankDetails?.ifsc || ''}` : copy.usedForPayouts}</Text>
+              </View>
+            </View>
+            <View style={styles.kycInputGroup}>
+              <Text style={styles.fieldLabel}>{copy.accountHolder}</Text>
+              <TextInput value={accountHolder} onChangeText={setAccountHolder} style={styles.kycInput} placeholder={copy.nameAsPerBank} />
+            </View>
+            <View style={styles.kycInputGroup}>
+              <Text style={styles.fieldLabel}>{copy.accountNumber}</Text>
+              <TextInput value={accountNumber} onChangeText={setAccountNumber} style={styles.kycInput} placeholder={bankDetails?.accountNumberMasked || copy.enterAccountNumber} keyboardType="numeric" secureTextEntry />
+            </View>
+            <View style={styles.kycInputGroup}>
+              <Text style={styles.fieldLabel}>{copy.ifscCode}</Text>
+              <TextInput value={ifsc} onChangeText={setIfsc} style={styles.kycInput} autoCapitalize="characters" placeholder="ABCD0123456" />
+            </View>
+            {bankError ? <Text style={styles.loginError}>{bankError}</Text> : null}
+            <PrimaryButton title={busy ? copy.saving : docs?.bank ? copy.updateBank : copy.saveBank} icon="checkmark" onPress={submitBank} />
+          </View>
+        ) : null}
+
+        {page === 'language' ? <LanguageSwitcher language={language} onChangeLanguage={onChangeLanguage} /> : null}
+        {page === 'legal' ? <PolicyList /> : null}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
-function ProfileInfoRow({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+function AccountMenuRow({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  last
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  last?: boolean;
+}) {
   return (
-    <View style={styles.profileInfoRow}>
-      <Ionicons name={icon} size={17} color={colors.partner} />
+    <Pressable style={[styles.accountMenuRow, last && styles.accountMenuRowLast]} onPress={onPress}>
+      <View style={styles.accountMenuIcon}>
+        <Ionicons name={icon} size={20} color={colors.partner} />
+      </View>
       <View style={styles.flex}>
-        <Text style={styles.mutedSmall}>{label}</Text>
-        <Text style={styles.profileInfoValue}>{value}</Text>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.mutedSmall}>{subtitle}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+    </Pressable>
+  );
+}
+
+function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+  return (
+    <View style={styles.accountDetailHeader}>
+      <Pressable style={styles.accountBackButton} onPress={onBack}>
+        <Ionicons name="arrow-back" size={21} color={colors.white} />
+      </Pressable>
+      <View style={styles.flex}>
+        <Text style={styles.accountDetailTitle}>{title}</Text>
+        <Text style={styles.accountDetailSubtitle}>{subtitle}</Text>
       </View>
     </View>
   );
@@ -2614,18 +2851,15 @@ function PolicyCard({
 function BottomTabs({
   active,
   onChange,
-  availableCount,
   activeCount
 }: {
   active: Tab;
   onChange: (tab: Tab) => void;
-  availableCount: number;
   activeCount: number;
 }) {
   const copy = useCopy();
   const tabs: Array<[Tab, keyof typeof Ionicons.glyphMap, string, number?]> = [
     ['dashboard', 'home', copy.home],
-    ['orders', 'cube', copy.orders, availableCount],
     ['active', 'navigate', copy.active, activeCount],
     ['earnings', 'wallet', copy.earn],
     ['profile', 'person', copy.profile]
@@ -2842,8 +3076,8 @@ function Empty({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: colors.white },
-  loginShell: { flex: 1, backgroundColor: colors.white },
+  shell: { flex: 1, backgroundColor: colors.partner, paddingTop: androidStatusBarInset },
+  loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
   authKeyboard: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
@@ -3103,6 +3337,7 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.white, fontWeight: '800' },
   content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
+  accountContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
   scroll: { padding: 16, paddingBottom: 96 },
   onlineCard: { borderRadius: 80, borderWidth: 4, borderColor: colors.line, width: 124, height: 124, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
   onlineCardActive: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
@@ -3179,6 +3414,33 @@ const styles = StyleSheet.create({
   notice: { flexDirection: 'row', gap: 10, backgroundColor: colors.partnerLight, borderRadius: 14, padding: 14, alignItems: 'center' },
   noticeText: { flex: 1, color: colors.partner, fontSize: 13, fontWeight: '900' },
   fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginBottom: 6 },
+  accountHero: { backgroundColor: colors.partner, borderRadius: 22, padding: 18, paddingBottom: 72, marginBottom: 68 },
+  accountHeroGlow: { position: 'absolute', width: 130, height: 130, borderRadius: 65, right: 0, top: 0, backgroundColor: 'rgba(255,255,255,0.10)' },
+  accountEyebrow: { color: colors.white, fontSize: 22, fontWeight: '900' },
+  accountHeroSubtitle: { color: '#D1FAE5', fontSize: 13, fontWeight: '700', marginTop: 3 },
+  accountIdentityCard: { position: 'absolute', left: 14, right: 14, top: 82, minHeight: 112, borderRadius: 18, backgroundColor: colors.white, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: '#0F172A', shadowOpacity: 0.13, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
+  accountAvatar: { width: 62, height: 62, borderRadius: 31, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '900' },
+  accountName: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  accountPhone: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  accountVerifiedBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8, marginTop: 7 },
+  accountVerifiedText: { color: colors.partner, fontSize: 10, fontWeight: '900', textTransform: 'capitalize' },
+  accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  accountProgressCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
+  accountMenuCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, paddingHorizontal: 12, marginBottom: 14, overflow: 'hidden' },
+  accountMenuRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: colors.line, paddingVertical: 12 },
+  accountMenuRowLast: { borderBottomWidth: 0 },
+  accountMenuIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  accountMenuIconComplete: { backgroundColor: colors.partner },
+  accountDetailHeader: { minHeight: 82, borderRadius: 18, backgroundColor: colors.partner, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, overflow: 'hidden' },
+  accountBackButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  accountDetailTitle: { color: colors.white, fontSize: 18, fontWeight: '900' },
+  accountDetailSubtitle: { color: '#D1FAE5', fontSize: 11, fontWeight: '700', marginTop: 3 },
+  accountDetailCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14 },
+  accountDetailCardComplete: { borderColor: colors.partner, backgroundColor: '#FAFFFD' },
+  accountInfoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: colors.partnerLight, padding: 12, marginBottom: 14 },
+  accountInfoText: { flex: 1, color: colors.partner, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  accountBankStatus: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   kycHero: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.partner, borderRadius: 18, padding: 16, marginBottom: 14 },
   kycHeroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
   kycHeroTitle: { color: colors.white, fontSize: 18, fontWeight: '900' },

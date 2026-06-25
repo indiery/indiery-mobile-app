@@ -138,6 +138,11 @@ export interface OrderTimelineItem {
   at?: string;
 }
 
+export interface TripOtp {
+  pickup?: string;
+  drop?: string;
+}
+
 export interface Order {
   id: string;
   orderNo: string;
@@ -166,6 +171,7 @@ export interface Order {
     pickupOtpVerified?: boolean;
     dropOtpVerified?: boolean;
   };
+  tripOtp?: TripOtp;
   partnerLocation?: PartnerLocation;
   settlement?: {
     delayed: boolean;

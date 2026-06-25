@@ -135,6 +135,8 @@ const OrderSchema = new Schema(
     offerExpiresAt: { type: Date },
     pod: { type: PodSchema, default: {} },
     verification: {
+      pickupOtp: { type: String },
+      dropOtp: { type: String },
       pickupOtpHash: { type: String },
       dropOtpHash: { type: String }
     },

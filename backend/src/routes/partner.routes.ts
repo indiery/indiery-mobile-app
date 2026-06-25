@@ -167,9 +167,9 @@ partnerRouter.get(
       user: serializeUser(partner),
       vehicles: vehicles.map(serializeVehicle),
       stats,
-      availableOrders: availableOrders.map(serializeOrder),
-      activeOrders: activeOrders.map(serializeOrder),
-      completedOrders: completedOrders.map(serializeOrder)
+      availableOrders: availableOrders.map((order) => serializeOrder(order)),
+      activeOrders: activeOrders.map((order) => serializeOrder(order)),
+      completedOrders: completedOrders.map((order) => serializeOrder(order))
     });
   })
 );

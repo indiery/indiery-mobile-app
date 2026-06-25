@@ -41,6 +41,7 @@ import {
   Order,
   PaymentMode,
   SavedAddress,
+  TripOtp,
   UserProfile,
   Vehicle
 } from '@indiery/shared';
@@ -95,18 +96,6 @@ type MapPickerTarget = {
   lng?: number;
   openContact?: boolean;
 };
-
-const serviceOptions: Array<{
-  id: ServiceCategory;
-  title: string;
-  subtitle: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}> = [
-  { id: 'bike', title: 'Two Wheeler', subtitle: 'Small parcels', icon: 'bicycle' },
-  { id: 'truck', title: 'Trucks', subtitle: 'Mini trucks and tempos', icon: 'car-sport' },
-  { id: 'movers', title: 'Packers', subtitle: 'Home shifting', icon: 'home' },
-  { id: 'enterprise', title: 'Business', subtitle: 'Bulk logistics', icon: 'briefcase' }
-];
 
 const presetGoodsOptions = ['Documents', 'Groceries', 'Electronics', 'Furniture', 'Business stock', 'Household items'];
 const goodsOptions = [...presetGoodsOptions, 'Other'];
@@ -169,6 +158,7 @@ const enCopy = {
   estimating: 'Estimating',
   bookNow: 'Book Now',
   track: 'Track',
+  trackOrder: 'Track order',
   homeTab: 'Home',
   ordersTab: 'Orders',
   walletTab: 'Wallet',
@@ -183,6 +173,9 @@ const enCopy = {
   active: 'Active',
   coins: 'Coins',
   activeDelivery: 'Active Delivery',
+  orderDetails: 'Order details',
+  activeDeliveries: 'Active deliveries',
+  deliveryStatus: 'Delivery status',
   recentOrders: 'Recent Orders',
   noTripsYet: 'No trips yet',
   completedCancelledBookingsAppear: 'Your completed and cancelled bookings will appear here.',
@@ -200,6 +193,7 @@ const enCopy = {
   moversNotice: 'For house shifting, book the vehicle here and add packing/labour notes in goods details.',
   pickupAndDrop: 'Pickup and Drop',
   pickup: 'Pickup',
+  pickupLocation: 'Pickup location',
   drop: 'Drop',
   savedPickupAddresses: 'Saved pickup addresses',
   savedDropAddresses: 'Saved drop addresses',
@@ -435,6 +429,8 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   active: 'एक्टिव',
   coins: 'कॉइन',
   activeDelivery: 'एक्टिव डिलीवरी',
+  activeDeliveries: 'एक्टिव डिलीवरी',
+  deliveryStatus: 'डिलीवरी स्टेटस',
   recentOrders: 'हाल के ऑर्डर',
   noTripsYet: 'अभी कोई ट्रिप नहीं',
   completedCancelledBookingsAppear: 'आपकी पूरी और रद्द बुकिंग यहां दिखेंगी.',
@@ -452,6 +448,7 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   moversNotice: 'घर शिफ्टिंग के लिए यहां वाहन बुक करें और सामान की जानकारी में पैकिंग/लेबर नोट जोड़ें.',
   pickupAndDrop: 'पिकअप और ड्रॉप',
   pickup: 'पिकअप',
+  pickupLocation: 'पिकअप लोकेशन',
   drop: 'ड्रॉप',
   savedPickupAddresses: 'सेव पिकअप पते',
   savedDropAddresses: 'सेव ड्रॉप पते',
@@ -798,6 +795,13 @@ function vehicleIcon(vehicle: Vehicle): keyof typeof Ionicons.glyphMap {
   return 'car-sport';
 }
 
+function homeVehicleAccent(vehicle: Vehicle) {
+  if (vehicle.code === 'bike') return colors.blue;
+  if (vehicle.code === 'loader90') return colors.customer;
+  if (vehicle.code === 'mini500') return colors.green;
+  return colors.amber;
+}
+
 function vehicleCapacityText(vehicle: Vehicle, upTo: string) {
   const rule = vehicleRule(vehicle);
   if (vehicle.code === 'loader90') return '20-90 kg';
@@ -830,7 +834,25 @@ function routeStopSummary(stops?: LocationPoint[]) {
   return count === 1 ? '1 stop' : `${count} stops`;
 }
 
+function visibleTripOtp(order?: Order, cachedTripOtp?: TripOtp): TripOtp | undefined {
+  if (!order || ['delivered', 'cancelled'].includes(order.status)) return undefined;
+  const source = order.tripOtp ?? cachedTripOtp;
+  const pickup = order.pod?.pickupOtpVerified ? undefined : source?.pickup;
+  const drop = order.pod?.dropOtpVerified ? undefined : source?.drop;
+  if (!pickup && !drop) return undefined;
+  return { pickup, drop };
+}
+
 const defaultMapCenter = { lat: 26.8467, lng: 80.9462 };
+
+function regionsAreClose(a: Region, b: Region) {
+  return (
+    Math.abs(a.latitude - b.latitude) < 0.00001 &&
+    Math.abs(a.longitude - b.longitude) < 0.00001 &&
+    Math.abs(a.latitudeDelta - b.latitudeDelta) < 0.00001 &&
+    Math.abs(a.longitudeDelta - b.longitudeDelta) < 0.00001
+  );
+}
 
 function formatReverseAddress(place?: Location.LocationGeocodedAddress) {
   if (!place) return '';
@@ -878,6 +900,21 @@ async function readDeviceLocation() {
     if (lastKnown) return lastKnown;
     throw err;
   }
+}
+
+async function readCurrentLocationDetails(): Promise<LocationDetails> {
+  const current = await readDeviceLocation();
+  const lat = current.coords.latitude;
+  const lng = current.coords.longitude;
+  const reverse = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }).catch(() => []);
+  const address = formatReverseAddress(reverse[0]) || 'Current location';
+  return {
+    placeId: `current-${lat.toFixed(6)}-${lng.toFixed(6)}`,
+    label: address,
+    address,
+    lat,
+    lng
+  };
 }
 
 function formatCountdown(ms: number) {
@@ -1020,7 +1057,7 @@ export default function App() {
   const [booking, setBooking] = useState(initialBooking);
   const [fare, setFare] = useState<FareBreakup | null>(null);
   const [language, setLanguage] = useState<AppLanguage>('en');
-  const [tripOtpByOrder, setTripOtpByOrder] = useState<Record<string, { pickup: string; drop: string }>>({});
+  const [tripOtpByOrder, setTripOtpByOrder] = useState<Record<string, TripOtp>>({});
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
 
   useEffect(() => {
@@ -1083,9 +1120,18 @@ export default function App() {
   function mergeRealtimeOrder(order: Order) {
     setData((current) => {
       if (!current) return current;
-      const orders = [order, ...current.orders.filter((item) => item.id !== order.id)];
-      const activeOrders = isActiveOrder(order)
-        ? [order, ...current.activeOrders.filter((item) => item.id !== order.id)]
+      const existingOrder =
+        current.orders.find((item) => item.id === order.id) ??
+        current.activeOrders.find((item) => item.id === order.id) ??
+        (current.activeOrder?.id === order.id ? current.activeOrder : undefined);
+      const preservedTripOtp = order.tripOtp ?? existingOrder?.tripOtp ?? tripOtpByOrder[order.id];
+      const mergedOrder = {
+        ...order,
+        tripOtp: visibleTripOtp({ ...order, tripOtp: preservedTripOtp })
+      };
+      const orders = [mergedOrder, ...current.orders.filter((item) => item.id !== order.id)];
+      const activeOrders = isActiveOrder(mergedOrder)
+        ? [mergedOrder, ...current.activeOrders.filter((item) => item.id !== order.id)]
         : current.activeOrders.filter((item) => item.id !== order.id);
       return {
         ...current,
@@ -1224,8 +1270,9 @@ export default function App() {
         });
         confirmedOrder = verified.order;
       }
-      if (result.tripOtp) {
-        setTripOtpByOrder((current) => ({ ...current, [result.order.id]: result.tripOtp! }));
+      const tripOtp = result.tripOtp ?? result.order.tripOtp;
+      if (tripOtp?.pickup || tripOtp?.drop) {
+        setTripOtpByOrder((current) => ({ ...current, [result.order.id]: tripOtp }));
       }
       await refresh();
       setStep(1);
@@ -1455,6 +1502,10 @@ export default function App() {
     activeOrders.find((order) => order.id === selectedActiveOrderId) ??
     data.activeOrder ??
     activeOrders[0];
+  const openBook = (nextStep = 1) => {
+    setStep(nextStep);
+    setTab('book');
+  };
   const openActiveOrder = (orderId?: string) => {
     if (orderId) setSelectedActiveOrderId(orderId);
     setTab('orders');
@@ -1477,10 +1528,13 @@ export default function App() {
       <View style={styles.content}>
         {tab === 'home' && (
           <HomeScreen
+            api={api}
             data={data}
+            booking={booking}
+            setBooking={setBooking}
             activeOrder={activeOrder}
             activeOrders={activeOrders}
-            onBook={() => setTab('book')}
+            onBook={openBook}
             onTrack={openActiveOrder}
           />
         )}
@@ -1506,13 +1560,13 @@ export default function App() {
             orders={data.orders}
             activeOrders={activeOrders}
             activeOrder={activeOrder}
-            tripOtp={activeOrder ? tripOtpByOrder[activeOrder.id] : undefined}
+            tripOtp={visibleTripOtp(activeOrder, activeOrder ? tripOtpByOrder[activeOrder.id] : undefined)}
             busy={busy}
-            onBook={() => setTab('book')}
+            onBook={() => openBook()}
             onRefresh={refresh}
             onSelectActiveOrder={setSelectedActiveOrderId}
-            onShare={activeOrder ? () => shareActiveOrder(activeOrder) : undefined}
-            onCancel={activeOrder ? () => cancelActiveOrder(activeOrder) : undefined}
+            onShare={shareActiveOrder}
+            onCancel={cancelActiveOrder}
           />
         )}
         {tab === 'wallet' && (
@@ -1900,39 +1954,167 @@ function BrandLogo({ title, accentColor }: { title: string; accentColor: string 
 }
 
 function HomeScreen({
+  api,
   data,
+  booking,
+  setBooking,
   activeOrder,
   activeOrders,
   onBook,
   onTrack
 }: {
+  api: IndieryApi;
   data: CustomerBootstrap;
+  booking: typeof initialBooking;
+  setBooking: React.Dispatch<React.SetStateAction<typeof initialBooking>>;
   activeOrder?: Order;
   activeOrders: Order[];
-  onBook: () => void;
+  onBook: (nextStep?: number) => void;
   onTrack: (orderId?: string) => void;
 }) {
   const copy = useCopy();
   const lastOrder = data.orders[0];
-  const recentOrders = data.orders.filter((order) => !activeOrders.some((active) => active.id === order.id));
+  const [autoPickupLoading, setAutoPickupLoading] = useState(false);
+  const [mapPickerOpen, setMapPickerOpen] = useState(false);
+  const [pickupSheetOpen, setPickupSheetOpen] = useState(false);
+  const autoPickupAttemptedRef = useRef(false);
+  const pickupSheetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vehicleChoices = customerVehicles(data.vehicles);
+  const pickupText = booking.pickup.trim();
+  const pickupDisplay = pickupText || (autoPickupLoading ? copy.settingPickupLocation : copy.useCurrentLocation);
+  const pickupSelected = typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number';
+  const needsPickupContact = !booking.pickupContactName.trim() || !hasValidContactPhone(booking.pickupContactPhone);
+  const homeVehicleCards: Array<{
+    id: string;
+    title: string;
+    subtitle: string;
+    vehicle: Vehicle;
+    accent: string;
+  }> = vehicleChoices.map((vehicle) => ({
+    id: vehicle.id,
+    title: vehicle.shortName,
+    subtitle: `${vehicleCapacityText(vehicle, copy.upTo)} - ${vehicle.etaMinutes} min`,
+    vehicle,
+    accent: homeVehicleAccent(vehicle)
+  }));
+
+  function schedulePickupSheet(delayMs = 900) {
+    if (pickupSheetTimerRef.current) clearTimeout(pickupSheetTimerRef.current);
+    pickupSheetTimerRef.current = setTimeout(() => {
+      setPickupSheetOpen(true);
+      pickupSheetTimerRef.current = null;
+    }, delayMs);
+  }
+
+  useEffect(() => () => {
+    if (pickupSheetTimerRef.current) clearTimeout(pickupSheetTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (autoPickupAttemptedRef.current || pickupText) return undefined;
+    autoPickupAttemptedRef.current = true;
+    let cancelled = false;
+
+    async function setCurrentPickup() {
+      setAutoPickupLoading(true);
+      try {
+        const location = await readCurrentLocationDetails();
+        if (cancelled) return;
+        setBooking((current) => (
+          current.pickup
+            ? current
+            : {
+                ...current,
+                pickup: location.address || location.label,
+                pickupPlaceId: location.placeId,
+                pickupLat: location.lat,
+                pickupLng: location.lng
+              }
+        ));
+        schedulePickupSheet(1000);
+      } catch {
+        // Home stays usable if location permission or GPS is not available.
+      } finally {
+        if (!cancelled) setAutoPickupLoading(false);
+      }
+    }
+
+    setCurrentPickup();
+    return () => {
+      cancelled = true;
+    };
+  }, [setBooking]);
+
+  function applyHomePickup(location: LocationDetails) {
+    setBooking((current) => ({
+      ...current,
+      pickup: location.address || location.label,
+      pickupPlaceId: location.placeId,
+      pickupLat: location.lat,
+      pickupLng: location.lng
+    }));
+    setMapPickerOpen(false);
+    schedulePickupSheet(350);
+  }
+
+  function startBookingFromHome(vehicle: Vehicle) {
+    const serviceCategory: ServiceCategory = vehicle.code === 'bike' ? 'bike' : 'truck';
+    setBooking((current) => ({
+      ...current,
+      serviceCategory,
+      vehicleId: vehicle.id
+    }));
+    if (pickupText && needsPickupContact) {
+      setPickupSheetOpen(true);
+      return;
+    }
+    onBook(1);
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.heroCard}>
-        <Text style={styles.heroLabel}>{copy.whereTo}</Text>
-        <Pressable style={styles.searchBox} onPress={onBook}>
-          <Ionicons name="search" size={18} color={colors.customer} />
-          <Text style={styles.searchText}>{copy.enterDropLocation}</Text>
+    <View style={styles.homeShell}>
+      <View pointerEvents="none" style={styles.homeMapPattern}>
+        <View style={[styles.homePatternRoad, styles.homePatternRoadOne]} />
+        <View style={[styles.homePatternRoad, styles.homePatternRoadTwo]} />
+        <View style={[styles.homePatternRoad, styles.homePatternRoadThree]} />
+      </View>
+      <ScrollView contentContainerStyle={styles.homeScroll} showsVerticalScrollIndicator={false}>
+        <Pressable style={styles.homeLocationCard} onPress={() => setMapPickerOpen(true)}>
+          <View style={[styles.homeLocationIcon, pickupSelected && styles.homeLocationIconSelected]}>
+            {autoPickupLoading ? (
+              <ActivityIndicator size="small" color={colors.customer} />
+            ) : (
+              <Ionicons name={pickupSelected ? 'home' : 'locate'} size={18} color={pickupSelected ? colors.white : colors.customer} />
+            )}
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.homeLocationLabel}>{copy.pickupLocation}</Text>
+            <Text style={styles.homeLocationTitle} numberOfLines={1}>{pickupDisplay}</Text>
+          </View>
           <Ionicons name="arrow-forward" size={18} color={colors.customer} />
         </Pressable>
-        <View style={styles.row}>
-          <PrimaryButton title={copy.bookNow} icon="add" onPress={onBook} />
-          <SecondaryButton title={copy.track} icon="navigate" onPress={onTrack} />
+
+        <View style={styles.homeServiceGrid}>
+          {homeVehicleCards.map((service) => (
+            <Pressable
+              key={service.id}
+              style={styles.homeServiceCard}
+              onPress={() => startBookingFromHome(service.vehicle)}
+            >
+              <HomeVehicleVisual vehicle={service.vehicle} color={service.accent} />
+              <View style={styles.homeServiceFooter}>
+                <View style={styles.flex}>
+                  <Text style={styles.homeServiceTitle}>{service.title}</Text>
+                  <Text style={styles.homeServiceSubtitle} numberOfLines={2}>{service.subtitle}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={17} color={colors.ink} />
+              </View>
+            </Pressable>
+          ))}
         </View>
-      </View>
 
       {lastOrder ? (
-        <Pressable style={styles.rebookCard} onPress={onBook}>
+        <Pressable style={styles.rebookCard} onPress={() => onBook(1)}>
           <View style={styles.rebookIcon}>
             <Ionicons name="repeat" size={18} color={colors.customer} />
           </View>
@@ -1944,24 +2126,39 @@ function HomeScreen({
         </Pressable>
       ) : null}
 
-      <View style={styles.promiseBand}>
-        {[
-          ['flash', copy.instantBooking],
-          ['shield-checkmark', copy.otpSecured],
-          ['map', copy.liveTracking]
-        ].map(([icon, label]) => (
-          <View key={label} style={styles.promiseItem}>
-            <Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={16} color={colors.green} />
-            <Text style={styles.promiseText}>{label}</Text>
+        <Pressable style={styles.homeRewardCard} onPress={() => onBook(1)}>
+          <View style={styles.homeRewardIcon}>
+            <Ionicons name="disc" size={24} color={colors.amber} />
           </View>
-        ))}
-      </View>
+          <View style={styles.flex}>
+            <Text style={styles.homeRewardTitle}>{copy.indieryCoins}</Text>
+            <Text style={styles.homeRewardText}>{copy.useCoinsDiscount}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.ink} />
+        </Pressable>
 
-      <View style={styles.statRow}>
-        <StatCard title={copy.orders} value={String(data.orders.length)} tone="purple" />
-        <StatCard title={copy.active} value={String(activeOrders.length)} tone="green" />
-        <StatCard title={copy.coins} value={String(data.user.customerProfile?.coins ?? 0)} tone="amber" />
-      </View>
+        <View style={styles.homeAnnouncementHeader}>
+          <Text style={styles.homeAnnouncementTitle}>Announcements</Text>
+          <Pressable style={styles.homeSeeAllButton} onPress={() => onTrack()}>
+            <Text style={styles.homeSeeAllText}>See all</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.customer} />
+          </Pressable>
+        </View>
+        <View style={styles.homeAnnouncementCard}>
+          <View style={styles.homeAnnouncementIcon}>
+            <Ionicons name="megaphone" size={22} color={colors.blue} />
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.homeAnnouncementCopy}>Instant booking</Text>
+            <Text style={styles.homeAnnouncementMeta}>{copy.otpSecured} - {copy.liveTracking}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.ink} />
+        </View>
+        <View style={styles.homeDots}>
+          <View style={[styles.homeDot, styles.homeDotActive]} />
+          <View style={styles.homeDot} />
+          <View style={styles.homeDot} />
+        </View>
 
       {activeOrders.length ? (
         <View>
@@ -1971,25 +2168,46 @@ function HomeScreen({
               key={order.id}
               order={order}
               selected={order.id === activeOrder?.id}
+              compact
               onPress={() => onTrack(order.id)}
             />
           ))}
         </View>
       ) : null}
 
-      <SectionTitle title={copy.recentOrders} />
-      {recentOrders.length ? (
-        recentOrders.slice(0, 5).map((order) => (
-          <OrderCard key={order.id} order={order} />
-        ))
-      ) : (
-        <View style={styles.emptyHistoryCard}>
-          <Ionicons name="cube-outline" size={28} color={colors.muted} />
-          <Text style={styles.emptyTitle}>{copy.noTripsYet}</Text>
-          <Text style={styles.muted}>{copy.completedCancelledBookingsAppear}</Text>
-        </View>
-      )}
-    </ScrollView>
+      </ScrollView>
+      {mapPickerOpen ? (
+        <MapLocationPicker
+          api={api}
+          title={copy.setPickupLocation}
+          initialValue={booking.pickup}
+          initialLat={booking.pickupLat}
+          initialLng={booking.pickupLng}
+          onClose={() => setMapPickerOpen(false)}
+          onConfirm={applyHomePickup}
+        />
+      ) : null}
+      {pickupSheetOpen ? (
+        <ContactDetailsModal
+          target="pickup"
+          user={data.user}
+          booking={booking}
+          setBooking={setBooking}
+          onClose={() => setPickupSheetOpen(false)}
+          onSaved={() => onBook(1)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function HomeVehicleVisual({ vehicle, color }: { vehicle: Vehicle; color: string }) {
+  return (
+    <View style={styles.homeServiceArt}>
+      <View style={[styles.homeServiceArtHalo, { backgroundColor: `${color}1F` }]} />
+      <Ionicons name={vehicleIcon(vehicle)} size={48} color={color} />
+      <View style={[styles.homeServiceArtShadow, { backgroundColor: color }]} />
+    </View>
   );
 }
 
@@ -1998,6 +2216,8 @@ function LocationPickerField({
   label,
   value,
   selected,
+  variant = 'default',
+  placeholder,
   onChangeText,
   onSelect,
   onDoneTyping,
@@ -2007,6 +2227,8 @@ function LocationPickerField({
   label: string;
   value: string;
   selected: boolean;
+  variant?: 'default' | 'route';
+  placeholder?: string;
   onChangeText: (value: string) => void;
   onSelect: (location: LocationDetails) => void;
   onDoneTyping?: (value: string) => void;
@@ -2069,17 +2291,23 @@ function LocationPickerField({
   }
 
   return (
-    <View style={styles.locationFieldGroup}>
-      <View style={styles.locationLabelRow}>
-        <Text style={styles.fieldLabel}>{label}</Text>
-        {selected ? (
-          <View style={styles.locationSelectedBadge}>
-            <Ionicons name="checkmark-circle" size={13} color={colors.customer} />
-            <Text style={styles.locationSelectedText}>{copy.selected}</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={[styles.locationInputShell, focused && styles.locationInputShellActive]}>
+    <View style={[styles.locationFieldGroup, variant === 'route' && styles.routeLocationFieldGroup]}>
+      {variant === 'default' ? (
+        <View style={styles.locationLabelRow}>
+          <Text style={styles.fieldLabel}>{label}</Text>
+          {selected ? (
+            <View style={styles.locationSelectedBadge}>
+              <Ionicons name="checkmark-circle" size={13} color={colors.customer} />
+              <Text style={styles.locationSelectedText}>{copy.selected}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      <View style={[
+        styles.locationInputShell,
+        variant === 'route' && styles.routeLocationInputShell,
+        focused && styles.locationInputShellActive
+      ]}>
         <Ionicons name={isPickup ? 'radio-button-on' : 'location'} size={18} color={colors.customer} />
         <TextInput
           value={value}
@@ -2097,14 +2325,26 @@ function LocationPickerField({
             setFocused(true);
             onChangeText(nextValue);
           }}
-          placeholder={copy.mapSearchPlaceholder}
+          placeholder={placeholder || copy.mapSearchPlaceholder}
           placeholderTextColor={colors.muted}
           style={styles.locationInput}
         />
         {loading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
+        {variant === 'route' && onOpenMap ? (
+          <Pressable
+            style={styles.routeLocationMapButton}
+            hitSlop={8}
+            onPressIn={() => {
+              skipDoneTypingRef.current = true;
+            }}
+            onPress={onOpenMap}
+          >
+            <Ionicons name="add" size={19} color={colors.ink} />
+          </Pressable>
+        ) : null}
       </View>
       {localError ? <Text style={styles.locationError}>{localError}</Text> : null}
-      {onOpenMap ? (
+      {onOpenMap && variant === 'default' ? (
         <Pressable
           style={styles.mapSelectButton}
           onPressIn={() => {
@@ -2222,6 +2462,69 @@ function VehicleChoiceCard({
   );
 }
 
+function VehicleFareOption({
+  vehicle,
+  selected,
+  suggested,
+  disabled,
+  price,
+  onPress
+}: {
+  vehicle: Vehicle;
+  selected: boolean;
+  suggested: boolean;
+  disabled?: boolean;
+  price: number;
+  onPress: () => void;
+}) {
+  const copy = useCopy();
+  return (
+    <Pressable
+      style={[
+        styles.vehicleFareOption,
+        selected && styles.vehicleFareOptionSelected,
+        disabled && styles.vehicleFareOptionDisabled
+      ]}
+      disabled={disabled}
+      onPress={onPress}
+    >
+      <View style={styles.vehicleFareOptionIcon}>
+        <VehicleMiniArt vehicle={vehicle} muted={disabled} selected={selected} />
+      </View>
+      <View style={styles.flex}>
+        <View style={styles.vehicleFareOptionTitleRow}>
+          <Text style={[styles.vehicleFareOptionTitle, disabled && styles.vehicleNameDisabled]}>{vehicle.shortName}</Text>
+          {suggested ? (
+            <View style={styles.vehicleNewBadge}>
+              <Text style={styles.vehicleNewBadgeText}>{copy.suggested}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={styles.vehicleFareOptionMeta}>
+          {vehicleCapacityText(vehicle, copy.upTo)} - {vehicle.etaMinutes} min
+        </Text>
+      </View>
+      <View style={styles.vehicleFareOptionPriceWrap}>
+        <Text style={[styles.vehicleFareOptionPrice, disabled && styles.vehicleNameDisabled]}>{money(price)}</Text>
+        {selected ? <Ionicons name="checkmark-circle" size={17} color={colors.customer} /> : null}
+        {disabled ? <Text style={styles.vehicleUnavailableText}>{copy.unavailableForWeight}</Text> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function VehicleMiniArt({ vehicle, muted, selected }: { vehicle: Vehicle; muted?: boolean; selected?: boolean }) {
+  const isBike = vehicle.code === 'bike';
+  const accent = muted ? colors.muted : selected ? colors.blue : colors.customer;
+  return (
+    <View style={styles.vehicleMiniArt}>
+      <View style={[styles.vehicleMiniShadow, { backgroundColor: accent }]} />
+      <Ionicons name={isBike ? 'bicycle' : 'car-sport'} size={isBike ? 28 : 31} color={accent} />
+      {!isBike ? <View style={[styles.vehicleMiniBox, { borderColor: accent }]} /> : null}
+    </View>
+  );
+}
+
 function BookScreen({
   api,
   user,
@@ -2269,6 +2572,13 @@ function BookScreen({
   const autoPickupAttemptedRef = useRef(false);
   const hasPickupLocation = booking.pickup.trim().length > 0;
   const hasDropLocation = booking.drop.trim().length > 0;
+  const stepMeta: Record<number, { title: string; subtitle: string }> = {
+    1: { title: copy.pickupAndDrop, subtitle: booking.pickup || copy.setPickupLocation },
+    2: { title: copy.goodsDetails, subtitle: hasDropLocation ? `${booking.pickup} to ${booking.drop}` : copy.enterDropLocation },
+    3: { title: copy.chooseVehicle, subtitle: fare ? `${fare.distanceKm} km - ${booking.weightKg || 0} kg` : copy.estimating },
+    4: { title: copy.payment, subtitle: selectedVehicle ? `${selectedVehicle.shortName} - ${fare ? money(fare.total) : copy.estimating}` : copy.selectVehicleValue }
+  };
+  const currentStepMeta = stepMeta[step] ?? stepMeta[1];
 
   useEffect(() => {
     if (!vehicleChoices.length) {
@@ -2295,21 +2605,17 @@ function BookScreen({
     async function setCurrentPickup() {
       setAutoPickupLoading(true);
       try {
-        const current = await readDeviceLocation();
-        const nextLat = current.coords.latitude;
-        const nextLng = current.coords.longitude;
-        const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
-        const address = formatReverseAddress(reverse[0]) || 'Current location';
+        const location = await readCurrentLocationDetails();
         if (cancelled) return;
         setBooking((currentBooking) => (
           currentBooking.pickup
             ? currentBooking
             : {
                 ...currentBooking,
-                pickup: address,
-                pickupPlaceId: `current-${nextLat.toFixed(6)}-${nextLng.toFixed(6)}`,
-                pickupLat: nextLat,
-                pickupLng: nextLng
+                pickup: location.address || location.label,
+                pickupPlaceId: location.placeId,
+                pickupLat: location.lat,
+                pickupLng: location.lng
               }
         ));
       } catch {
@@ -2410,7 +2716,7 @@ function BookScreen({
     setMapPickerTarget(null);
   }
 
-  function chooseVehicle(vehicle: Vehicle, refreshFare = false) {
+  function chooseVehicle(vehicle: Vehicle, refreshFare = false, nextStep = step) {
     if (!vehicleCanCarryWeight(vehicle, bookingWeightKg)) {
       setContactError(copy.unavailableForWeight);
       return;
@@ -2418,21 +2724,8 @@ function BookScreen({
     setContactError('');
     setBooking((current) => ({ ...current, vehicleId: vehicle.id }));
     if (refreshFare && hasPickupLocation && hasDropLocation && bookingWeightKg) {
-      estimateNow(4, vehicle.id);
+      estimateNow(nextStep, vehicle.id);
     }
-  }
-
-  function continueFromPickupAndVehicle() {
-    if (!hasPickupLocation) {
-      setContactError(copy.selectLocationFirst);
-      return;
-    }
-    if (!selectedVehicle) {
-      setContactError(copy.selectVehicleValue);
-      return;
-    }
-    setContactError('');
-    setStep(2);
   }
 
   function continueFromRouteDetails() {
@@ -2461,7 +2754,7 @@ function BookScreen({
       return;
     }
     setContactError('');
-    setStep(3);
+    setStep(2);
   }
 
   function continueFromGoodsDetails() {
@@ -2478,12 +2771,31 @@ function BookScreen({
       setContactError(`No customer vehicle is available for ${bookingWeightKg} kg.`);
       return;
     }
+    const vehicleForEstimate =
+      selectedVehicle && vehicleCanCarryWeight(selectedVehicle, bookingWeightKg)
+        ? selectedVehicle
+        : suggestedVehicle;
+    if (!vehicleForEstimate) {
+      setContactError(copy.selectVehicleValue);
+      return;
+    }
+    setContactError('');
+    if (booking.vehicleId !== vehicleForEstimate.id) {
+      setBooking((current) => ({ ...current, vehicleId: vehicleForEstimate.id }));
+    }
+    estimateNow(3, vehicleForEstimate.id);
+  }
+
+  function continueFromVehiclePricing() {
     if (!selectedVehicle || !vehicleCanCarryWeight(selectedVehicle, bookingWeightKg)) {
       setContactError(copy.selectVehicleValue);
       return;
     }
     setContactError('');
-    estimateNow(4);
+    if (booking.vehicleId !== selectedVehicle.id) {
+      setBooking((current) => ({ ...current, vehicleId: selectedVehicle.id }));
+    }
+    estimateNow(4, selectedVehicle.id);
   }
 
   function applySavedAddress(target: 'pickup' | 'drop', savedAddress: SavedAddress, openContact = true) {
@@ -2509,120 +2821,171 @@ function BookScreen({
     if (openContact) setContactSheetTarget(target);
   }
 
+  async function openRouteMap(target: 'pickup' | 'drop', value = target === 'pickup' ? booking.pickup : booking.drop) {
+    const typedLocation = value.trim();
+    const isPickup = target === 'pickup';
+    const title = isPickup ? copy.setPickupLocation : copy.setDropLocation;
+    const currentValue = isPickup ? booking.pickup : booking.drop;
+    const currentLat = isPickup ? booking.pickupLat : booking.dropLat;
+    const currentLng = isPickup ? booking.pickupLng : booking.dropLng;
+
+    if (!typedLocation) {
+      setMapPickerTarget({
+        kind: target,
+        title,
+        value: currentValue,
+        lat: currentLat,
+        lng: currentLng,
+        openContact: true
+      });
+      return;
+    }
+
+    try {
+      const sessionToken = `${target}-map-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const suggestions = await api.autocompleteLocations(typedLocation, sessionToken);
+      const firstSuggestion = suggestions.suggestions[0];
+      if (firstSuggestion) {
+        const result = await api.locationDetails(firstSuggestion.placeId, sessionToken);
+        setBooking((current) => ({
+          ...current,
+          ...(isPickup
+            ? {
+                pickup: result.location.address || result.location.label,
+                pickupPlaceId: result.location.placeId,
+                pickupLat: result.location.lat,
+                pickupLng: result.location.lng
+              }
+            : {
+                drop: result.location.address || result.location.label,
+                dropPlaceId: result.location.placeId,
+                dropLat: result.location.lat,
+                dropLng: result.location.lng
+              })
+        }));
+        setMapPickerTarget({
+          kind: target,
+          title,
+          value: result.location.address || result.location.label,
+          lat: result.location.lat,
+          lng: result.location.lng,
+          openContact: true
+        });
+        return;
+      }
+    } catch {
+      // The map picker still opens, letting the user search or move the pin manually.
+    }
+
+    setMapPickerTarget({
+      kind: target,
+      title,
+      value: typedLocation,
+      lat: currentLat,
+      lng: currentLng,
+      openContact: true
+    });
+  }
+
+  function openPickupMap(value = booking.pickup) {
+    openRouteMap('pickup', value);
+  }
+
+  function openDropMap(value = booking.drop) {
+    openRouteMap('drop', value);
+  }
+
   return (
     <>
     <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.stepRow}>
-        {[1, 2, 3, 4].map((item) => (
-          <View key={item} style={[styles.stepDot, item <= step && styles.stepDotActive]}>
-            <Text style={[styles.stepText, item <= step && styles.stepTextActive]}>{item}</Text>
-          </View>
-        ))}
+      <View style={styles.bookingStepHeader}>
+        <Pressable
+          style={styles.bookingStepBack}
+          onPress={() => {
+            if (step > 1) setStep(step - 1);
+          }}
+        >
+          <Ionicons name={step > 1 ? 'arrow-back' : 'chevron-down'} size={20} color={colors.ink} />
+        </Pressable>
+        <View style={styles.flex}>
+          <Text style={styles.bookingStepTitle}>{currentStepMeta.title}</Text>
+          <Text style={styles.bookingStepSubtitle} numberOfLines={1}>{currentStepMeta.subtitle}</Text>
+        </View>
+        <Text style={styles.bookingStepCount}>{step}/4</Text>
+      </View>
+      <View style={styles.bookingProgressTrack}>
+        <View style={[styles.bookingProgressFill, { width: `${step * 25}%` }]} />
       </View>
 
       {step === 1 && (
         <View>
-          <SectionTitle title={copy.pickup} />
           {autoPickupLoading ? (
             <View style={styles.noticeInfo}>
               <ActivityIndicator size="small" color={colors.blue} />
               <Text style={styles.noticeInfoText}>{copy.settingPickupLocation}</Text>
             </View>
           ) : null}
-          <LocationPickerField
-            api={api}
-            label={copy.pickup}
-            value={booking.pickup}
-            selected={typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number'}
-            onChangeText={(pickup) =>
-              setBooking((current) => ({
-                ...current,
-                pickup,
-                pickupPlaceId: '',
-                pickupLat: undefined,
-                pickupLng: undefined
-              }))
-            }
-            onSelect={(location) => applyRouteLocation('pickup', location, false)}
-            onOpenMap={() =>
-              setMapPickerTarget({
-                kind: 'pickup',
-                title: copy.setPickupLocation,
-                value: booking.pickup,
-                lat: booking.pickupLat,
-                lng: booking.pickupLng,
-                openContact: false
-              })
-            }
-          />
-          <SavedAddressStrip
-            title={copy.savedPickupAddresses}
-            addresses={savedAddresses}
-            onSelect={(address) => applySavedAddress('pickup', address, false)}
-          />
-          <SectionTitle title={copy.selectVehicle} />
-          <View style={styles.vehicleGrid}>
-            {vehicleChoices.map((vehicle) => {
-              const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
-              return (
-                <VehicleChoiceCard
-                  key={vehicle.id}
-                  vehicle={vehicle}
-                  selected={booking.vehicleId === vehicle.id}
-                  suggested={suggestedVehicle?.id === vehicle.id}
-                  disabled={disabled}
-                  price={porterVehicleQuote(vehicle)}
-                  onPress={() => chooseVehicle(vehicle)}
-                />
-              );
-            })}
-          </View>
-          <SectionTitle title={copy.chooseService} />
-          <View style={styles.serviceGridCompact}>
-            {serviceOptions.map((service) => (
-              <Pressable
-                key={service.id}
-                style={[styles.serviceOptionCard, booking.serviceCategory === service.id && styles.serviceOptionCardActive]}
-                onPress={() => setBooking((current) => ({ ...current, serviceCategory: service.id }))}
-              >
-                <Ionicons name={service.icon} size={20} color={booking.serviceCategory === service.id ? colors.customer : colors.muted} />
-                <View style={styles.flex}>
-                  <Text style={styles.serviceOptionTitle}>{serviceTitle(language, service.id)}</Text>
-                  <Text style={styles.mutedSmall}>{serviceSubtitle(language, service.id)}</Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-          {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
-          {booking.serviceCategory === 'movers' ? (
-            <View style={styles.noticeInfo}>
-              <Ionicons name="information-circle" size={16} color={colors.blue} />
-              <Text style={styles.noticeInfoText}>{copy.moversNotice}</Text>
-            </View>
-          ) : null}
-          <PrimaryButton title={copy.continue} icon="arrow-forward" onPress={continueFromPickupAndVehicle} />
-        </View>
-      )}
 
-      {step === 2 && (
-        <View>
-          <SectionTitle title={copy.pickupAndDrop} />
-          <View style={styles.routeReviewCard}>
-            <View style={styles.routeReviewHeader}>
-              <Text style={styles.summaryTitle}>{copy.pickup}</Text>
-              <Pressable style={styles.changeRouteButton} onPress={() => setStep(1)}>
-                <Ionicons name="create-outline" size={14} color={colors.customer} />
-                <Text style={styles.changeRouteText}>{copy.changeRoute}</Text>
-              </Pressable>
-            </View>
-            <View style={styles.routeReviewLine}>
-              <View style={styles.routeReviewDot} />
+          <View style={styles.routeEntryCard}>
+            <View style={styles.routeEntryPickupRow}>
+              <View style={[styles.routeEntryDot, styles.routeEntryDotPickup]} />
               <View style={styles.flex}>
-                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
-                <Text style={styles.mutedSmall}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+                <LocationPickerField
+                  api={api}
+                  label={copy.pickup}
+                  value={booking.pickup}
+                  selected={typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number'}
+                  variant="route"
+                  placeholder={copy.setPickupLocation}
+                  onChangeText={(pickup) =>
+                    setBooking((current) => ({
+                      ...current,
+                      pickup,
+                      pickupPlaceId: '',
+                      pickupLat: undefined,
+                      pickupLng: undefined
+                    }))
+                  }
+                  onSelect={(location) => applyRouteLocation('pickup', location)}
+                  onDoneTyping={(value) => {
+                    if (value.trim().length >= 2) openPickupMap(value);
+                  }}
+                  onOpenMap={() => openPickupMap()}
+                />
+              </View>
+            </View>
+
+            <View style={styles.routeEntryDivider} />
+
+            <View style={styles.routeEntryDropRow}>
+              <View style={[styles.routeEntryDot, styles.routeEntryDotDrop]} />
+              <View style={styles.flex}>
+                <LocationPickerField
+                  api={api}
+                  label={copy.drop}
+                  value={booking.drop}
+                  selected={typeof booking.dropLat === 'number' && typeof booking.dropLng === 'number'}
+                  variant="route"
+                  placeholder={copy.enterDropLocation}
+                  onChangeText={(drop) =>
+                    setBooking((current) => ({
+                      ...current,
+                      drop,
+                      dropPlaceId: '',
+                      dropLat: undefined,
+                      dropLng: undefined
+                    }))
+                  }
+                  onSelect={(location) => applyRouteLocation('drop', location)}
+                  onDoneTyping={(value) => {
+                    if (value.trim().length >= 2) openDropMap(value);
+                  }}
+                  onOpenMap={() => openDropMap()}
+                />
               </View>
             </View>
           </View>
+
           {booking.extraStops.map((stop, index) => (
             <View key={stop.id} style={styles.stopFieldWrap}>
               <LocationPickerField
@@ -2656,64 +3019,40 @@ function BookScreen({
               </Pressable>
             </View>
           ))}
-          {booking.extraStops.length < maxExtraStops ? (
-            <Pressable style={styles.addStopButton} onPress={addStop}>
-              <Ionicons name="add-circle-outline" size={18} color={colors.customer} />
-              <Text style={styles.addStopText}>{copy.addStop}</Text>
-            </Pressable>
-          ) : null}
-          <LocationPickerField
-            api={api}
-            label={copy.drop}
-            value={booking.drop}
-            selected={typeof booking.dropLat === 'number' && typeof booking.dropLng === 'number'}
-            onChangeText={(drop) =>
-              setBooking((current) => ({
-                ...current,
-                drop,
-                dropPlaceId: '',
-                dropLat: undefined,
-                dropLng: undefined
-              }))
-            }
-            onSelect={(location) => applyRouteLocation('drop', location)}
-            onDoneTyping={(value) => {
-              if (value.trim().length >= 2) setContactSheetTarget('drop');
-            }}
-            onOpenMap={() =>
-              setMapPickerTarget({
-                kind: 'drop',
-                title: copy.setDropLocation,
-                value: booking.drop,
-                lat: booking.dropLat,
-                lng: booking.dropLng
-              })
-            }
-          />
           <SavedAddressStrip
             title={copy.savedDropAddresses}
             addresses={savedAddresses}
             onSelect={(address) => applySavedAddress('drop', address)}
           />
           {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
-          {hasPickupLocation || hasDropLocation ? (
-            <MapPreview
-              pickup={booking.pickup}
-              drop={booking.drop}
-              extraStops={bookingStopsToLocationPoints(booking.extraStops)}
-              eta={fare?.etaMinutes || selectedVehicle?.etaMinutes || 4}
-            />
-          ) : null}
-          <View style={styles.row}>
-            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
-            <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromRouteDetails} />
-          </View>
         </View>
       )}
 
-      {step === 3 && (
+      {step === 2 && (
         <View>
-          <SectionTitle title={copy.goodsDetails} />
+          <View style={styles.routeReviewCard}>
+            <View style={styles.routeReviewHeader}>
+              <Text style={styles.summaryTitle}>{copy.routeSummary}</Text>
+              <Pressable style={styles.changeRouteButton} onPress={() => setStep(1)}>
+                <Ionicons name="create-outline" size={14} color={colors.customer} />
+                <Text style={styles.changeRouteText}>{copy.changeRoute}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.routeReviewLine}>
+              <View style={styles.routeReviewDot} />
+              <View style={styles.flex}>
+                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                <Text style={styles.mutedSmall}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+              </View>
+            </View>
+            <View style={styles.routeReviewLine}>
+              <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
+              <View style={styles.flex}>
+                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                <Text style={styles.mutedSmall}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
+              </View>
+            </View>
+          </View>
           <View style={styles.goodsChipWrap}>
             {goodsOptions.map((item) => {
               const active = item === 'Other' ? selectedGoodsIsOther : booking.goodsType === item;
@@ -2759,19 +3098,69 @@ function BookScreen({
             <SummaryRow label={copy.stops} value={booking.extraStops.length ? String(booking.extraStops.length) : copy.direct} />
           </View>
           <View style={styles.row}>
-            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(2)} />
+            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
             <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromGoodsDetails} />
+          </View>
+        </View>
+      )}
+
+      {step === 3 && (
+        <View>
+          <View style={styles.vehicleRoutePanel}>
+            <View style={styles.routeReviewLine}>
+              <View style={styles.routeReviewDot} />
+              <View style={styles.flex}>
+                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                <Text style={styles.mutedSmall}>{booking.pickupContactName || user.name}</Text>
+              </View>
+            </View>
+            <View style={styles.routeReviewLine}>
+              <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
+              <View style={styles.flex}>
+                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                <Text style={styles.mutedSmall}>{booking.dropContactName || copy.receiver}</Text>
+              </View>
+            </View>
+            <View style={styles.vehicleRouteActions}>
+              <Pressable style={styles.vehicleRouteAction} onPress={() => setStep(1)}>
+                <Ionicons name="create" size={14} color={colors.customer} />
+                <Text style={styles.vehicleRouteActionText}>{copy.changeRoute}</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.vehicleFareList}>
+            {vehicleChoices.map((vehicle) => {
+              const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
+              const selected = booking.vehicleId === vehicle.id || (!booking.vehicleId && selectedVehicle?.id === vehicle.id);
+              const price = selected && fare ? fare.total : porterVehicleQuote(vehicle, routeDistanceKm);
+              return (
+                <VehicleFareOption
+                  key={vehicle.id}
+                  vehicle={vehicle}
+                  selected={selected}
+                  suggested={suggestedVehicle?.id === vehicle.id}
+                  disabled={disabled}
+                  price={price}
+                  onPress={() => chooseVehicle(vehicle, true, 3)}
+                />
+              );
+            })}
+          </View>
+          {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
+          <View style={styles.row}>
+            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(2)} />
+            <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromVehiclePricing} />
           </View>
         </View>
       )}
 
       {step === 4 && (
         <View>
-          <SectionTitle title={copy.payment} />
           <View style={styles.routeReviewCard}>
             <View style={styles.routeReviewHeader}>
               <Text style={styles.summaryTitle}>{copy.routeAndContacts}</Text>
-              <Pressable style={styles.changeRouteButton} onPress={() => setStep(2)}>
+              <Pressable style={styles.changeRouteButton} onPress={() => setStep(1)}>
                 <Ionicons name="create-outline" size={14} color={colors.customer} />
                 <Text style={styles.changeRouteText}>{copy.changeRoute}</Text>
               </Pressable>
@@ -2790,24 +3179,6 @@ function BookScreen({
                 <Text style={styles.mutedSmall}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
               </View>
             </View>
-          </View>
-
-          <SectionTitle title={copy.allVehiclePrices} />
-          <View style={styles.vehicleGrid}>
-            {vehicleChoices.map((vehicle) => {
-              const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
-              return (
-                <VehicleChoiceCard
-                  key={vehicle.id}
-                  vehicle={vehicle}
-                  selected={booking.vehicleId === vehicle.id}
-                  suggested={suggestedVehicle?.id === vehicle.id}
-                  disabled={disabled}
-                  price={porterVehicleQuote(vehicle, routeDistanceKm)}
-                  onPress={() => chooseVehicle(vehicle, true)}
-                />
-              );
-            })}
           </View>
 
           {selectedVehicle ? (
@@ -2912,6 +3283,9 @@ function BookScreen({
         onClose={() => {
           setContactError('');
           setContactSheetTarget(null);
+        }}
+        onSaved={() => {
+          if (contactSheetTarget === 'drop') continueFromRouteDetails();
         }}
       />
     ) : null}
@@ -3028,13 +3402,17 @@ function ContactDetailsModal({
   user,
   booking,
   setBooking,
-  onClose
+  primaryTitle,
+  onClose,
+  onSaved
 }: {
   target: 'pickup' | 'drop';
   user: UserProfile;
   booking: typeof initialBooking;
   setBooking: React.Dispatch<React.SetStateAction<typeof initialBooking>>;
+  primaryTitle?: string;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const copy = useCopy();
   const [localError, setLocalError] = useState('');
@@ -3075,6 +3453,7 @@ function ContactDetailsModal({
       return;
     }
     onClose();
+    onSaved?.();
   }
 
   return (
@@ -3130,7 +3509,7 @@ function ContactDetailsModal({
           {localError ? <Text style={styles.contactError}>{localError}</Text> : null}
           <View style={styles.contactSheetActions}>
             <SecondaryButton title={copy.later} icon="time-outline" onPress={onClose} />
-            <PrimaryButton title={copy.saveDetails} icon="checkmark" onPress={saveDetails} />
+            <PrimaryButton title={primaryTitle || copy.saveDetails} icon="checkmark" onPress={saveDetails} />
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -3169,6 +3548,7 @@ function MapLocationPicker({
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [localError, setLocalError] = useState('');
+  const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
   const requestSeqRef = useRef(0);
   const sessionTokenRef = useRef(`map-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const lat = region.latitude;
@@ -3208,11 +3588,12 @@ function MapLocationPicker({
     setLocalError('');
     try {
       const result = await api.locationDetails(suggestion.placeId, sessionTokenRef.current);
-      setRegion((current) => ({
-        ...current,
+      const nextRegion = {
+        ...region,
         latitude: result.location.lat,
         longitude: result.location.lng
-      }));
+      };
+      moveMapToRegion(nextRegion);
       setPinLabel(result.location.address || result.location.label);
       setQuery(result.location.address || result.location.label);
       setSuggestions([]);
@@ -3233,11 +3614,12 @@ function MapLocationPicker({
       const nextLng = current.coords.longitude;
       const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
       const address = formatReverseAddress(reverse[0]) || 'Current location';
-      setRegion((currentRegion) => ({
-        ...currentRegion,
+      const nextRegion = {
+        ...region,
         latitude: nextLat,
         longitude: nextLng
-      }));
+      };
+      moveMapToRegion(nextRegion);
       setPinLabel(address);
       setQuery(address);
       setSuggestions([]);
@@ -3248,8 +3630,13 @@ function MapLocationPicker({
     }
   }
 
+  function moveMapToRegion(nextRegion: Region) {
+    setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
+    mapRef.current?.animateToRegion(nextRegion, 240);
+  }
+
   function updatePinFromMap(nextRegion: Region) {
-    setRegion(nextRegion);
+    setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
     setSuggestions([]);
   }
 
@@ -3320,9 +3707,10 @@ function MapLocationPicker({
 
         <View style={styles.mapPickerCanvas}>
           <MapView
+            ref={mapRef}
             provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             style={styles.mapPickerRealMap}
-            region={region}
+            initialRegion={initialRegion}
             onRegionChangeComplete={updatePinFromMap}
           >
             <Marker
@@ -3376,158 +3764,276 @@ function OrdersScreen({
   orders: Order[];
   activeOrders: Order[];
   activeOrder?: Order;
-  tripOtp?: { pickup: string; drop: string };
+  tripOtp?: TripOtp;
   busy: boolean;
   onBook: () => void;
   onRefresh: () => void;
   onSelectActiveOrder: (orderId: string) => void;
+  onShare?: (order: Order) => void;
+  onCancel?: (order: Order) => void;
+}) {
+  const copy = useCopy();
+  const activeOrderIds = new Set(activeOrders.map((order) => order.id));
+  const pastOrders = orders.filter((order) => !activeOrderIds.has(order.id));
+  const [detailOrderId, setDetailOrderId] = useState<string | undefined>();
+  const ordersScrollRef = useRef<ScrollView | null>(null);
+  const allOrderIds = orders.map((order) => order.id).join('|');
+  const allActiveOrderIds = activeOrders.map((order) => order.id).join('|');
+  const detailOrder = detailOrderId
+    ? activeOrders.find((order) => order.id === detailOrderId) ?? orders.find((order) => order.id === detailOrderId)
+    : undefined;
+  const detailTripOtp = visibleTripOtp(detailOrder, detailOrder?.id === activeOrder?.id ? tripOtp : undefined);
+
+  useEffect(() => {
+    if (detailOrderId && !activeOrders.some((order) => order.id === detailOrderId) && !orders.some((order) => order.id === detailOrderId)) {
+      setDetailOrderId(undefined);
+    }
+  }, [allActiveOrderIds, allOrderIds, detailOrderId]);
+
+  function openOrderDetails(order: Order) {
+    if (isActiveOrder(order)) onSelectActiveOrder(order.id);
+    setDetailOrderId(order.id);
+    setTimeout(() => ordersScrollRef.current?.scrollTo({ y: 0, animated: true }), 0);
+  }
+
+  return (
+    <ScrollView ref={ordersScrollRef} contentContainerStyle={styles.scroll}>
+      {detailOrder ? (
+        <OrderDetailsPanel
+          order={detailOrder}
+          tripOtp={detailTripOtp}
+          busy={busy}
+          onRefresh={onRefresh}
+          onShare={onShare ? () => onShare(detailOrder) : undefined}
+          onCancel={onCancel ? () => onCancel(detailOrder) : undefined}
+          onClose={() => setDetailOrderId(undefined)}
+        />
+      ) : (
+        <>
+          <View style={styles.historyHeader}>
+            <SectionTitle title={`${copy.active} ${copy.orders}`} />
+            <Text style={styles.mutedSmall}>{activeOrders.length} {copy.orders.toLowerCase()}</Text>
+          </View>
+          {activeOrders.length ? (
+            activeOrders.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                onPress={() => openOrderDetails(order)}
+                actionTitle={copy.trackOrder}
+                actionIcon="navigate"
+                onActionPress={() => openOrderDetails(order)}
+              />
+            ))
+          ) : (
+            <View style={styles.noActiveOrderCard}>
+              <Ionicons name="navigate-outline" size={30} color={colors.muted} />
+              <Text style={styles.emptyTitle}>{copy.noActiveDelivery}</Text>
+              <Text style={styles.muted}>{copy.liveTrackingAppear}</Text>
+              <PrimaryButton title={copy.bookDelivery} icon="add" onPress={onBook} />
+            </View>
+          )}
+
+          <View style={styles.historyHeader}>
+            <SectionTitle title={copy.orderHistory} />
+            <Text style={styles.mutedSmall}>{pastOrders.length} {copy.orders.toLowerCase()}</Text>
+          </View>
+          {pastOrders.length ? (
+            pastOrders.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                onPress={() => openOrderDetails(order)}
+              />
+            ))
+          ) : (
+            <View style={styles.emptyHistoryCard}>
+              <Ionicons name="cube-outline" size={28} color={colors.muted} />
+              <Text style={styles.emptyTitle}>{copy.noPastOrders}</Text>
+              <Text style={styles.muted}>{copy.completedCancelledAppear}</Text>
+            </View>
+          )}
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+function OrderDetailsPanel({
+  order,
+  tripOtp,
+  busy,
+  onRefresh,
+  onShare,
+  onCancel,
+  onClose
+}: {
+  order: Order;
+  tripOtp?: TripOtp;
+  busy: boolean;
+  onRefresh: () => void;
   onShare?: () => void;
   onCancel?: () => void;
+  onClose?: () => void;
 }) {
   const copy = useCopy();
   const language = useLanguage();
-  const activeOrderIds = new Set(activeOrders.map((order) => order.id));
-  const pastOrders = orders.filter((order) => !activeOrderIds.has(order.id));
-  const countdown = useOrderCountdown(activeOrder);
+  const countdown = useOrderCountdown(order);
+  const orderActive = isActiveOrder(order);
+  const cancellable = ['offered', 'accepted', 'arrived_pickup'].includes(order.status);
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.ordersHeader}>
-        <View>
-          <Text style={styles.heroLabel}>{copy.myOrders}</Text>
-          <Text style={styles.ordersTitle}>{copy.deliveriesTracking}</Text>
-        </View>
-        <Pressable style={styles.ordersBookButton} onPress={onBook}>
-          <Ionicons name="add" size={18} color={colors.white} />
-        </Pressable>
-      </View>
-
-      {activeOrder ? (
-        <View>
-          <View style={styles.between}>
-            <SectionTitle title={copy.activeDelivery} />
-            <Text style={styles.mutedSmall}>{activeOrders.length} active</Text>
+    <View>
+      <View style={styles.liveOrderPanel}>
+        <View style={styles.liveOrderHeader}>
+          <View style={styles.liveOrderIcon}>
+            <Ionicons name="cube" size={22} color={colors.white} />
           </View>
-          {activeOrders.length > 1 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeOrderSwitchRow}>
-              {activeOrders.map((order) => {
-                const selected = order.id === activeOrder.id;
-                return (
-                  <Pressable
-                    key={order.id}
-                    style={[styles.activeOrderSwitchCard, selected && styles.activeOrderSwitchCardActive]}
-                    onPress={() => onSelectActiveOrder(order.id)}
-                  >
-                    <Text style={[styles.activeOrderSwitchTitle, selected && styles.activeOrderSwitchTitleActive]}>{order.orderNo}</Text>
-                    <Text style={styles.activeOrderSwitchMeta} numberOfLines={1}>
-                      {order.pickup.label} to {order.drop.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          ) : null}
-          <MapPreview
-            pickup={activeOrder.pickup.label}
-            drop={activeOrder.drop.label}
-            extraStops={activeOrder.extraStops}
-            eta={activeOrder.etaMinutes}
-            partnerLocation={activeOrder.partnerLocation}
-          />
-          <View style={styles.activeOrderCard}>
-            <View style={styles.between}>
-              <View>
-                <Text style={styles.cardTitle}>{activeOrder.orderNo}</Text>
-                <Text style={styles.mutedSmall}>
-                  {activeOrder.vehicle.shortName} - {activeOrder.goodsType}, {activeOrder.weightKg} kg
-                </Text>
-              </View>
-              <Badge label={statusLabel(language, activeOrder.status)} />
-            </View>
-            <SummaryRow label={copy.route} value={`${activeOrder.pickup.label} to ${activeOrder.drop.label}`} />
-            <SummaryRow label={copy.paymentLabel} value={`${activeOrder.paymentMode.toUpperCase()} - ${activeOrder.paymentStatus}`} />
-            {countdown ? (
-              <View style={[styles.countdownCard, countdown.delayed && styles.countdownCardDelayed]}>
-                <Ionicons
-                  name={countdown.delayed ? 'alert-circle' : countdown.pendingPickup ? 'cube-outline' : 'timer-outline'}
-                  size={19}
-                  color={countdown.delayed ? colors.red : colors.customer}
-                />
-                <View style={styles.flex}>
-                  <Text style={[styles.countdownValue, countdown.delayed && styles.countdownValueDelayed]}>
-                    {countdown.delayed ? copy.runningLate : countdown.pendingPickup ? copy.countdownBegins : countdown.label}
-                  </Text>
-                  <Text style={styles.countdownLabel}>
-                    {countdown.delayed
-                      ? copy.estimatedDeliveryPassed
-                      : countdown.pendingPickup
-                        ? copy.countdownBegins
-                        : copy.estimatedTimeAfterPickup}
-                  </Text>
-                </View>
-              </View>
+          <View style={styles.flex}>
+            <Text style={styles.liveOrderTitle}>{orderActive ? copy.activeDelivery : copy.orderDetails}</Text>
+            <Text style={styles.liveOrderNo}>{order.orderNo}</Text>
+          </View>
+          <View style={styles.orderDetailHeaderActions}>
+            <Badge label={statusLabel(language, order.status)} />
+            {onClose ? (
+              <Pressable style={styles.orderDetailClose} onPress={onClose}>
+                <Ionicons name="close" size={16} color={colors.ink} />
+              </Pressable>
             ) : null}
-            {activeOrder.partner ? (
-              <View style={styles.assignedPartnerRow}>
-                <View style={styles.driverAvatar}>
-                  <Text style={styles.driverAvatarText}>{activeOrder.partner.initials}</Text>
-                </View>
-                <View style={styles.flex}>
-                  <Text style={styles.cardTitle}>{activeOrder.partner.name}</Text>
-                  <Text style={styles.mutedSmall}>Mobile: {activeOrder.partner.phone}</Text>
-                  <Text style={styles.mutedSmall}>Vehicle: {activeOrder.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
-                </View>
+          </View>
+        </View>
+
+        <View style={styles.liveRouteCard}>
+          <View style={styles.liveRouteLine}>
+            <View style={[styles.liveRouteDot, styles.liveRoutePickupDot]} />
+            <View style={styles.flex}>
+              <Text style={styles.liveRouteLabel}>{copy.pickup}</Text>
+              <Text style={styles.liveRouteText} numberOfLines={1}>{order.pickup.label}</Text>
+            </View>
+          </View>
+          {order.extraStops.map((stop, index) => (
+            <View key={`${order.id}-detail-stop-${index}`} style={styles.liveRouteLine}>
+              <View style={[styles.liveRouteDot, styles.liveRouteStopDot]} />
+              <View style={styles.flex}>
+                <Text style={styles.liveRouteLabel}>{copy.stop} {index + 1}</Text>
+                <Text style={styles.liveRouteText} numberOfLines={1}>{stop.label}</Text>
               </View>
-            ) : (
-              <View style={styles.searchingPartnerRow}>
-                <ActivityIndicator size="small" color={colors.customer} />
-                <Text style={styles.searchingPartnerText}>{copy.findingNearbyPartner}</Text>
-              </View>
-            )}
-            {tripOtp ? (
-              <View style={styles.compactOtpRow}>
+            </View>
+          ))}
+          <View style={styles.liveRouteLine}>
+            <View style={[styles.liveRouteDot, styles.liveRouteDropDot]} />
+            <View style={styles.flex}>
+              <Text style={styles.liveRouteLabel}>{copy.drop}</Text>
+              <Text style={styles.liveRouteText} numberOfLines={1}>{order.drop.label}</Text>
+            </View>
+          </View>
+        </View>
+
+        <MapPreview
+          pickup={order.pickup.label}
+          drop={order.drop.label}
+          extraStops={order.extraStops}
+          eta={order.etaMinutes}
+          partnerLocation={order.partnerLocation}
+        />
+
+        <View style={styles.liveOrderMetrics}>
+          <View style={styles.liveOrderMetric}>
+            <Text style={styles.liveOrderMetricValue}>{order.vehicle.shortName}</Text>
+            <Text style={styles.liveOrderMetricLabel}>{copy.vehicle}</Text>
+          </View>
+          <View style={styles.liveOrderMetric}>
+            <Text style={styles.liveOrderMetricValue}>{order.weightKg} kg</Text>
+            <Text style={styles.liveOrderMetricLabel}>{goodsLabel(language, order.goodsType)}</Text>
+          </View>
+          <View style={styles.liveOrderMetric}>
+            <Text style={styles.liveOrderMetricValue}>{money(order.fare.total)}</Text>
+            <Text style={styles.liveOrderMetricLabel} numberOfLines={1}>
+              {order.paymentMode.toUpperCase()} - {order.paymentStatus.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+
+        {countdown ? (
+          <View style={[styles.countdownCard, countdown.delayed && styles.countdownCardDelayed]}>
+            <Ionicons
+              name={countdown.delayed ? 'alert-circle' : countdown.pendingPickup ? 'cube-outline' : 'timer-outline'}
+              size={19}
+              color={countdown.delayed ? colors.red : colors.customer}
+            />
+            <View style={styles.flex}>
+              <Text style={[styles.countdownValue, countdown.delayed && styles.countdownValueDelayed]}>
+                {countdown.delayed ? copy.runningLate : countdown.pendingPickup ? copy.countdownBegins : countdown.label}
+              </Text>
+              <Text style={styles.countdownLabel}>
+                {countdown.delayed
+                  ? copy.estimatedDeliveryPassed
+                  : countdown.pendingPickup
+                    ? copy.countdownBegins
+                    : copy.estimatedTimeAfterPickup}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {order.partner ? (
+          <View style={styles.assignedPartnerRow}>
+            <View style={styles.driverAvatar}>
+              <Text style={styles.driverAvatarText}>{order.partner.initials}</Text>
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.cardTitle}>{order.partner.name}</Text>
+              <Text style={styles.mutedSmall}>Mobile: {order.partner.phone}</Text>
+              <Text style={styles.mutedSmall}>Vehicle: {order.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
+            </View>
+          </View>
+        ) : orderActive ? (
+          <View style={styles.searchingPartnerRow}>
+            <ActivityIndicator size="small" color={colors.customer} />
+            <Text style={styles.searchingPartnerText}>{copy.findingNearbyPartner}</Text>
+          </View>
+        ) : null}
+
+        {tripOtp?.pickup || tripOtp?.drop ? (
+          <View style={styles.ordersOtpPanel}>
+            <View style={styles.ordersOtpTitleRow}>
+              <Ionicons name="key" size={16} color={colors.customer} />
+              <Text style={styles.ordersOtpTitle}>{copy.deliveryOtp}</Text>
+            </View>
+            <View style={styles.ordersOtpRow}>
+              {tripOtp.pickup ? (
                 <View style={styles.compactOtpBox}>
                   <Text style={styles.mutedSmall}>{copy.pickupOtp}</Text>
                   <Text style={styles.compactOtpText}>{tripOtp.pickup}</Text>
                 </View>
+              ) : null}
+              {tripOtp.drop ? (
                 <View style={styles.compactOtpBox}>
                   <Text style={styles.mutedSmall}>{copy.dropOtp}</Text>
                   <Text style={styles.compactOtpText}>{tripOtp.drop}</Text>
                 </View>
-              </View>
-            ) : null}
+              ) : null}
+            </View>
           </View>
-          <Timeline items={activeOrder.timeline} />
-          <View style={styles.row}>
-            <PrimaryButton title={copy.refresh} icon="refresh" onPress={onRefresh} />
-            {onShare ? (
-              <SecondaryButton title={copy.share} icon="share-social" onPress={onShare} />
-            ) : null}
-            {onCancel && ['offered', 'accepted', 'arrived_pickup'].includes(activeOrder.status) ? (
-              <SecondaryButton title={busy ? copy.cancelling : copy.cancel} icon="close-circle" onPress={onCancel} />
-            ) : null}
-          </View>
-        </View>
-      ) : (
-        <View style={styles.noActiveOrderCard}>
-          <Ionicons name="navigate-outline" size={30} color={colors.muted} />
-          <Text style={styles.emptyTitle}>{copy.noActiveDelivery}</Text>
-          <Text style={styles.muted}>{copy.liveTrackingAppear}</Text>
-          <PrimaryButton title={copy.bookDelivery} icon="add" onPress={onBook} />
-        </View>
-      )}
+        ) : null}
 
-      <SectionTitle title={copy.orderHistory} />
-      {pastOrders.length ? (
-        pastOrders.map((order) => <OrderCard key={order.id} order={order} />)
-      ) : (
-        <View style={styles.emptyHistoryCard}>
-          <Ionicons name="cube-outline" size={28} color={colors.muted} />
-          <Text style={styles.emptyTitle}>{copy.noPastOrders}</Text>
-          <Text style={styles.muted}>{copy.completedCancelledAppear}</Text>
+        <View style={styles.orderActionBar}>
+          <OrderActionButton title={copy.refresh} icon="refresh" tone="primary" onPress={onRefresh} />
+          {onShare && orderActive ? <OrderActionButton title={copy.share} icon="share-social" onPress={onShare} /> : null}
+          {onCancel && cancellable ? (
+            <OrderActionButton title={busy ? copy.cancelling : copy.cancel} icon="close-circle" tone="danger" onPress={onCancel} />
+          ) : null}
         </View>
-      )}
-    </ScrollView>
+      </View>
+
+      <View style={styles.timelinePanel}>
+        <View style={styles.timelinePanelHeader}>
+          <Text style={styles.cardTitle}>{copy.track}</Text>
+          <Text style={styles.mutedSmall}>{statusLabel(language, order.status)}</Text>
+        </View>
+        <Timeline items={order.timeline} />
+      </View>
+    </View>
   );
 }
 
@@ -3539,7 +4045,7 @@ function TrackScreen({
   onCancel
 }: {
   order?: Order;
-  tripOtp?: { pickup: string; drop: string };
+  tripOtp?: TripOtp;
   busy: boolean;
   onRefresh: () => void;
   onCancel?: () => void;
@@ -3589,18 +4095,22 @@ function TrackScreen({
           </View>
         </View>
       ) : null}
-      {tripOtp ? (
+      {tripOtp?.pickup || tripOtp?.drop ? (
         <View style={styles.otpCard}>
           <Text style={styles.cardTitle}>{copy.deliveryOtp}</Text>
           <View style={styles.row}>
-            <View style={styles.otpBox}>
-              <Text style={styles.mutedSmall}>{copy.pickup}</Text>
-              <Text style={styles.otpText}>{tripOtp.pickup}</Text>
-            </View>
-            <View style={styles.otpBox}>
-              <Text style={styles.mutedSmall}>{copy.drop}</Text>
-              <Text style={styles.otpText}>{tripOtp.drop}</Text>
-            </View>
+            {tripOtp.pickup ? (
+              <View style={styles.otpBox}>
+                <Text style={styles.mutedSmall}>{copy.pickup}</Text>
+                <Text style={styles.otpText}>{tripOtp.pickup}</Text>
+              </View>
+            ) : null}
+            {tripOtp.drop ? (
+              <View style={styles.otpBox}>
+                <Text style={styles.mutedSmall}>{copy.drop}</Text>
+                <Text style={styles.otpText}>{tripOtp.drop}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       ) : null}
@@ -4338,40 +4848,101 @@ function StatCard({ title, value, tone }: { title: string; value: string; tone: 
   );
 }
 
-function OrderCard({ order, onPress, selected = false }: { order: Order; onPress?: () => void; selected?: boolean }) {
+function OrderCard({
+  order,
+  onPress,
+  selected = false,
+  compact = false,
+  actionTitle,
+  actionIcon = 'chevron-forward',
+  onActionPress
+}: {
+  order: Order;
+  onPress?: () => void;
+  selected?: boolean;
+  compact?: boolean;
+  actionTitle?: string;
+  actionIcon?: keyof typeof Ionicons.glyphMap;
+  onActionPress?: () => void;
+}) {
   const copy = useCopy();
   const language = useLanguage();
+  if (compact) {
+    const compactContent = (
+      <>
+        <View style={styles.homeActiveIcon}>
+          <Ionicons name="cube" size={18} color={colors.customer} />
+        </View>
+        <View style={styles.flex}>
+          <View style={styles.homeActiveTop}>
+            <Text style={styles.homeActiveOrderNo}>{order.orderNo}</Text>
+            <Badge label={statusLabel(language, order.status)} />
+          </View>
+          <Text style={styles.homeActiveRoute} numberOfLines={1}>
+            {order.pickup.label} {'->'} {routeStopSummary(order.extraStops) ? `${routeStopSummary(order.extraStops)} -> ` : ''}{order.drop.label}
+          </Text>
+          <Text style={styles.homeActiveVehicle} numberOfLines={1}>{order.vehicle.shortName}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+      </>
+    );
+
+    if (onPress) {
+      return (
+        <Pressable style={[styles.homeActiveCard, selected && styles.orderCardSelected]} onPress={onPress}>
+          {compactContent}
+        </Pressable>
+      );
+    }
+
+    return (
+      <View style={[styles.homeActiveCard, selected && styles.orderCardSelected]}>
+        {compactContent}
+      </View>
+    );
+  }
+
   const content = (
     <>
-      <View style={styles.between}>
-        <Text style={styles.orderNo}>{order.orderNo}</Text>
+      <View style={styles.orderCardHeader}>
+        <View>
+          <Text style={styles.orderNo}>{order.orderNo}</Text>
+          <Text style={styles.orderCardDate}>{new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</Text>
+        </View>
         <Badge label={statusLabel(language, order.status)} />
       </View>
-      <View style={styles.route}>
-        <View style={styles.routeDot} />
-        <View style={styles.flex}>
-          <Text style={styles.routeText}>{order.pickup.label}</Text>
-          <Text style={styles.mutedSmall}>{copy.pickup}</Text>
-        </View>
-      </View>
-      {order.extraStops?.map((stop, index) => (
-        <View key={`${order.id}-stop-${index}`} style={styles.route}>
-          <View style={styles.routeDotStop} />
+
+      <View style={styles.orderCardRouteBox}>
+        <View style={styles.route}>
+          <View style={styles.routeDot} />
           <View style={styles.flex}>
-            <Text style={styles.routeText}>{stop.label}</Text>
-            <Text style={styles.mutedSmall}>{copy.stop} {index + 1}</Text>
+            <Text style={styles.routeText} numberOfLines={1}>{order.pickup.label}</Text>
+            <Text style={styles.mutedSmall}>{copy.pickup}</Text>
           </View>
         </View>
-      ))}
-      <View style={styles.route}>
-        <View style={[styles.routeDot, styles.routeDotGreen]} />
-        <View style={styles.flex}>
-          <Text style={styles.routeText}>{order.drop.label}</Text>
-          <Text style={styles.mutedSmall}>{copy.drop}</Text>
+        {order.extraStops?.map((stop, index) => (
+          <View key={`${order.id}-stop-${index}`} style={styles.route}>
+            <View style={styles.routeDotStop} />
+            <View style={styles.flex}>
+              <Text style={styles.routeText} numberOfLines={1}>{stop.label}</Text>
+              <Text style={styles.mutedSmall}>{copy.stop} {index + 1}</Text>
+            </View>
+          </View>
+        ))}
+        <View style={styles.route}>
+          <View style={[styles.routeDot, styles.routeDotGreen]} />
+          <View style={styles.flex}>
+            <Text style={styles.routeText} numberOfLines={1}>{order.drop.label}</Text>
+            <Text style={styles.mutedSmall}>{copy.drop}</Text>
+          </View>
         </View>
       </View>
-      <View style={styles.between}>
-        <Text style={styles.mutedSmall}>{order.vehicle.shortName} - {order.distanceKm} km - {goodsLabel(language, order.goodsType)}</Text>
+
+      <View style={styles.orderCardFareRow}>
+        <View>
+          <Text style={styles.orderCardVehicle}>{order.vehicle.shortName}</Text>
+          <Text style={styles.mutedSmall}>{order.distanceKm} km - {goodsLabel(language, order.goodsType)}</Text>
+        </View>
         <Text style={styles.priceText}>{money(order.fare.total)}</Text>
       </View>
       <View style={styles.orderMetaRow}>
@@ -4379,6 +4950,12 @@ function OrderCard({ order, onPress, selected = false }: { order: Order; onPress
         <Text style={styles.orderMetaText}>{order.paymentStatus.toUpperCase()}</Text>
         <Text style={styles.orderMetaText}>{order.etaMinutes} min {copy.eta}</Text>
       </View>
+      {actionTitle && onActionPress ? (
+        <Pressable style={styles.orderCardActionButton} onPress={onActionPress}>
+          <Ionicons name={actionIcon} size={15} color={colors.white} />
+          <Text style={styles.orderCardActionText}>{actionTitle}</Text>
+        </Pressable>
+      ) : null}
     </>
   );
 
@@ -4402,6 +4979,44 @@ function Badge({ label }: { label: string }) {
     <View style={styles.badge}>
       <Text style={styles.badgeText}>{label}</Text>
     </View>
+  );
+}
+
+function OrderActionButton({
+  title,
+  icon,
+  tone = 'default',
+  onPress
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  tone?: 'default' | 'primary' | 'danger';
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[
+        styles.orderActionButton,
+        tone === 'primary' && styles.orderActionButtonPrimary,
+        tone === 'danger' && styles.orderActionButtonDanger
+      ]}
+      onPress={onPress}
+    >
+      <Ionicons
+        name={icon}
+        size={16}
+        color={tone === 'primary' ? colors.white : tone === 'danger' ? colors.red : colors.ink}
+      />
+      <Text
+        style={[
+          styles.orderActionButtonText,
+          tone === 'primary' && styles.orderActionButtonTextPrimary,
+          tone === 'danger' && styles.orderActionButtonTextDanger
+        ]}
+      >
+        {title}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -4742,6 +5357,111 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: colors.white, fontWeight: '800' },
   content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
+  homeContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F8FAFC' },
+  homeShell: { flex: 1, backgroundColor: '#F8FAFC', overflow: 'hidden' },
+  homeMapPattern: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.55 },
+  homePatternRoad: { position: 'absolute', height: 18, borderRadius: 18, backgroundColor: '#E4EAF2' },
+  homePatternRoadOne: { left: -56, right: 16, top: 118, transform: [{ rotate: '-31deg' }] },
+  homePatternRoadTwo: { left: 98, right: -84, top: 220, transform: [{ rotate: '34deg' }] },
+  homePatternRoadThree: { left: -76, right: -24, top: 384, transform: [{ rotate: '18deg' }] },
+  homeScroll: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 102 },
+  homeLocationCard: {
+    minHeight: 72,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    marginBottom: 18,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2
+  },
+  homeLocationIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  homeLocationIconSelected: { backgroundColor: colors.green },
+  homeLocationLabel: { color: colors.muted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  homeLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginTop: 2 },
+  homeLocationSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  homeServiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  homeServiceCard: {
+    width: '48%',
+    minHeight: 142,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    padding: 12,
+    justifyContent: 'space-between',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1
+  },
+  homeServiceArt: { height: 76, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  homeServiceArtHalo: { position: 'absolute', width: 88, height: 54, borderRadius: 28, opacity: 0.95 },
+  homeServiceArtShadow: { position: 'absolute', bottom: 7, width: 58, height: 5, borderRadius: 5, opacity: 0.18 },
+  homeServiceFooter: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  homeServiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  homeServiceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 15, marginTop: 3 },
+  homeRewardCard: {
+    minHeight: 64,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 13,
+    marginTop: 18
+  },
+  homeRewardIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center' },
+  homeRewardTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  homeRewardText: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
+  homeAnnouncementHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 10 },
+  homeAnnouncementTitle: { color: colors.muted, fontSize: 13, fontWeight: '900' },
+  homeSeeAllButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  homeSeeAllText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  homeAnnouncementCard: {
+    minHeight: 72,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 13
+  },
+  homeAnnouncementIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  homeAnnouncementCopy: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  homeAnnouncementMeta: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 3 },
+  homeDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 8 },
+  homeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' },
+  homeDotActive: { width: 18, backgroundColor: colors.ink },
+  homeActiveCard: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 15,
+    backgroundColor: colors.white,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  homeActiveIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  homeActiveTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 3 },
+  homeActiveOrderNo: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  homeActiveRoute: { color: colors.ink, fontSize: 13, fontWeight: '800', marginBottom: 2 },
+  homeActiveVehicle: { color: colors.muted, fontSize: 11, fontWeight: '800' },
   scroll: { padding: 16, paddingBottom: 96 },
   customerHero: { backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 14 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
@@ -4773,22 +5493,79 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 20, fontWeight: '800' },
   statLabel: { fontSize: 11, fontWeight: '700', marginTop: 4 },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.ink, marginTop: 20, marginBottom: 10 },
+  ordersHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+    marginBottom: 14
+  },
   ordersHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16, marginBottom: 2 },
   ordersTitle: { color: colors.ink, fontSize: 22, fontWeight: '900', marginTop: 3 },
+  ordersHeroSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 4 },
   ordersBookButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  liveOrderPanel: {
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    padding: 14,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2
+  },
+  liveOrderHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 12 },
+  liveOrderIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  liveOrderTitle: { color: colors.ink, fontSize: 16, fontWeight: '900' },
+  liveOrderNo: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  orderDetailHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  orderDetailClose: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  liveRouteCard: { borderRadius: 15, backgroundColor: '#F8FAFC', padding: 12, marginBottom: 12 },
+  liveRouteLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  liveRouteDot: { width: 10, height: 10, borderRadius: 5 },
+  liveRoutePickupDot: { backgroundColor: colors.customer },
+  liveRouteStopDot: { backgroundColor: colors.amber },
+  liveRouteDropDot: { backgroundColor: colors.green },
+  liveRouteLabel: { color: colors.muted, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  liveRouteText: { color: colors.ink, fontSize: 13, fontWeight: '900', marginTop: 2 },
+  liveOrderMetrics: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  liveOrderMetric: { flex: 1, borderRadius: 13, backgroundColor: '#F8FAFC', padding: 10 },
+  liveOrderMetricValue: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  liveOrderMetricLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: 3 },
   activeOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
-  countdownCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, marginTop: 6, marginBottom: 8 },
+  countdownCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, marginTop: 2, marginBottom: 10 },
   countdownCardDelayed: { backgroundColor: '#FEF2F2' },
   countdownValue: { color: colors.customer, fontSize: 22, fontWeight: '900' },
   countdownValueDelayed: { color: colors.red, fontSize: 16 },
   countdownLabel: { color: colors.muted, fontSize: 11, fontWeight: '800' },
-  assignedPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12, marginTop: 8 },
-  searchingPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12, marginTop: 8 },
+  assignedPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
+  searchingPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
   searchingPartnerText: { color: colors.ink, fontSize: 12, fontWeight: '800' },
   compactOtpRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   compactOtpBox: { flex: 1, backgroundColor: colors.customerLight, borderRadius: 14, padding: 11, alignItems: 'center' },
   compactOtpText: { color: colors.customer, fontSize: 18, fontWeight: '900', marginTop: 2 },
+  ordersOtpPanel: { borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginTop: 12 },
+  ordersOtpTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  ordersOtpTitle: { color: colors.customer, fontSize: 13, fontWeight: '900' },
+  ordersOtpRow: { flexDirection: 'row', gap: 10 },
+  orderActionBar: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  orderActionButton: { flex: 1, minHeight: 40, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  orderActionButtonPrimary: { backgroundColor: colors.customer },
+  orderActionButtonDanger: { backgroundColor: '#FEF2F2' },
+  orderActionButtonText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  orderActionButtonTextPrimary: { color: colors.white },
+  orderActionButtonTextDanger: { color: colors.red },
+  timelinePanel: { marginBottom: 4 },
+  timelinePanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   noActiveOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 8 },
+  historyHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
   orderCardSelected: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   activeOrderSwitchRow: { gap: 10, paddingBottom: 10 },
@@ -4799,6 +5576,11 @@ const styles = StyleSheet.create({
   activeOrderSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 5 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  orderCardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  orderCardDate: { color: colors.ink, fontSize: 14, fontWeight: '900', marginTop: 2 },
+  orderCardRouteBox: { borderRadius: 14, backgroundColor: '#F8FAFC', padding: 10, marginBottom: 10 },
+  orderCardFareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
+  orderCardVehicle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   badge: { backgroundColor: colors.customerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
   badgeText: { color: colors.customer, fontSize: 11, fontWeight: '800' },
   route: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
@@ -4810,6 +5592,13 @@ const styles = StyleSheet.create({
   mutedSmall: { color: colors.muted, fontSize: 12 },
   emptyHistoryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 18, alignItems: 'center', marginBottom: 12 },
   priceText: { color: colors.customer, fontSize: 13, fontWeight: '800' },
+  bookingStepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  bookingStepBack: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  bookingStepTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
+  bookingStepSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  bookingStepCount: { color: colors.customer, fontSize: 12, fontWeight: '900', backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 9 },
+  bookingProgressTrack: { height: 4, borderRadius: 4, backgroundColor: colors.faint, marginBottom: 16, overflow: 'hidden' },
+  bookingProgressFill: { height: 4, borderRadius: 4, backgroundColor: colors.customer },
   stepRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
   stepDot: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   stepDotActive: { backgroundColor: colors.customer },
@@ -4839,9 +5628,12 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.ink },
   inputReadonly: { backgroundColor: colors.faint },
   locationFieldGroup: { marginBottom: 14 },
+  routeLocationFieldGroup: { marginBottom: 0 },
   locationLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   locationInputShell: { minHeight: 50, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 },
   locationInputShellActive: { borderColor: colors.customer, backgroundColor: '#FBFAFF' },
+  routeLocationInputShell: { minHeight: 48, borderColor: colors.customer, borderRadius: 12, paddingLeft: 11, paddingRight: 7 },
+  routeLocationMapButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   locationInput: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '800', paddingVertical: 10 },
   locationSelectedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
   locationSelectedText: { color: colors.customer, fontSize: 10, fontWeight: '900' },
@@ -4897,6 +5689,25 @@ const styles = StyleSheet.create({
   addStopText: { color: colors.customer, fontSize: 13, fontWeight: '900' },
   removeStopButton: { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -7, marginBottom: 8 },
   removeStopText: { color: colors.red, fontSize: 11, fontWeight: '900' },
+  routeEntryCard: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    padding: 14,
+    marginBottom: 16,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 2
+  },
+  routeEntryPickupRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2 },
+  routeEntryDropRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2 },
+  routeEntryDot: { width: 8, height: 8, borderRadius: 4 },
+  routeEntryDotPickup: { backgroundColor: colors.green },
+  routeEntryDotDrop: { backgroundColor: colors.red },
+  routeEntryDivider: { height: 1, backgroundColor: colors.line, marginLeft: 18, marginVertical: 9 },
   contactGrid: { marginBottom: 4 },
   contactDetailsCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   contactHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 },
@@ -4964,6 +5775,25 @@ const styles = StyleSheet.create({
   vehicleFareIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   vehicleFareMeta: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2, marginBottom: 2 },
   vehicleFarePrice: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  vehicleRoutePanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
+  vehicleRouteActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, marginTop: 9, paddingTop: 10 },
+  vehicleRouteAction: { flex: 1, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  vehicleRouteActionText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  vehicleFareList: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', marginBottom: 14 },
+  vehicleFareOption: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
+  vehicleFareOptionSelected: { minHeight: 104, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderRadius: 16, margin: 8 },
+  vehicleFareOptionDisabled: { opacity: 0.55, backgroundColor: colors.faint },
+  vehicleFareOptionIcon: { width: 58, height: 54, borderRadius: 16, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  vehicleFareOptionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
+  vehicleFareOptionTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
+  vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 3 },
+  vehicleFareOptionPriceWrap: { alignItems: 'flex-end', gap: 4 },
+  vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  vehicleNewBadge: { borderRadius: 7, backgroundColor: '#F97316', paddingHorizontal: 6, paddingVertical: 2 },
+  vehicleNewBadgeText: { color: colors.white, fontSize: 9, fontWeight: '900' },
+  vehicleMiniArt: { width: 52, height: 46, alignItems: 'center', justifyContent: 'center' },
+  vehicleMiniShadow: { position: 'absolute', bottom: 6, width: 38, height: 5, borderRadius: 5, opacity: 0.16 },
+  vehicleMiniBox: { position: 'absolute', right: 6, top: 9, width: 19, height: 15, borderWidth: 1.5, borderRadius: 4, backgroundColor: colors.white },
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginBottom: 8 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },
@@ -5017,6 +5847,8 @@ const styles = StyleSheet.create({
   farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2, marginBottom: 8 },
   orderMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   orderMetaText: { color: colors.muted, fontSize: 10, fontWeight: '900', backgroundColor: colors.faint, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8 },
+  orderCardActionButton: { minHeight: 38, borderRadius: 13, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
+  orderCardActionText: { color: colors.white, fontSize: 12, fontWeight: '900' },
   bold: { fontWeight: '900', fontSize: 15 },
   divider: { height: 1, backgroundColor: '#C4B5FD', marginVertical: 8 },
   walletCard: { borderRadius: 18, padding: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', gap: 10 },

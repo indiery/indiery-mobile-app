@@ -85,7 +85,15 @@ export function serializeVehicle(vehicle: VehicleDocument) {
   };
 }
 
-export function serializeOrder(order: OrderDocument) {
+function visibleTripOtp(order: OrderDocument) {
+  if (['delivered', 'cancelled'].includes(order.status)) return undefined;
+  const pickup = order.pod?.pickupOtpVerified ? undefined : order.verification?.pickupOtp;
+  const drop = order.pod?.dropOtpVerified ? undefined : order.verification?.dropOtp;
+  if (!pickup && !drop) return undefined;
+  return { pickup, drop };
+}
+
+export function serializeOrder(order: OrderDocument, options: { includeTripOtp?: boolean } = {}) {
   const vehicle = order.vehicle as unknown as VehicleDocument;
   const partner = order.partner as unknown as UserDocument | undefined;
   const customer = order.customer as unknown as UserDocument;
@@ -113,6 +121,7 @@ export function serializeOrder(order: OrderDocument) {
     etaMinutes: order.etaMinutes,
     timeline: order.timeline,
     pod: order.pod,
+    tripOtp: options.includeTripOtp ? visibleTripOtp(order) : undefined,
     partnerLocation: order.partnerLocation,
     settlement: order.settlement,
     createdAt: order.createdAt,

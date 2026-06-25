@@ -242,9 +242,9 @@ customerRouter.get(
       user: serializeUser(user),
       wallet,
       vehicles: vehicles.map(serializeVehicle),
-      activeOrder: activeOrder ? serializeOrder(activeOrder) : undefined,
-      activeOrders: activeOrders.map(serializeOrder),
-      orders: orders.map(serializeOrder)
+      activeOrder: activeOrder ? serializeOrder(activeOrder, { includeTripOtp: true }) : undefined,
+      activeOrders: activeOrders.map((order) => serializeOrder(order, { includeTripOtp: true })),
+      orders: orders.map((order) => serializeOrder(order, { includeTripOtp: true }))
     });
   })
 );
@@ -399,6 +399,8 @@ customerRouter.post(
       etaMinutes: fare.etaMinutes,
       timeline: createTimeline('searching'),
       verification: {
+        pickupOtp,
+        dropOtp,
         pickupOtpHash: await hashOtp(pickupOtp),
         dropOtpHash: await hashOtp(dropOtp)
       }
@@ -438,13 +440,14 @@ customerRouter.post(
     const fullOrder = await populatedOrder(order._id);
     if (!fullOrder) throw new ApiError(500, 'Order could not be loaded');
     const payload = serializeOrder(fullOrder);
+    const customerPayload = serializeOrder(fullOrder, { includeTripOtp: true });
     emitOrderChanged(payload, String(user._id));
     const dispatchPayload =
       paymentIntent.provider === 'cash' || paymentIntent.status === 'paid'
         ? await offerOrderToNextDrivers(order._id, { reason: 'new' })
         : undefined;
     res.status(201).json({
-      order: dispatchPayload ?? payload,
+      order: dispatchPayload ? { ...dispatchPayload, tripOtp: customerPayload.tripOtp } : customerPayload,
       paymentIntent,
       tripOtp: {
         pickup: pickupOtp,
@@ -462,7 +465,7 @@ customerRouter.get(
       .populate('vehicle')
       .populate('partner')
       .populate('customer');
-    res.json({ orders: orders.map(serializeOrder) });
+    res.json({ orders: orders.map((order) => serializeOrder(order, { includeTripOtp: true })) });
   })
 );
 
@@ -471,7 +474,7 @@ customerRouter.get(
   asyncRoute(async (req: AuthRequest, res) => {
     const order = await populatedOrder(String(req.params.orderId));
     if (!order || String(order.customer._id) !== req.auth!.userId) throw new ApiError(404, 'Order not found');
-    res.json({ order: serializeOrder(order) });
+    res.json({ order: serializeOrder(order, { includeTripOtp: true }) });
   })
 );
 
@@ -485,7 +488,9 @@ customerRouter.post(
     if (order.paymentReference !== body.razorpayOrderId) throw new ApiError(400, 'Payment order mismatch');
     if (order.paymentStatus === 'paid') {
       const alreadyPaidOrder = await populatedOrder(order._id);
-      return res.json({ order: alreadyPaidOrder ? serializeOrder(alreadyPaidOrder) : { id: String(order._id) } });
+      return res.json({
+        order: alreadyPaidOrder ? serializeOrder(alreadyPaidOrder, { includeTripOtp: true }) : { id: String(order._id) }
+      });
     }
     const valid = verifyRazorpayPaymentSignature(body);
     if (!valid) throw new ApiError(400, 'Invalid payment signature');
@@ -505,9 +510,10 @@ customerRouter.post(
     }
     const fullOrder = await populatedOrder(order._id);
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
+    const customerPayload = fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : { id: String(order._id), tripOtp: undefined };
     emitOrderChanged(payload, req.auth!.userId, order.partner ? String(order.partner) : undefined);
     const dispatchPayload = await offerOrderToNextDrivers(order._id, { reason: 'payment' });
-    res.json({ order: dispatchPayload ?? payload });
+    res.json({ order: dispatchPayload ? { ...dispatchPayload, tripOtp: customerPayload.tripOtp } : customerPayload });
   })
 );
 
@@ -549,7 +555,7 @@ customerRouter.post(
     const fullOrder = await populatedOrder(order._id);
     emitOrderChanged(fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) }, req.auth!.userId);
     emitPartnerQueueChanged();
-    res.json({ order: fullOrder ? serializeOrder(fullOrder) : undefined });
+    res.json({ order: fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : undefined });
   })
 );
 

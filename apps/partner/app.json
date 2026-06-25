@@ -18,10 +18,7 @@
       "apiBaseUrl": "https://indiery-mobile-app-bp9h.onrender.com/api",
       "allowInsecureApiBaseUrl": false,
       "privacyPolicyUrl": "https://indiery-mobile-app-bp9h.onrender.com/privacy",
-      "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
-      "eas": {
-        "projectId": "cf2a9872-04b7-4c26-967f-b57e8a236551"
-      }
+      "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion"
     },
     "ios": {
       "bundleIdentifier": "com.indiery.partner",

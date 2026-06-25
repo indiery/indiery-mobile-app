@@ -13,6 +13,7 @@ import type {
   PartnerLocation,
   Role,
   SavedAddress,
+  TripOtp,
   UploadPurpose,
   UserProfile,
   Vehicle
@@ -152,7 +153,7 @@ export class IndieryApi {
   }
 
   createOrder(input: CreateOrderInput) {
-    return this.request<{ order: Order; paymentIntent: PaymentIntent; tripOtp?: { pickup: string; drop: string } }>(
+    return this.request<{ order: Order; paymentIntent: PaymentIntent; tripOtp?: TripOtp }>(
       '/customer/orders',
       {
         method: 'POST',

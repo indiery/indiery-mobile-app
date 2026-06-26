@@ -33,7 +33,6 @@ const FareSchema = new Schema(
     platformCommission: { type: Number, required: true },
     lateDriverPenalty: { type: Number, required: true },
     latePlatformPenalty: { type: Number, required: true },
-    lateRefundCoins: { type: Number, required: true },
     onTimePartnerPayout: { type: Number, required: true },
     latePartnerPayout: { type: Number, required: true }
   },
@@ -76,10 +75,9 @@ const SettlementSchema = new Schema(
   {
     delayed: { type: Boolean, default: false },
     partnerCredit: { type: Number, default: 0 },
-    customerRefundCoins: { type: Number, default: 0 },
     driverPenalty: { type: Number, default: 0 },
     platformPenalty: { type: Number, default: 0 },
-    reserveReleasedTo: { type: String, enum: ['partner', 'customer'], default: 'partner' },
+    reserveReleasedTo: { type: String, enum: ['partner', 'platform', 'customer'], default: 'partner' },
     settledAt: { type: Date }
   },
   { _id: false }

@@ -46,7 +46,6 @@ export function normalizeFareBreakup(fareInput: unknown, distanceKmInput: unknow
   const reserveAmount = fare.reserveAmount ?? roundMoney(orderValue * RESERVE_RATE);
   const lateDriverPenalty = fare.lateDriverPenalty ?? roundMoney(driverCommission * DELAY_PENALTY_RATE);
   const latePlatformPenalty = fare.latePlatformPenalty ?? roundMoney(platformCommission * DELAY_PENALTY_RATE);
-  const lateRefundCoins = fare.lateRefundCoins ?? roundMoney(lateDriverPenalty + latePlatformPenalty + reserveAmount);
   const onTimePartnerPayout = fare.onTimePartnerPayout ?? roundMoney(driverCommission + reserveAmount);
   const latePartnerPayout = fare.latePartnerPayout ?? roundMoney(driverCommission - lateDriverPenalty);
 
@@ -70,7 +69,6 @@ export function normalizeFareBreakup(fareInput: unknown, distanceKmInput: unknow
     platformCommission,
     lateDriverPenalty,
     latePlatformPenalty,
-    lateRefundCoins,
     onTimePartnerPayout,
     latePartnerPayout
   };
@@ -146,7 +144,6 @@ export function estimateFare(input: EstimateInput) {
   const reserveAmount = roundMoney(subtotal * RESERVE_RATE);
   const lateDriverPenalty = roundMoney(driverCommission * DELAY_PENALTY_RATE);
   const latePlatformPenalty = roundMoney(platformCommission * DELAY_PENALTY_RATE);
-  const lateRefundCoins = roundMoney(lateDriverPenalty + latePlatformPenalty + reserveAmount);
   const onTimePartnerPayout = roundMoney(driverCommission + reserveAmount);
   const latePartnerPayout = roundMoney(driverCommission - lateDriverPenalty);
 
@@ -167,7 +164,6 @@ export function estimateFare(input: EstimateInput) {
         platformCommission,
         lateDriverPenalty,
         latePlatformPenalty,
-        lateRefundCoins,
         onTimePartnerPayout,
         latePartnerPayout
       },

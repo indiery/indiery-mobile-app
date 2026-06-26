@@ -19,10 +19,9 @@ export function calculateDeliverySettlement(order: OrderDocument, deliveredAt = 
   return {
     delayed,
     partnerCredit: delayed ? order.fare.latePartnerPayout : order.fare.onTimePartnerPayout,
-    customerRefundCoins: delayed ? order.fare.lateRefundCoins : 0,
     driverPenalty: delayed ? order.fare.lateDriverPenalty : 0,
     platformPenalty: delayed ? order.fare.latePlatformPenalty : 0,
-    reserveReleasedTo: delayed ? ('customer' as const) : ('partner' as const),
+    reserveReleasedTo: delayed ? ('platform' as const) : ('partner' as const),
     settledAt: deliveredAt
   };
 }

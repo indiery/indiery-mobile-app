@@ -124,7 +124,6 @@ export interface FareBreakup {
   platformCommission: number;
   lateDriverPenalty: number;
   latePlatformPenalty: number;
-  lateRefundCoins: number;
   onTimePartnerPayout: number;
   latePartnerPayout: number;
   etaMinutes: number;
@@ -176,10 +175,9 @@ export interface Order {
   settlement?: {
     delayed: boolean;
     partnerCredit: number;
-    customerRefundCoins: number;
     driverPenalty: number;
     platformPenalty: number;
-    reserveReleasedTo: 'partner' | 'customer';
+    reserveReleasedTo: 'partner' | 'platform' | 'customer';
     settledAt?: string;
   };
   createdAt: string;

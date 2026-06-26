@@ -57,12 +57,12 @@ const CreateOrderSchema = EstimateSchema.extend({
   dropContactName: z.string().optional(),
   dropContactPhone: z.string().optional(),
   goodsType: z.string().min(2).default('General goods'),
-  paymentMode: z.enum(['upi', 'card', 'netbanking', 'cash', 'wallet']).default('upi')
+  paymentMode: z.enum(['upi', 'cash', 'wallet']).default('upi')
 });
 
 const WalletTopupSchema = z.object({
   amount: z.coerce.number().min(10).max(20000),
-  paymentMode: z.enum(['upi', 'card', 'netbanking']).default('upi')
+  paymentMode: z.enum(['upi']).default('upi')
 });
 
 const RazorpayVerifySchema = z.object({

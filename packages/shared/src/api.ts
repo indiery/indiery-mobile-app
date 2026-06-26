@@ -196,7 +196,7 @@ export class IndieryApi {
     return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet');
   }
 
-  createWalletTopup(input: { amount: number; paymentMode: 'upi' | 'card' | 'netbanking' }) {
+  createWalletTopup(input: { amount: number; paymentMode: 'upi' }) {
     return this.request<{ wallet: CustomerWallet; paymentIntent: PaymentIntent }>('/customer/wallet/topup', {
       method: 'POST',
       body: JSON.stringify(input)

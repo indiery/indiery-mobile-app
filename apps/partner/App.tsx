@@ -184,7 +184,6 @@ const enCopy = {
   indieryCommission: 'Indiery commission 15%',
   youReceiveOnTime: 'You receive if on-time',
   ifLateReceive: 'If late, you receive',
-  customerLateRefundCoins: 'Customer late refund coins',
   walletBalance: 'WALLET BALANCE',
   tripsThisWeek: 'trips this week',
   rechargeToUnlock: 'Recharge {amount} to unlock new orders',
@@ -441,7 +440,6 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   indieryCommission: 'Indiery कमीशन 15%',
   youReceiveOnTime: 'समय पर आपको मिलेगा',
   ifLateReceive: 'देरी होने पर आपको मिलेगा',
-  customerLateRefundCoins: 'ग्राहक देरी रिफंड कॉइन',
   walletBalance: 'वॉलेट बैलेंस',
   tripsThisWeek: 'इस हफ्ते ट्रिप',
   rechargeToUnlock: 'नए ऑर्डर अनलॉक करने के लिए {amount} रिचार्ज करें',
@@ -2224,7 +2222,6 @@ function ActiveScreen({
         <FareLine label={copy.indieryCommission} value={money(order.fare.platformCommission)} />
         <FareLine label={copy.youReceiveOnTime} value={money(order.fare.onTimePartnerPayout)} bold />
         <FareLine label={copy.ifLateReceive} value={money(order.fare.latePartnerPayout)} />
-        <FareLine label={copy.customerLateRefundCoins} value={money(order.fare.lateRefundCoins)} />
       </View>
 
       <SectionTitle title={copy.tripActions} />

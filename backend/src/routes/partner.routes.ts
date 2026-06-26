@@ -482,23 +482,6 @@ partnerRouter.post(
           reference: order.orderNo
         });
       }
-
-      if (settlement.customerRefundCoins > 0) {
-        await User.updateOne(
-          { _id: order.customer },
-          { $inc: { 'customerProfile.coins': settlement.customerRefundCoins } }
-        );
-        await WalletLedger.create({
-          user: order.customer,
-          order: order._id,
-          amount: settlement.customerRefundCoins,
-          kind: 'credit',
-          bucket: 'coins',
-          title: `Late delivery refund ${order.orderNo}`,
-          reference: order.orderNo,
-          settled: true
-        });
-      }
     }
 
     const fullOrder = await loadOrderForPartner(String(order._id));

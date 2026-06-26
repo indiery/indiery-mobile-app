@@ -23,7 +23,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import RazorpayCheckout from 'react-native-razorpay';
-import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import bikeVehicleImage from './assets/bike.png';
@@ -354,6 +354,10 @@ const enCopy = {
   noSavedAddresses: 'No saved addresses',
   savePickupDropAddresses: 'Save pickup or drop addresses while booking.',
   account: 'Account',
+  accountSubtitle: 'Profile, saved addresses, wallet, and support',
+  mobileLinkedText: 'Your mobile number is verified and linked to this customer account.',
+  savedPlace: 'saved place',
+  savedPlacesCount: 'saved places',
   personalDetails: 'Personal details',
   emailNotAdded: 'Email not added',
   savedCity: 'Saved city',
@@ -423,6 +427,7 @@ const enCopy = {
   confirmLocation: 'Confirm location',
   selected: 'Selected',
   selectOnMap: 'Select on map',
+  useTypedLocation: 'Use typed location',
   locationHint: 'Select a suggestion for accurate fare and tracking, or continue with typed text.'
 } as const;
 
@@ -737,6 +742,7 @@ const initialBooking = {
   pickupContactName: '',
   pickupContactPhone: '',
   pickupAddressLine: '',
+  pickupContactConfirmed: false,
   extraStops: [] as BookingStop[],
   drop: '',
   dropPlaceId: '',
@@ -745,6 +751,7 @@ const initialBooking = {
   dropContactName: '',
   dropContactPhone: '',
   dropAddressLine: '',
+  dropContactConfirmed: false,
   goodsType: 'Documents',
   weightKg: '',
   coins: '40',
@@ -768,6 +775,22 @@ function formatPhoneForFirebase(phoneInput: string) {
 
 function hasValidContactPhone(phoneInput: string) {
   return phoneInput.replace(/\D/g, '').length >= 10;
+}
+
+function hasConfirmedPickupDetails(booking: typeof initialBooking) {
+  return (
+    booking.pickupContactConfirmed &&
+    booking.pickupContactName.trim().length >= 2 &&
+    hasValidContactPhone(booking.pickupContactPhone)
+  );
+}
+
+function hasConfirmedDropDetails(booking: typeof initialBooking) {
+  return (
+    booking.dropContactConfirmed &&
+    booking.dropContactName.trim().length >= 2 &&
+    hasValidContactPhone(booking.dropContactPhone)
+  );
 }
 
 function parseBookingWeight(value: string) {
@@ -1028,6 +1051,10 @@ function isActiveOrder(order: Order) {
   return !['delivered', 'cancelled'].includes(order.status);
 }
 
+function isCustomerCancellableOrder(order: Order) {
+  return ['searching', 'offered', 'accepted', 'arrived_pickup'].includes(order.status);
+}
+
 function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
   const isBrand = variant === 'brand';
   return (
@@ -1105,6 +1132,9 @@ export default function App() {
   const [language, setLanguage] = useState<AppLanguage>('en');
   const [tripOtpByOrder, setTripOtpByOrder] = useState<Record<string, TripOtp>>({});
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
+  const [requestedOrderDetailId, setRequestedOrderDetailId] = useState<string | undefined>();
+  const [pickupSearchOpen, setPickupSearchOpen] = useState(false);
+  const [pickupDetailsMode, setPickupDetailsMode] = useState<'home' | 'book' | null>(null);
 
   useEffect(() => {
     boot();
@@ -1230,7 +1260,6 @@ export default function App() {
     if (!vehicleId || !booking.pickup || !booking.drop) return;
     setBusy(true);
     try {
-      const extraStops = bookingStopsToLocationPoints(booking.extraStops);
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
       const drop = composeBookingAddress(booking.drop, booking.dropAddressLine);
       const result = await api.estimate({
@@ -1239,7 +1268,7 @@ export default function App() {
         vehicleId,
         coins: Number(booking.coins || 0),
         weightKg: Number(booking.weightKg || 1),
-        extraStops,
+        extraStops: [],
         pickupLat: booking.pickupLat,
         pickupLng: booking.pickupLng,
         dropLat: booking.dropLat,
@@ -1258,7 +1287,6 @@ export default function App() {
     if (!booking.vehicleId) return;
     setBusy(true);
     try {
-      const extraStops = bookingStopsToLocationPoints(booking.extraStops);
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
       const drop = composeBookingAddress(booking.drop, booking.dropAddressLine);
       const input: CreateOrderInput = {
@@ -1273,7 +1301,7 @@ export default function App() {
         pickupContactPhone: booking.pickupContactPhone,
         dropContactName: booking.dropContactName,
         dropContactPhone: booking.dropContactPhone,
-        extraStops,
+        extraStops: [],
         pickupLat: booking.pickupLat,
         pickupLng: booking.pickupLng,
         dropLat: booking.dropLat,
@@ -1333,7 +1361,7 @@ export default function App() {
     }
   }
 
-  async function topUpWallet(amount: number, paymentMode: 'upi' | 'card' | 'netbanking') {
+  async function topUpWallet(amount: number, paymentMode: 'upi') {
     if (!data) return;
     setBusy(true);
     try {
@@ -1482,7 +1510,7 @@ export default function App() {
   function cancelActiveOrder(order: Order) {
     Alert.alert(
       'Cancel booking',
-      `Cancel ${order.orderNo}? You can cancel until pickup starts.`,
+      `Cancel ${order.orderNo}? You can cancel before the goods are picked up.`,
       [
         { text: 'Keep booking', style: 'cancel' },
         {
@@ -1553,8 +1581,56 @@ export default function App() {
     setTab('book');
   };
   const openActiveOrder = (orderId?: string) => {
-    if (orderId) setSelectedActiveOrderId(orderId);
+    const nextOrderId = orderId ?? activeOrder?.id;
+    if (nextOrderId) {
+      setSelectedActiveOrderId(nextOrderId);
+      setRequestedOrderDetailId(nextOrderId);
+    }
     setTab('orders');
+  };
+  const applyHomePickupLocation = (location: LocationDetails, askForSenderDetails: boolean) => {
+    setBooking((current) => ({
+      ...current,
+      pickup: location.address || location.label,
+      pickupPlaceId: location.placeId,
+      pickupLat: location.lat,
+      pickupLng: location.lng,
+      pickupAddressLine: '',
+      pickupContactConfirmed: false
+    }));
+    setPickupSearchOpen(false);
+    if (askForSenderDetails) setPickupDetailsMode('home');
+  };
+  const applyHomeTypedPickup = (value: string) => {
+    const pickup = value.trim();
+    if (!pickup) {
+      showToast(copyFor(language, 'selectLocationFirst'));
+      return;
+    }
+    setBooking((current) => ({
+      ...current,
+      pickup,
+      pickupPlaceId: '',
+      pickupLat: undefined,
+      pickupLng: undefined,
+      pickupAddressLine: '',
+      pickupContactConfirmed: false
+    }));
+    setPickupSearchOpen(false);
+    setPickupDetailsMode('home');
+  };
+  const handleHomeVehicleSelect = (vehicle: Vehicle) => {
+    const serviceCategory: ServiceCategory = vehicle.code === 'bike' ? 'bike' : 'truck';
+    setBooking((current) => ({
+      ...current,
+      serviceCategory,
+      vehicleId: vehicle.id
+    }));
+    if (booking.pickup.trim().length >= 2 && !hasConfirmedPickupDetails(booking)) {
+      setPickupDetailsMode('book');
+      return;
+    }
+    openBook(1);
   };
 
   return (
@@ -1580,6 +1656,8 @@ export default function App() {
             setBooking={setBooking}
             activeOrder={activeOrder}
             activeOrders={activeOrders}
+            onPickupPress={() => setPickupSearchOpen(true)}
+            onVehicleSelect={handleHomeVehicleSelect}
             onBook={openBook}
             onTrack={openActiveOrder}
           />
@@ -1611,6 +1689,8 @@ export default function App() {
             onBook={() => openBook()}
             onRefresh={refresh}
             onSelectActiveOrder={setSelectedActiveOrderId}
+            detailOrderRequestId={requestedOrderDetailId}
+            onDetailOrderRequestHandled={() => setRequestedOrderDetailId(undefined)}
             onShare={shareActiveOrder}
             onCancel={cancelActiveOrder}
           />
@@ -1659,6 +1739,38 @@ export default function App() {
       </View>
 
       <BottomTabs active={tab} onChange={setTab} activeOrder={activeOrders.length > 0} />
+      {pickupSearchOpen ? (
+        <PickupSearchModal
+          api={api}
+          initialValue={booking.pickup}
+          onClose={() => setPickupSearchOpen(false)}
+          onSelectLocation={(location) => applyHomePickupLocation(location, true)}
+          onUseCurrentLocation={(location) => applyHomePickupLocation(location, false)}
+          onSelectTyped={applyHomeTypedPickup}
+        />
+      ) : null}
+      {pickupDetailsMode ? (
+        <ContactDetailsModal
+          key={`home-pickup-${pickupDetailsMode}`}
+          api={api}
+          target="pickup"
+          user={data.user}
+          booking={booking}
+          setBooking={setBooking}
+          onSaveAddress={addSavedAddress}
+          onClose={() => setPickupDetailsMode(null)}
+          onChangeLocation={() => {
+            setPickupDetailsMode(null);
+            setPickupSearchOpen(true);
+          }}
+          onSaved={() => {
+            const nextMode = pickupDetailsMode;
+            setPickupDetailsMode(null);
+            if (nextMode === 'book') openBook(1);
+            else setTab('home');
+          }}
+        />
+      ) : null}
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
     </SafeAreaView>
     </LanguageContext.Provider>
@@ -2006,6 +2118,8 @@ function HomeScreen({
   setBooking,
   activeOrder,
   activeOrders,
+  onPickupPress,
+  onVehicleSelect,
   onBook,
   onTrack
 }: {
@@ -2015,24 +2129,22 @@ function HomeScreen({
   setBooking: React.Dispatch<React.SetStateAction<typeof initialBooking>>;
   activeOrder?: Order;
   activeOrders: Order[];
+  onPickupPress: () => void;
+  onVehicleSelect: (vehicle: Vehicle) => void;
   onBook: (nextStep?: number) => void;
   onTrack: (orderId?: string) => void;
 }) {
   const copy = useCopy();
   const lastOrder = data.orders[0];
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
-  const [mapPickerOpen, setMapPickerOpen] = useState(false);
-  const [pickupSheetOpen, setPickupSheetOpen] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
   const [announcementWidth, setAnnouncementWidth] = useState(0);
   const autoPickupAttemptedRef = useRef(false);
-  const pickupSheetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const announcementScrollRef = useRef<React.ElementRef<typeof ScrollView> | null>(null);
   const vehicleChoices = customerVehicles(data.vehicles);
   const pickupText = booking.pickup.trim();
-  const pickupDisplay = pickupText || (autoPickupLoading ? copy.settingPickupLocation : copy.useCurrentLocation);
+  const pickupDisplay = pickupText || (autoPickupLoading ? copy.settingPickupLocation : copy.setPickupLocation);
   const pickupSelected = typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number';
-  const needsPickupContact = !booking.pickupContactName.trim() || !hasValidContactPhone(booking.pickupContactPhone);
   const homeVehicleCards: Array<{
     id: string;
     title: string;
@@ -2076,18 +2188,6 @@ function HomeScreen({
     }
   ];
 
-  function schedulePickupSheet(delayMs = 900) {
-    if (pickupSheetTimerRef.current) clearTimeout(pickupSheetTimerRef.current);
-    pickupSheetTimerRef.current = setTimeout(() => {
-      setPickupSheetOpen(true);
-      pickupSheetTimerRef.current = null;
-    }, delayMs);
-  }
-
-  useEffect(() => () => {
-    if (pickupSheetTimerRef.current) clearTimeout(pickupSheetTimerRef.current);
-  }, []);
-
   useEffect(() => {
     if (!announcementWidth || homeAnnouncements.length <= 1) return undefined;
     const timer = setInterval(() => {
@@ -2118,10 +2218,10 @@ function HomeScreen({
                 pickup: location.address || location.label,
                 pickupPlaceId: location.placeId,
                 pickupLat: location.lat,
-                pickupLng: location.lng
+                pickupLng: location.lng,
+                pickupContactConfirmed: false
               }
         ));
-        schedulePickupSheet(1000);
       } catch {
         // Home stays usable if location permission or GPS is not available.
       } finally {
@@ -2135,30 +2235,8 @@ function HomeScreen({
     };
   }, [setBooking]);
 
-  function applyHomePickup(location: LocationDetails) {
-    setBooking((current) => ({
-      ...current,
-      pickup: location.address || location.label,
-      pickupPlaceId: location.placeId,
-      pickupLat: location.lat,
-      pickupLng: location.lng
-    }));
-    setMapPickerOpen(false);
-    schedulePickupSheet(350);
-  }
-
   function startBookingFromHome(vehicle: Vehicle) {
-    const serviceCategory: ServiceCategory = vehicle.code === 'bike' ? 'bike' : 'truck';
-    setBooking((current) => ({
-      ...current,
-      serviceCategory,
-      vehicleId: vehicle.id
-    }));
-    if (pickupText && needsPickupContact) {
-      setPickupSheetOpen(true);
-      return;
-    }
-    onBook(1);
+    onVehicleSelect(vehicle);
   }
 
   return (
@@ -2169,7 +2247,7 @@ function HomeScreen({
         <View style={[styles.homePatternRoad, styles.homePatternRoadThree]} />
       </View>
       <ScrollView contentContainerStyle={styles.homeScroll} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.homeLocationCard} onPress={() => setMapPickerOpen(true)}>
+        <Pressable style={styles.homeLocationCard} onPress={onPickupPress}>
           <View style={[styles.homeLocationIcon, pickupSelected && styles.homeLocationIconSelected]}>
             {autoPickupLoading ? (
               <ActivityIndicator size="small" color={colors.customer} />
@@ -2288,28 +2366,171 @@ function HomeScreen({
       ) : null}
 
       </ScrollView>
-      {mapPickerOpen ? (
-        <MapLocationPicker
-          api={api}
-          title={copy.setPickupLocation}
-          initialValue={booking.pickup}
-          initialLat={booking.pickupLat}
-          initialLng={booking.pickupLng}
-          onClose={() => setMapPickerOpen(false)}
-          onConfirm={applyHomePickup}
-        />
-      ) : null}
-      {pickupSheetOpen ? (
-        <ContactDetailsModal
-          target="pickup"
-          user={data.user}
-          booking={booking}
-          setBooking={setBooking}
-          onClose={() => setPickupSheetOpen(false)}
-          onSaved={() => onBook(1)}
-        />
-      ) : null}
     </View>
+  );
+}
+
+function PickupSearchModal({
+  api,
+  initialValue,
+  onClose,
+  onSelectLocation,
+  onUseCurrentLocation,
+  onSelectTyped
+}: {
+  api: IndieryApi;
+  initialValue: string;
+  onClose: () => void;
+  onSelectLocation: (location: LocationDetails) => void;
+  onUseCurrentLocation: (location: LocationDetails) => void;
+  onSelectTyped: (value: string) => void;
+}) {
+  const copy = useCopy();
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [localError, setLocalError] = useState('');
+  const requestSeqRef = useRef(0);
+  const sessionTokenRef = useRef(`home-pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+  useEffect(() => {
+    setQuery('');
+    setSuggestions([]);
+    setLocalError('');
+  }, [initialValue]);
+
+  useEffect(() => {
+    const search = query.trim();
+    if (search.length < 3) {
+      setSuggestions([]);
+      setLocalError('');
+      return;
+    }
+
+    const requestId = ++requestSeqRef.current;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const result = await api.autocompleteLocations(search, sessionTokenRef.current);
+        if (requestId === requestSeqRef.current) {
+          setSuggestions(result.suggestions);
+          setLocalError('');
+        }
+      } catch {
+        if (requestId === requestSeqRef.current) {
+          setSuggestions([]);
+          setLocalError('Location search unavailable');
+        }
+      } finally {
+        if (requestId === requestSeqRef.current) setLoading(false);
+      }
+    }, 320);
+
+    return () => clearTimeout(timer);
+  }, [api, query]);
+
+  async function chooseSuggestion(suggestion: LocationSuggestion) {
+    setLoading(true);
+    setLocalError('');
+    try {
+      const result = await api.locationDetails(suggestion.placeId, sessionTokenRef.current);
+      assertLocationHasCoordinates(result.location);
+      onSelectLocation(result.location);
+      sessionTokenRef.current = `home-pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    } catch {
+      setLocalError('Could not select this location');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function useCurrentLocation() {
+    setLocating(true);
+    setLocalError('');
+    try {
+      const location = await readCurrentLocationDetails();
+      onUseCurrentLocation(location);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Could not read current location');
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <AppStatusBar variant="light" />
+      <SafeAreaView style={styles.pickupSearchShell}>
+        <KeyboardAvoidingView style={styles.pickupSearchKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.pickupSearchTopBar}>
+            <Pressable style={styles.pickupSearchBackButton} onPress={onClose}>
+              <Ionicons name="arrow-back" size={22} color={colors.ink} />
+            </Pressable>
+          </View>
+          <View style={styles.pickupSearchCard}>
+            <View style={styles.pickupSearchInputShell}>
+              <View style={styles.pickupSearchDot} />
+              <TextInput
+                value={query}
+                autoFocus
+                onChangeText={(value) => {
+                  setQuery(value);
+                  setLocalError('');
+                }}
+                placeholder={copy.setPickupLocation}
+                placeholderTextColor="#9AA7BD"
+                style={styles.pickupSearchInput}
+                returnKeyType="search"
+                onSubmitEditing={() => onSelectTyped(query)}
+              />
+              {loading ? (
+                <ActivityIndicator size="small" color={colors.customer} />
+              ) : (
+                <Ionicons name="mic-outline" size={19} color={colors.customer} />
+              )}
+            </View>
+          </View>
+
+          <Pressable style={styles.pickupSearchMapButton} onPress={() => onSelectTyped(query || initialValue)}>
+            <Ionicons name="map" size={15} color={colors.customer} />
+            <Text style={styles.pickupSearchMapText}>{copy.selectOnMap}</Text>
+          </Pressable>
+
+          <Pressable style={styles.pickupSearchCurrentButton} onPress={useCurrentLocation}>
+            {locating ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="locate" size={16} color={colors.customer} />}
+            <Text style={styles.pickupSearchCurrentText}>{copy.useCurrentLocation}</Text>
+          </Pressable>
+
+          {localError ? <Text style={styles.pickupSearchError}>{localError}</Text> : null}
+
+          <ScrollView
+            style={styles.pickupSearchResults}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.pickupSearchResultsContent}
+          >
+            {suggestions.map((suggestion) => (
+              <Pressable
+                key={suggestion.placeId}
+                style={styles.pickupSearchResultItem}
+                onPress={() => chooseSuggestion(suggestion)}
+              >
+                <View style={styles.pickupSearchResultIcon}>
+                  <Ionicons name="location-outline" size={17} color={colors.customer} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.pickupSearchResultTitle}>{suggestion.mainText}</Text>
+                  {suggestion.secondaryText ? (
+                    <Text style={styles.pickupSearchResultSubtitle} numberOfLines={1}>{suggestion.secondaryText}</Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -2364,6 +2585,8 @@ function LocationPickerField({
   const requestSeqRef = useRef(0);
   const sessionTokenRef = useRef(`loc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const skipDoneTypingRef = useRef(false);
+  const typedLocation = value.trim();
+  const showTypedLocationOption = Boolean(onDoneTyping && focused && typedLocation.length >= 3);
 
   useEffect(() => {
     const query = value.trim();
@@ -2450,18 +2673,6 @@ function LocationPickerField({
           style={styles.locationInput}
         />
         {loading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
-        {variant === 'route' && onOpenMap ? (
-          <Pressable
-            style={styles.routeLocationMapButton}
-            hitSlop={8}
-            onPressIn={() => {
-              skipDoneTypingRef.current = true;
-            }}
-            onPress={onOpenMap}
-          >
-            <Ionicons name="add" size={19} color={colors.ink} />
-          </Pressable>
-        ) : null}
       </View>
       {localError ? <Text style={styles.locationError}>{localError}</Text> : null}
       {onOpenMap && variant === 'default' ? (
@@ -2476,8 +2687,29 @@ function LocationPickerField({
           <Text style={styles.mapSelectText}>{copy.selectOnMap}</Text>
         </Pressable>
       ) : null}
-      {suggestions.length ? (
+      {showTypedLocationOption || suggestions.length ? (
         <View style={styles.locationSuggestionBox}>
+          {showTypedLocationOption ? (
+            <Pressable
+              style={[styles.locationSuggestionItem, styles.locationTypedSuggestionItem]}
+              onPressIn={() => {
+                skipDoneTypingRef.current = true;
+              }}
+              onPress={() => {
+                setSuggestions([]);
+                setFocused(false);
+                onDoneTyping?.(typedLocation);
+              }}
+            >
+              <View style={styles.locationTypedSuggestionIcon}>
+                <Ionicons name="arrow-forward" size={16} color={colors.customer} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.locationSuggestionTitle}>{copy.useTypedLocation}</Text>
+                <Text style={styles.locationSuggestionSubtitle} numberOfLines={1}>{typedLocation}</Text>
+              </View>
+            </Pressable>
+          ) : null}
           {suggestions.map((suggestion) => (
             <Pressable
               key={suggestion.placeId}
@@ -2496,7 +2728,7 @@ function LocationPickerField({
           ))}
         </View>
       ) : null}
-      {!selected && value.trim().length >= 3 && !suggestions.length && !loading ? (
+      {!selected && !showTypedLocationOption && value.trim().length >= 3 && !suggestions.length && !loading ? (
         <Text style={styles.locationHint}>{copy.locationHint}</Text>
       ) : null}
     </View>
@@ -2743,7 +2975,8 @@ function BookScreen({
                 pickup: location.address || location.label,
                 pickupPlaceId: location.placeId,
                 pickupLat: location.lat,
-                pickupLng: location.lng
+                pickupLng: location.lng,
+                pickupContactConfirmed: false
               }
         ));
       } catch {
@@ -2814,13 +3047,15 @@ function BookScreen({
             pickup: location.address || location.label,
             pickupPlaceId: location.placeId,
             pickupLat: location.lat,
-            pickupLng: location.lng
+            pickupLng: location.lng,
+            pickupContactConfirmed: false
           }
         : {
             drop: location.address || location.label,
             dropPlaceId: location.placeId,
             dropLat: location.lat,
-            dropLng: location.lng
+            dropLng: location.lng,
+            dropContactConfirmed: false
           })
     }));
     setContactError('');
@@ -2861,23 +3096,13 @@ function BookScreen({
       setContactError(copy.selectLocationFirst);
       return;
     }
-    if (booking.pickupContactName.trim().length < 2) {
+    if (!hasConfirmedPickupDetails(booking)) {
       setContactError(copy.enterSenderName);
       setContactSheetTarget('pickup');
       return;
     }
-    if (!hasValidContactPhone(booking.pickupContactPhone)) {
-      setContactError(copy.enterSenderMobile);
-      setContactSheetTarget('pickup');
-      return;
-    }
-    if (booking.dropContactName.trim().length < 2) {
+    if (!hasConfirmedDropDetails(booking)) {
       setContactError(copy.enterReceiverName);
-      setContactSheetTarget('drop');
-      return;
-    }
-    if (!hasValidContactPhone(booking.dropContactPhone)) {
-      setContactError(copy.enterReceiverMobile);
       setContactSheetTarget('drop');
       return;
     }
@@ -2935,92 +3160,63 @@ function BookScreen({
             pickupPlaceId: savedAddress.id,
             pickupLat: savedAddress.lat,
             pickupLng: savedAddress.lng,
-            pickupAddressLine: savedAddress.addressLine || ''
+            pickupAddressLine: savedAddress.addressLine || '',
+            pickupContactConfirmed: false
           }
         : {
             drop: savedAddress.address,
             dropPlaceId: savedAddress.id,
             dropLat: savedAddress.lat,
             dropLng: savedAddress.lng,
-            dropAddressLine: savedAddress.addressLine || ''
+            dropAddressLine: savedAddress.addressLine || '',
+            dropContactConfirmed: false
           })
     }));
     setContactError('');
     if (openContact) setContactSheetTarget(target);
   }
 
-  async function openRouteMap(target: 'pickup' | 'drop', value = target === 'pickup' ? booking.pickup : booking.drop) {
+  function openRouteDetails(target: 'pickup' | 'drop', value = target === 'pickup' ? booking.pickup : booking.drop) {
     const typedLocation = value.trim();
     const isPickup = target === 'pickup';
-    const title = isPickup ? copy.setPickupLocation : copy.setDropLocation;
-    const currentValue = isPickup ? booking.pickup : booking.drop;
-    const currentLat = isPickup ? booking.pickupLat : booking.dropLat;
-    const currentLng = isPickup ? booking.pickupLng : booking.dropLng;
 
     if (!typedLocation) {
-      setMapPickerTarget({
-        kind: target,
-        title,
-        value: currentValue,
-        lat: currentLat,
-        lng: currentLng,
-        openContact: true
-      });
+      setContactError(copy.selectLocationFirst);
       return;
     }
 
-    try {
-      const sessionToken = `${target}-map-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const suggestions = await api.autocompleteLocations(typedLocation, sessionToken);
-      const firstSuggestion = suggestions.suggestions[0];
-      if (firstSuggestion) {
-        const result = await api.locationDetails(firstSuggestion.placeId, sessionToken);
-        setBooking((current) => ({
-          ...current,
-          ...(isPickup
-            ? {
-                pickup: result.location.address || result.location.label,
-                pickupPlaceId: result.location.placeId,
-                pickupLat: result.location.lat,
-                pickupLng: result.location.lng
-              }
-            : {
-                drop: result.location.address || result.location.label,
-                dropPlaceId: result.location.placeId,
-                dropLat: result.location.lat,
-                dropLng: result.location.lng
-              })
-        }));
-        setMapPickerTarget({
-          kind: target,
-          title,
-          value: result.location.address || result.location.label,
-          lat: result.location.lat,
-          lng: result.location.lng,
-          openContact: true
-        });
-        return;
-      }
-    } catch {
-      // The map picker still opens, letting the user search or move the pin manually.
-    }
-
-    setMapPickerTarget({
-      kind: target,
-      title,
-      value: typedLocation,
-      lat: currentLat,
-      lng: currentLng,
-      openContact: true
+    setBooking((current) => {
+      const currentValue = isPickup ? current.pickup : current.drop;
+      if (currentValue.trim() === typedLocation) return current;
+      return {
+        ...current,
+        ...(isPickup
+          ? {
+              pickup: typedLocation,
+              pickupPlaceId: '',
+              pickupLat: undefined,
+              pickupLng: undefined,
+              pickupContactConfirmed: false
+            }
+          : {
+              drop: typedLocation,
+              dropPlaceId: '',
+              dropLat: undefined,
+              dropLng: undefined,
+              dropContactConfirmed: false
+            })
+      };
     });
+    setContactError('');
+    setContactSheetTarget(target);
   }
 
   function openPickupMap(value = booking.pickup) {
-    openRouteMap('pickup', value);
+    openRouteDetails('pickup', value);
   }
 
   function openDropMap(value = booking.drop) {
-    openRouteMap('drop', value);
+    openRouteDetails('drop', value);
   }
 
   return (
@@ -3071,14 +3267,12 @@ function BookScreen({
                       pickup,
                       pickupPlaceId: '',
                       pickupLat: undefined,
-                      pickupLng: undefined
+                      pickupLng: undefined,
+                      pickupContactConfirmed: false
                     }))
                   }
                   onSelect={(location) => applyRouteLocation('pickup', location)}
-                  onDoneTyping={(value) => {
-                    if (value.trim().length >= 2) openPickupMap(value);
-                  }}
-                  onOpenMap={() => openPickupMap()}
+                  onDoneTyping={openPickupMap}
                 />
               </View>
             </View>
@@ -3101,52 +3295,17 @@ function BookScreen({
                       drop,
                       dropPlaceId: '',
                       dropLat: undefined,
-                      dropLng: undefined
+                      dropLng: undefined,
+                      dropContactConfirmed: false
                     }))
                   }
                   onSelect={(location) => applyRouteLocation('drop', location)}
-                  onDoneTyping={(value) => {
-                    if (value.trim().length >= 2) openDropMap(value);
-                  }}
-                  onOpenMap={() => openDropMap()}
+                  onDoneTyping={openDropMap}
                 />
               </View>
             </View>
           </View>
 
-          {booking.extraStops.map((stop, index) => (
-            <View key={stop.id} style={styles.stopFieldWrap}>
-              <LocationPickerField
-                api={api}
-                label={`${copy.stop} ${index + 1}`}
-                value={stop.label}
-                selected={typeof stop.lat === 'number' && typeof stop.lng === 'number'}
-                onChangeText={(label) => updateStop(stop.id, { label, placeId: '', lat: undefined, lng: undefined })}
-                onSelect={(location) =>
-                  updateStop(stop.id, {
-                    label: location.address || location.label,
-                    placeId: location.placeId,
-                    lat: location.lat,
-                    lng: location.lng
-                  })
-                }
-                onOpenMap={() =>
-                  setMapPickerTarget({
-                    kind: 'stop',
-                    stopId: stop.id,
-                    title: `${copy.setStop} ${index + 1}`,
-                    value: stop.label,
-                    lat: stop.lat,
-                    lng: stop.lng
-                  })
-                }
-              />
-              <Pressable style={styles.removeStopButton} onPress={() => removeStop(stop.id)}>
-                <Ionicons name="close" size={16} color={colors.red} />
-                <Text style={styles.removeStopText}>{copy.removeStop}</Text>
-              </Pressable>
-            </View>
-          ))}
           <SavedAddressStrip
             title={copy.savedDropAddresses}
             addresses={savedAddresses}
@@ -3223,7 +3382,7 @@ function BookScreen({
             <Text style={styles.summaryTitle}>{copy.routeSummary}</Text>
             <SummaryRow label={copy.service} value={serviceTitle(language, booking.serviceCategory)} />
             <SummaryRow label={copy.vehicle} value={selectedVehicle?.name || copy.selectVehicleValue} />
-            <SummaryRow label={copy.stops} value={booking.extraStops.length ? String(booking.extraStops.length) : copy.direct} />
+            <SummaryRow label={copy.route} value={copy.direct} />
           </View>
           <View style={styles.row}>
             <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
@@ -3348,7 +3507,7 @@ function BookScreen({
             onChangeText={(coins) => setBooking((current) => ({ ...current, coins }))}
           />
           {fare ? <FareCard fare={fare} /> : null}
-          {(['wallet', 'upi', 'card', 'netbanking', 'cash'] as PaymentMode[]).map((mode) => {
+          {(['wallet', 'upi', 'cash'] as PaymentMode[]).map((mode) => {
             const walletDisabled = mode === 'wallet' && Boolean(fare && walletBalance < fare.total);
             const subtitle =
               mode === 'cash'
@@ -3404,11 +3563,18 @@ function BookScreen({
     ) : null}
     {contactSheetTarget ? (
       <ContactDetailsModal
+        key={contactSheetTarget}
+        api={api}
         target={contactSheetTarget}
         user={user}
         booking={booking}
         setBooking={setBooking}
+        onSaveAddress={onSaveAddress}
         onClose={() => {
+          setContactError('');
+          setContactSheetTarget(null);
+        }}
+        onChangeLocation={() => {
           setContactError('');
           setContactSheetTarget(null);
         }}
@@ -3525,53 +3691,346 @@ function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+function InlineExactLocationPicker({
+  api,
+  target,
+  title,
+  value,
+  lat,
+  lng,
+  onBack,
+  onTypedLocationChange,
+  onLocationChange
+}: {
+  api: IndieryApi;
+  target: 'pickup' | 'drop';
+  title: string;
+  value: string;
+  lat?: number;
+  lng?: number;
+  onBack: () => void;
+  onTypedLocationChange: (value: string) => void;
+  onLocationChange: (location: LocationDetails) => void;
+}) {
+  const copy = useCopy();
+  const hasInitialPin = hasValidCoordinates(lat, lng);
+  const initialRegion: Region = {
+    latitude: hasInitialPin ? lat ?? defaultMapCenter.lat : defaultMapCenter.lat,
+    longitude: hasInitialPin ? lng ?? defaultMapCenter.lng : defaultMapCenter.lng,
+    latitudeDelta: 0.012,
+    longitudeDelta: 0.012
+  };
+  const [query, setQuery] = useState(value);
+  const [pinLabel, setPinLabel] = useState(hasInitialPin ? value || copy.selectedLocation : '');
+  const [pinSelected, setPinSelected] = useState(hasInitialPin);
+  const [region, setRegion] = useState<Region>(initialRegion);
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [localError, setLocalError] = useState('');
+  const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const requestSeqRef = useRef(0);
+  const sessionTokenRef = useRef(`inline-map-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const userAdjustedMapRef = useRef(false);
+  const programmaticMoveRef = useRef(false);
+  const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
+  const pinColor = target === 'pickup' ? colors.green : colors.red;
+  const hasExactPin = pinSelected && hasValidCoordinates(region.latitude, region.longitude);
+  const displayLabel = query || pinLabel || value || copy.selectedLocation;
+
+  useEffect(() => {
+    const search = query.trim();
+    if (search.length < 3 || search === pinLabel) {
+      setSuggestions([]);
+      return;
+    }
+
+    const requestId = ++requestSeqRef.current;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const result = await api.autocompleteLocations(search, sessionTokenRef.current);
+        if (requestId === requestSeqRef.current) {
+          setSuggestions(result.suggestions);
+          setLocalError('');
+        }
+      } catch {
+        if (requestId === requestSeqRef.current) {
+          setSuggestions([]);
+          setLocalError('Location search unavailable');
+        }
+      } finally {
+        if (requestId === requestSeqRef.current) setLoading(false);
+      }
+    }, 320);
+
+    return () => clearTimeout(timer);
+  }, [api, pinLabel, query]);
+
+  function handleQueryChange(nextQuery: string) {
+    setQuery(nextQuery);
+    setPinLabel('');
+    setPinSelected(false);
+    setLocalError('');
+    onTypedLocationChange(nextQuery);
+  }
+
+  function moveMapToRegion(nextRegion: Region) {
+    programmaticMoveRef.current = true;
+    setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
+    if (canRenderNativeMap) mapRef.current?.animateToRegion(nextRegion, 240);
+  }
+
+  function commitLocation(nextRegion: Region, label: string, placeId = `map-${nextRegion.latitude.toFixed(6)}-${nextRegion.longitude.toFixed(6)}`) {
+    const nextLabel = label.trim() || query.trim() || value.trim() || copy.selectedLocation;
+    setPinSelected(true);
+    onLocationChange({
+      placeId,
+      label: nextLabel,
+      address: nextLabel,
+      lat: nextRegion.latitude,
+      lng: nextRegion.longitude
+    });
+  }
+
+  async function chooseSuggestion(suggestion: LocationSuggestion) {
+    setLoading(true);
+    setLocalError('');
+    try {
+      const result = await api.locationDetails(suggestion.placeId, sessionTokenRef.current);
+      assertLocationHasCoordinates(result.location);
+      const nextLabel = result.location.address || result.location.label;
+      const nextRegion = {
+        ...region,
+        latitude: result.location.lat,
+        longitude: result.location.lng
+      };
+      moveMapToRegion(nextRegion);
+      setPinLabel(nextLabel);
+      setQuery(nextLabel);
+      setSuggestions([]);
+      setPinSelected(true);
+      onLocationChange(result.location);
+      sessionTokenRef.current = `inline-map-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    } catch {
+      setLocalError('Could not move map to this place');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function useCurrentLocation() {
+    setLocating(true);
+    setLocalError('');
+    try {
+      const current = await readDeviceLocation();
+      const nextLat = current.coords.latitude;
+      const nextLng = current.coords.longitude;
+      const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
+      const address = formatReverseAddress(reverse[0]) || 'Current location';
+      const nextRegion = {
+        ...region,
+        latitude: nextLat,
+        longitude: nextLng
+      };
+      moveMapToRegion(nextRegion);
+      setPinLabel(address);
+      setQuery(address);
+      setSuggestions([]);
+      commitLocation(nextRegion, address);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Could not read current location');
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  function updatePinFromMap(nextRegion: Region) {
+    setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
+    setSuggestions([]);
+    if (programmaticMoveRef.current) {
+      programmaticMoveRef.current = false;
+      return;
+    }
+    if (userAdjustedMapRef.current) {
+      commitLocation(nextRegion, displayLabel);
+    }
+  }
+
+  async function updatePinFromMarker(latitude: number, longitude: number) {
+    userAdjustedMapRef.current = true;
+    const nextRegion = {
+      ...region,
+      latitude,
+      longitude
+    };
+    setRegion(nextRegion);
+    const reverse = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
+    const address = formatReverseAddress(reverse[0]) || displayLabel || 'Pinned location';
+    setPinLabel(address);
+    setQuery(address);
+    setSuggestions([]);
+    commitLocation(nextRegion, address);
+  }
+
+  return (
+    <View style={styles.contactExactHero}>
+      <View style={styles.contactMapHeroCanvas}>
+        {canRenderNativeMap ? (
+          <>
+            <MapView
+              ref={mapRef}
+              provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+              style={styles.contactMapRealMap}
+              initialRegion={initialRegion}
+              scrollEnabled={false}
+              zoomEnabled={false}
+              rotateEnabled={false}
+              pitchEnabled={false}
+            >
+              <Marker
+                coordinate={{ latitude: region.latitude, longitude: region.longitude }}
+                pinColor={pinColor}
+              />
+            </MapView>
+            <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
+              <Ionicons name="location" size={42} color={pinColor} />
+            </View>
+          </>
+        ) : (
+          <View style={styles.mapPickerFallback}>
+            <Ionicons name="map-outline" size={28} color={colors.customer} />
+            <Text style={styles.mapPickerFallbackText}>
+              Map preview needs Google Maps setup. Search a place or use current location to continue.
+            </Text>
+          </View>
+        )}
+        <Pressable style={styles.contactMapBackButton} onPress={onBack}>
+          <Ionicons name="arrow-back" size={22} color={colors.ink} />
+        </Pressable>
+        <View pointerEvents="none" style={styles.contactMapTitlePill}>
+          <Text style={styles.contactMapTitleText}>{title}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function ContactDetailsModal({
+  api,
   target,
   user,
   booking,
   setBooking,
   primaryTitle,
+  onSaveAddress,
   onClose,
+  onChangeLocation,
   onSaved
 }: {
+  api: IndieryApi;
   target: 'pickup' | 'drop';
   user: UserProfile;
   booking: typeof initialBooking;
   setBooking: React.Dispatch<React.SetStateAction<typeof initialBooking>>;
   primaryTitle?: string;
+  onSaveAddress?: (input: Omit<SavedAddress, 'id'>) => Promise<void>;
   onClose: () => void;
+  onChangeLocation?: () => void;
   onSaved?: () => void;
 }) {
   const copy = useCopy();
   const [localError, setLocalError] = useState('');
+  const [selectedAddressType, setSelectedAddressType] = useState<'home' | 'work' | 'other' | null>(null);
   const isPickup = target === 'pickup';
-  const title = isPickup ? copy.senderDetails : copy.receiverDetails;
-  const subtitle = isPickup ? copy.personHandingGoods : copy.personReceivingGoods;
+  const mapHint = isPickup ? 'Your goods will be picked up here' : 'Your goods will be dropped here';
   const name = isPickup ? booking.pickupContactName : booking.dropContactName;
   const phone = isPickup ? booking.pickupContactPhone : booking.dropContactPhone;
   const addressLine = isPickup ? booking.pickupAddressLine : booking.dropAddressLine;
   const place = isPickup ? booking.pickup : booking.drop;
+  const placeLat = isPickup ? booking.pickupLat : booking.dropLat;
+  const placeLng = isPickup ? booking.pickupLng : booking.dropLng;
+  const locationParts = place
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const locationTitle = locationParts[0] || copy.selectedLocation;
+  const locationSubtitle = locationParts.length > 1 ? locationParts.slice(1).join(', ') : place || copy.selectedLocation;
+  const locationColor = isPickup ? colors.green : colors.red;
+  const usingMine =
+    name.trim() === user.name.trim() &&
+    phone.replace(/\D/g, '') === user.phone.replace(/\D/g, '');
 
   function updateContact(patch: Partial<typeof initialBooking>) {
     setLocalError('');
-    setBooking((current) => ({ ...current, ...patch }));
+    setBooking((current) => ({
+      ...current,
+      ...patch,
+      ...(isPickup ? { pickupContactConfirmed: false } : { dropContactConfirmed: false })
+    }));
+  }
+
+  function updateTypedLocation(nextValue: string) {
+    updateContact(isPickup
+      ? {
+          pickup: nextValue,
+          pickupPlaceId: '',
+          pickupLat: undefined,
+          pickupLng: undefined
+        }
+      : {
+          drop: nextValue,
+          dropPlaceId: '',
+          dropLat: undefined,
+          dropLng: undefined
+        });
+  }
+
+  function updateExactLocation(location: LocationDetails) {
+    updateContact(isPickup
+      ? {
+          pickup: location.address || location.label,
+          pickupPlaceId: location.placeId,
+          pickupLat: location.lat,
+          pickupLng: location.lng
+        }
+      : {
+          drop: location.address || location.label,
+          dropPlaceId: location.placeId,
+          dropLat: location.lat,
+          dropLng: location.lng
+        });
   }
 
   function useMine() {
-    updateContact({
-      pickupContactName: user.name,
-      pickupContactPhone: user.phone
-    });
+    updateContact(isPickup
+      ? {
+          pickupContactName: user.name,
+          pickupContactPhone: user.phone
+        }
+      : {
+          dropContactName: user.name,
+          dropContactPhone: user.phone
+        });
   }
 
   function enterManually() {
-    updateContact({
-      pickupContactName: '',
-      pickupContactPhone: ''
-    });
+    updateContact(isPickup
+      ? {
+          pickupContactName: '',
+          pickupContactPhone: ''
+        }
+      : {
+          dropContactName: '',
+          dropContactPhone: ''
+        });
   }
 
-  function saveDetails() {
+  async function saveDetails() {
+    if (place.trim().length < 2) {
+      setLocalError(copy.selectLocationFirst);
+      return;
+    }
     if (name.trim().length < 2) {
       setLocalError(isPickup ? copy.enterSenderName : copy.enterReceiverName);
       return;
@@ -3580,68 +4039,139 @@ function ContactDetailsModal({
       setLocalError(isPickup ? copy.enterSenderMobile : copy.enterReceiverMobile);
       return;
     }
+    if (selectedAddressType && onSaveAddress) {
+      const savedAddressLabel =
+        selectedAddressType === 'home' ? 'Home' : selectedAddressType === 'work' ? 'Shop' : 'Other';
+      await onSaveAddress({
+        label: savedAddressLabel,
+        address: place.trim(),
+        addressLine: addressLine.trim(),
+        lat: placeLat,
+        lng: placeLng,
+        type: selectedAddressType
+      });
+    }
+    setBooking((current) => ({
+      ...current,
+      ...(isPickup ? { pickupContactConfirmed: true } : { dropContactConfirmed: true })
+    }));
     onClose();
     onSaved?.();
   }
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.contactSheetOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Pressable style={styles.contactSheetBackdrop} onPress={onClose} />
-        <View style={styles.contactSheet}>
-          <View style={styles.contactSheetHandle} />
-          <View style={styles.contactSheetHeader}>
-            <View>
-              <Text style={styles.contactSheetTitle}>{title}</Text>
-              <Text style={styles.contactSheetSubtitle}>{subtitle}</Text>
-            </View>
-            <Pressable style={styles.mapPickerClose} onPress={onClose}>
-              <Ionicons name="close" size={20} color={colors.ink} />
-            </Pressable>
-          </View>
-          <View style={styles.contactPlaceBox}>
-            <Ionicons name={isPickup ? 'navigate-circle' : 'flag'} size={19} color={isPickup ? colors.customer : colors.green} />
-            <Text style={styles.contactPlaceText} numberOfLines={2}>{place || copy.selectedLocation}</Text>
-          </View>
-          {isPickup ? (
-            <View style={styles.sameAsUserPanel}>
-              <Text style={styles.sameAsUserTitle}>{copy.sameAsAppUser}</Text>
-              <View style={styles.sameAsUserActions}>
-                <Pressable style={styles.sameAsUserButton} onPress={useMine}>
-                  <Ionicons name="checkmark-circle" size={16} color={colors.customer} />
-                  <Text style={styles.sameAsUserButtonText}>{copy.yesUseMine}</Text>
-                </Pressable>
-                <Pressable style={[styles.sameAsUserButton, styles.sameAsUserButtonAlt]} onPress={enterManually}>
-                  <Ionicons name="create-outline" size={16} color={colors.ink} />
-                  <Text style={[styles.sameAsUserButtonText, styles.sameAsUserButtonAltText]}>{copy.noEnterManually}</Text>
-                </Pressable>
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <AppStatusBar variant="light" />
+      <SafeAreaView style={styles.contactPageShell}>
+        <KeyboardAvoidingView style={styles.contactPageKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <InlineExactLocationPicker
+            api={api}
+            target={target}
+            title={mapHint}
+            value={place}
+            lat={placeLat}
+            lng={placeLng}
+            onBack={onClose}
+            onTypedLocationChange={updateTypedLocation}
+            onLocationChange={updateExactLocation}
+          />
+          <ScrollView
+            style={styles.contactPagePanel}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.contactPagePanelContent}
+          >
+            <View style={styles.contactSheetHandle} />
+            <View style={styles.contactAddressHeader}>
+              <Ionicons name="location" size={24} color={locationColor} />
+              <View style={styles.flex}>
+                <Text style={styles.contactAddressTitle} numberOfLines={1}>{locationTitle}</Text>
+                <Text style={styles.contactAddressSubtitle} numberOfLines={1}>{locationSubtitle}</Text>
               </View>
+              <Pressable style={styles.contactChangeButton} onPress={onChangeLocation || onClose}>
+                <Text style={styles.contactChangeButtonText}>Change</Text>
+              </Pressable>
             </View>
-          ) : null}
-          <Field
-            label={isPickup ? copy.senderName : copy.receiverName}
-            value={name}
-            onChangeText={(value) => updateContact(isPickup ? { pickupContactName: value } : { dropContactName: value })}
-          />
-          <Field
-            label={isPickup ? copy.senderMobile : copy.receiverMobile}
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={(value) => updateContact(isPickup ? { pickupContactPhone: value } : { dropContactPhone: value })}
-          />
-          <Field
-            label={isPickup ? copy.pickupLandmarkOptional : copy.dropLandmarkOptional}
-            value={addressLine}
-            onChangeText={(value) => updateContact(isPickup ? { pickupAddressLine: value } : { dropAddressLine: value })}
-          />
-          {localError ? <Text style={styles.contactError}>{localError}</Text> : null}
-          <View style={styles.contactSheetActions}>
-            <SecondaryButton title={copy.later} icon="time-outline" onPress={onClose} />
-            <PrimaryButton title={primaryTitle || copy.saveDetails} icon="checkmark" onPress={saveDetails} />
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+            <ContactFormField
+              label={isPickup ? copy.pickupLandmarkOptional : copy.dropLandmarkOptional}
+              value={addressLine}
+              onChangeText={(value) => updateContact(isPickup ? { pickupAddressLine: value } : { dropAddressLine: value })}
+            />
+            <ContactFormField
+              label={isPickup ? copy.senderName : copy.receiverName}
+              value={name}
+              onChangeText={(value) => updateContact(isPickup ? { pickupContactName: value } : { dropContactName: value })}
+              icon="id-card-outline"
+            />
+            <ContactFormField
+              label={isPickup ? copy.senderMobile : copy.receiverMobile}
+              keyboardType="phone-pad"
+              value={phone}
+              onChangeText={(value) => updateContact(isPickup ? { pickupContactPhone: value } : { dropContactPhone: value })}
+            />
+            <Pressable style={styles.contactMobileCheckRow} onPress={usingMine ? enterManually : useMine}>
+              <Ionicons name={usingMine ? 'checkbox' : 'square-outline'} size={18} color={colors.customer} />
+              <Text style={styles.contactMobileCheckText}>Use my mobile number: {user.phone}</Text>
+            </Pressable>
+            <Text style={styles.contactSaveAsLabel}>Save this address as</Text>
+            <View style={styles.contactTypeRow}>
+              {[
+                { type: 'home' as const, icon: 'home' as const, label: 'Home' },
+                { type: 'work' as const, icon: 'business' as const, label: 'Shop' },
+                { type: 'other' as const, icon: 'heart' as const, label: 'Other' }
+              ].map((option) => {
+                const active = selectedAddressType === option.type;
+                return (
+                  <Pressable
+                    key={option.type}
+                    style={[styles.contactTypeChip, active && styles.contactTypeChipActive]}
+                    onPress={() => setSelectedAddressType(active ? null : option.type)}
+                  >
+                    <Ionicons name={option.icon} size={13} color={active ? colors.customer : colors.ink} />
+                    <Text style={[styles.contactTypeChipText, active && styles.contactTypeChipTextActive]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {localError ? <Text style={styles.contactError}>{localError}</Text> : null}
+            <Pressable style={styles.contactConfirmButton} onPress={saveDetails}>
+              <Text style={styles.contactConfirmButtonText}>{primaryTitle || 'Confirm and continue'}</Text>
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
+  );
+}
+
+function ContactFormField({
+  label,
+  value,
+  onChangeText,
+  keyboardType,
+  icon
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
+  icon?: keyof typeof Ionicons.glyphMap;
+}) {
+  return (
+    <View style={styles.contactFormField}>
+      <Text style={styles.contactFormLabel}>{label}</Text>
+      <View style={styles.contactFormInputShell}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType={keyboardType}
+          style={styles.contactFormInput}
+        />
+        {icon ? <Ionicons name={icon} size={17} color={colors.customer} /> : null}
+      </View>
+    </View>
   );
 }
 
@@ -3799,8 +4329,8 @@ function MapLocationPicker({
 
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <AppStatusBar variant="light" />
       <SafeAreaView style={styles.mapPickerShell}>
-        <AppStatusBar variant="light" />
         <View style={styles.mapPickerHeader}>
           <Pressable style={styles.mapPickerClose} onPress={onClose}>
             <Ionicons name="close" size={22} color={colors.ink} />
@@ -3905,6 +4435,8 @@ function OrdersScreen({
   onBook,
   onRefresh,
   onSelectActiveOrder,
+  detailOrderRequestId,
+  onDetailOrderRequestHandled,
   onShare,
   onCancel
 }: {
@@ -3916,6 +4448,8 @@ function OrdersScreen({
   onBook: () => void;
   onRefresh: () => void;
   onSelectActiveOrder: (orderId: string) => void;
+  detailOrderRequestId?: string;
+  onDetailOrderRequestHandled?: () => void;
   onShare?: (order: Order) => void;
   onCancel?: (order: Order) => void;
 }) {
@@ -3936,6 +4470,17 @@ function OrdersScreen({
       setDetailOrderId(undefined);
     }
   }, [allActiveOrderIds, allOrderIds, detailOrderId]);
+
+  useEffect(() => {
+    if (!detailOrderRequestId) return;
+    const requestedOrder =
+      activeOrders.find((order) => order.id === detailOrderRequestId) ??
+      orders.find((order) => order.id === detailOrderRequestId);
+    if (!requestedOrder) return;
+    setDetailOrderId(requestedOrder.id);
+    onDetailOrderRequestHandled?.();
+    setTimeout(() => ordersScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
+  }, [activeOrders, detailOrderRequestId, onDetailOrderRequestHandled, orders]);
 
   function openOrderDetails(order: Order) {
     if (isActiveOrder(order)) onSelectActiveOrder(order.id);
@@ -4027,7 +4572,7 @@ function OrderDetailsPanel({
   const language = useLanguage();
   const countdown = useOrderCountdown(order);
   const orderActive = isActiveOrder(order);
-  const cancellable = ['offered', 'accepted', 'arrived_pickup'].includes(order.status);
+  const cancellable = isCustomerCancellableOrder(order);
 
   return (
     <View>
@@ -4049,6 +4594,14 @@ function OrderDetailsPanel({
             ) : null}
           </View>
         </View>
+
+        <MapPreview
+          pickup={order.pickup}
+          drop={order.drop}
+          extraStops={order.extraStops}
+          eta={order.etaMinutes}
+          partnerLocation={order.partnerLocation}
+        />
 
         <View style={styles.liveRouteCard}>
           <View style={styles.liveRouteLine}>
@@ -4075,14 +4628,6 @@ function OrderDetailsPanel({
             </View>
           </View>
         </View>
-
-        <MapPreview
-          pickup={order.pickup.label}
-          drop={order.drop.label}
-          extraStops={order.extraStops}
-          eta={order.etaMinutes}
-          partnerLocation={order.partnerLocation}
-        />
 
         <View style={styles.liveOrderMetrics}>
           <View style={styles.liveOrderMetric}>
@@ -4173,6 +4718,8 @@ function OrderDetailsPanel({
         </View>
       </View>
 
+      <FareCard fare={order.fare} />
+
       <View style={styles.timelinePanel}>
         <View style={styles.timelinePanelHeader}>
           <Text style={styles.cardTitle}>{copy.track}</Text>
@@ -4198,7 +4745,6 @@ function TrackScreen({
   onCancel?: () => void;
 }) {
   const copy = useCopy();
-  const language = useLanguage();
   if (!order) {
     return (
       <View style={styles.empty}>
@@ -4212,63 +4758,13 @@ function TrackScreen({
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <MapPreview
-        pickup={order.pickup.label}
-        drop={order.drop.label}
-        extraStops={order.extraStops}
-        eta={order.etaMinutes}
-        partnerLocation={order.partnerLocation}
+      <OrderDetailsPanel
+        order={order}
+        tripOtp={tripOtp}
+        busy={busy}
+        onRefresh={onRefresh}
+        onCancel={onCancel && isCustomerCancellableOrder(order) ? () => onCancel() : undefined}
       />
-      <View style={styles.card}>
-        <View style={styles.between}>
-          <View>
-            <Text style={styles.cardTitle}>{order.orderNo}</Text>
-            <Text style={styles.mutedSmall}>{order.vehicle.shortName} {'->'} {routeStopSummary(order.extraStops) || order.drop.label}</Text>
-          </View>
-          <Badge label={statusLabel(language, order.status)} />
-        </View>
-        <SummaryRow label={copy.goods} value={`${goodsLabel(language, order.goodsType)}, ${order.weightKg} kg`} />
-        <SummaryRow label={copy.paymentLabel} value={`${order.paymentMode.toUpperCase()} - ${order.paymentStatus}`} />
-      </View>
-      {order.partner ? (
-        <View style={styles.driverCard}>
-          <View style={styles.driverAvatar}>
-            <Text style={styles.driverAvatarText}>{order.partner.initials}</Text>
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.cardTitle}>{order.partner.name}</Text>
-            <Text style={styles.mutedSmall}>Mobile: {order.partner.phone}</Text>
-            <Text style={styles.mutedSmall}>Vehicle: {order.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
-          </View>
-        </View>
-      ) : null}
-      {tripOtp?.pickup || tripOtp?.drop ? (
-        <View style={styles.otpCard}>
-          <Text style={styles.cardTitle}>{copy.deliveryOtp}</Text>
-          <View style={styles.row}>
-            {tripOtp.pickup ? (
-              <View style={styles.otpBox}>
-                <Text style={styles.mutedSmall}>{copy.pickup}</Text>
-                <Text style={styles.otpText}>{tripOtp.pickup}</Text>
-              </View>
-            ) : null}
-            {tripOtp.drop ? (
-              <View style={styles.otpBox}>
-                <Text style={styles.mutedSmall}>{copy.drop}</Text>
-                <Text style={styles.otpText}>{tripOtp.drop}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-      <Timeline items={order.timeline} />
-      <FareCard fare={order.fare} />
-      <View style={styles.row}>
-        <PrimaryButton title={copy.refresh} icon="refresh" onPress={onRefresh} />
-        {onCancel && ['offered', 'accepted', 'arrived_pickup'].includes(order.status) ? (
-          <SecondaryButton title={busy ? copy.cancelling : copy.cancel} icon="close-circle" onPress={onCancel} />
-        ) : null}
-      </View>
     </ScrollView>
   );
 }
@@ -4281,19 +4777,19 @@ function WalletScreen({
 }: {
   wallet: CustomerWallet;
   busy: boolean;
-  onTopup: (amount: number, paymentMode: 'upi' | 'card' | 'netbanking') => Promise<void>;
+  onTopup: (amount: number, paymentMode: 'upi') => Promise<void>;
   onCoupon: () => Promise<void>;
 }) {
   const copy = useCopy();
   const [amount, setAmount] = useState('500');
-  const [paymentMode, setPaymentMode] = useState<'upi' | 'card' | 'netbanking'>('upi');
+  const [paymentMode, setPaymentMode] = useState<'upi'>('upi');
   const topupAmount = Number(amount || 0);
   const canTopup = topupAmount >= 10;
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.walletHero}>
-        <View style={styles.between}>
+      <View style={styles.walletSurface}>
+        <View style={styles.walletHero}>
           <View>
             <Text style={styles.eyebrowDark}>{copy.walletTitle}</Text>
             <Text style={styles.walletHeroText}>{copy.walletSubtitle}</Text>
@@ -4301,20 +4797,22 @@ function WalletScreen({
           <View style={styles.walletHeroIcon}>
             <Ionicons name="wallet" size={24} color={colors.white} />
           </View>
+          <View style={styles.walletBalanceBlock}>
+            <Text style={styles.walletBalance}>{money(wallet.balance)}</Text>
+            <Text style={styles.walletBalanceLabel}>{copy.availableToPay}</Text>
+          </View>
         </View>
-        <Text style={styles.walletBalance}>{money(wallet.balance)}</Text>
-        <Text style={styles.walletBalanceLabel}>{copy.availableToPay}</Text>
-      </View>
 
-      <View style={styles.walletPanel}>
-        <View style={styles.between}>
-          <Text style={styles.cardTitle}>{copy.addMoney}</Text>
+        <View style={styles.walletTopupHeader}>
+          <View>
+            <Text style={styles.cardTitle}>{copy.addMoney}</Text>
+            <Text style={styles.mutedSmall}>UPI only</Text>
+          </View>
           <View style={styles.walletSecureBadge}>
             <Ionicons name="shield-checkmark" size={14} color={colors.green} />
             <Text style={styles.walletSecureText}>{copy.secureTopup}</Text>
           </View>
         </View>
-        <Text style={styles.fieldLabel}>{copy.quickTopup}</Text>
         <View style={styles.walletAmountRow}>
           {[200, 500, 1000].map((value) => (
             <Pressable
@@ -4329,21 +4827,6 @@ function WalletScreen({
           ))}
         </View>
         <Field label={copy.enterAmount} keyboardType="numeric" value={amount} onChangeText={setAmount} />
-        <Text style={styles.fieldLabel}>{copy.paymentMethod}</Text>
-        {(['upi', 'card', 'netbanking'] as const).map((mode) => (
-          <Pressable
-            key={mode}
-            style={[styles.walletMethodRow, paymentMode === mode && styles.walletMethodRowActive]}
-            onPress={() => setPaymentMode(mode)}
-          >
-            <Ionicons
-              name={paymentMode === mode ? 'radio-button-on' : 'radio-button-off'}
-              size={18}
-              color={colors.customer}
-            />
-            <Text style={styles.walletMethodText}>{mode.toUpperCase()}</Text>
-          </Pressable>
-        ))}
         <PrimaryButton
           title={busy ? copy.applying : copy.addMoney}
           icon="add-circle"
@@ -4351,10 +4834,8 @@ function WalletScreen({
             if (canTopup) onTopup(topupAmount, paymentMode);
           }}
         />
-      </View>
 
-      <View style={styles.walletPanel}>
-        <View style={styles.between}>
+        <View style={styles.walletCoinsRow}>
           <View>
             <Text style={styles.cardTitle}>{copy.rewardsCoins}</Text>
             <Text style={styles.mutedSmall}>{copy.useCoinsDiscount}</Text>
@@ -4364,7 +4845,10 @@ function WalletScreen({
             <Text style={styles.coinPillText}>{wallet.coins}</Text>
           </View>
         </View>
-        <PrimaryButton title={busy ? copy.applying : copy.applyFirst50} icon="gift" onPress={onCoupon} />
+        <Pressable style={styles.walletCouponButton} onPress={onCoupon}>
+          <Ionicons name="gift" size={15} color={colors.customer} />
+          <Text style={styles.walletCouponText}>{busy ? copy.applying : copy.applyFirst50}</Text>
+        </Pressable>
       </View>
 
       <SectionTitle title={copy.recentTransactions} />
@@ -4377,14 +4861,6 @@ function WalletScreen({
           <Text style={styles.mutedSmall}>{copy.noWalletTransactionsText}</Text>
         </View>
       )}
-
-      <SectionTitle title={copy.coinRules} />
-      {[copy.coinRuleEarn, copy.coinRuleUse, copy.coinRuleRefunds].map((item) => (
-        <View key={item} style={styles.listRow}>
-          <Ionicons name="checkmark-circle" size={18} color={colors.green} />
-          <Text style={styles.listText}>{item}</Text>
-        </View>
-      ))}
 
       <SectionTitle title={copy.coinActivity} />
       {wallet.coinLedger.length ? (
@@ -4447,6 +4923,7 @@ function AccountScreen({
   const activeOrders = data.orders.filter((order) => !['delivered', 'cancelled'].includes(order.status)).length;
   const savedAddresses = data.user.customerProfile?.savedAddresses ?? [];
   const coins = data.user.customerProfile?.coins ?? data.wallet.coins;
+  const savedAddressCountText = `${savedAddresses.length} ${savedAddresses.length === 1 ? copy.savedPlace : copy.savedPlacesCount}`;
   const [page, setPage] = useState<CustomerAccountPage>('overview');
   const [name, setName] = useState(data.user.name);
   const [email, setEmail] = useState(data.user.email || '');
@@ -4546,10 +5023,10 @@ function AccountScreen({
               <Field label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" />
               <Field label={copy.city} value={city} onChangeText={setCity} />
               <Field label={copy.mobileNumber} value={data.user.phone} editable={false} keyboardType="phone-pad" />
-              <View style={styles.accountInfoStrip}>
-                <Ionicons name="shield-checkmark" size={19} color={colors.customer} />
-                <Text style={styles.accountInfoText}>Your mobile number is linked to this customer account.</Text>
-              </View>
+        <View style={styles.accountInfoStrip}>
+          <Ionicons name="shield-checkmark" size={19} color={colors.customer} />
+          <Text style={styles.accountInfoText}>{copy.mobileLinkedText}</Text>
+        </View>
               {localError ? <Text style={styles.accountEditError}>{localError}</Text> : null}
               <View style={styles.accountEditActions}>
                 <SecondaryButton title={copy.cancel} icon="close" onPress={cancelEditDetails} />
@@ -4571,16 +5048,6 @@ function AccountScreen({
                 <Text style={styles.accountWalletValue}>{coins}</Text>
                 <Text style={styles.accountWalletLabel}>{copy.coinsAvailable}</Text>
                 <Text style={styles.accountWalletText}>{copy.useCoinsDiscount}</Text>
-              </View>
-              <View style={styles.accountBalanceCard}>
-                <View>
-                  <Text style={styles.accountMenuSubtitle}>{copy.cashBalance}</Text>
-                  <Text style={styles.accountBalanceValue}>{money(data.wallet.balance)}</Text>
-                </View>
-                <View style={styles.coinPill}>
-                  <Ionicons name="gift" size={15} color={colors.amber} />
-                  <Text style={styles.coinPillText}>{coins}</Text>
-                </View>
               </View>
               <SectionTitle title={copy.coinRules} />
               {[copy.coinRuleEarn, copy.coinRuleUse, copy.coinRuleRefunds].map((item) => (
@@ -4614,11 +5081,10 @@ function AccountScreen({
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.accountHero}>
-        <View style={styles.accountHeroGlow} />
         <View style={styles.accountHeroTop}>
           <View>
             <Text style={styles.accountEyebrow}>{copy.account}</Text>
-            <Text style={styles.accountHeroSubtitle}>Profile, places, rewards, and support</Text>
+            <Text style={styles.accountHeroSubtitle}>{copy.accountSubtitle}</Text>
           </View>
           <View style={styles.accountVerifiedBadge}>
             <Ionicons name="checkmark-circle" size={14} color={colors.green} />
@@ -4677,7 +5143,7 @@ function AccountScreen({
         <AccountMenuRow
           icon="bookmark-outline"
           title={copy.savedAddresses}
-          subtitle={`${savedAddresses.length} saved places`}
+          subtitle={savedAddressCountText}
           onPress={() => openPage('addresses')}
         />
         <AccountMenuRow
@@ -4713,7 +5179,7 @@ function AccountScreen({
           <Text style={styles.deleteAccountButtonText}>{copy.requestAccountDeletion}</Text>
         </Pressable>
         <Pressable style={styles.logoutButton} onPress={onLogout}>
-          <Ionicons name="log-out-outline" size={18} color={colors.red} />
+          <Ionicons name="log-out-outline" size={18} color={colors.ink} />
           <Text style={styles.logoutButtonText}>{copy.logout}</Text>
         </Pressable>
       </View>
@@ -4728,7 +5194,6 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
         <Ionicons name="arrow-back" size={21} color={colors.ink} />
       </Pressable>
       <View style={styles.flex}>
-        <Text style={styles.eyebrowDark}>{title.toUpperCase()}</Text>
         <Text style={styles.accountDetailTitle}>{title}</Text>
         <Text style={styles.accountDetailSubtitle}>{subtitle}</Text>
       </View>
@@ -4835,8 +5300,11 @@ function SavedAddressesSection({
       <SectionTitle title={copy.savedAddresses} />
       {addresses.length ? (
         <View style={styles.savedAddressList}>
-          {addresses.map((address) => (
-            <View key={address.id} style={styles.savedAddressRow}>
+          {addresses.map((address, index) => (
+            <View
+              key={address.id}
+              style={[styles.savedAddressRow, index === addresses.length - 1 && styles.savedAddressRowLast]}
+            >
               <View style={styles.savedAddressIcon}>
                 <Ionicons name={address.type === 'home' ? 'home' : address.type === 'work' ? 'briefcase' : 'location'} size={18} color={colors.customer} />
               </View>
@@ -5306,8 +5774,8 @@ function MapPreview({
   eta,
   partnerLocation
 }: {
-  pickup: string;
-  drop: string;
+  pickup: LocationPoint;
+  drop: LocationPoint;
   extraStops?: LocationPoint[];
   eta: number;
   partnerLocation?: Order['partnerLocation'];
@@ -5315,22 +5783,105 @@ function MapPreview({
   const copy = useCopy();
   const hasLiveLocation = typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
+  const routePoints = [pickup, ...extraStops, drop]
+    .map((point, index) => ({
+      point,
+      index,
+      coordinate: hasValidCoordinates(point.lat, point.lng)
+        ? { latitude: point.lat as number, longitude: point.lng as number }
+        : undefined
+    }))
+    .filter((item): item is { point: LocationPoint; index: number; coordinate: { latitude: number; longitude: number } } => Boolean(item.coordinate));
+  const partnerCoordinate = hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng)
+    ? { latitude: partnerLocation?.lat as number, longitude: partnerLocation?.lng as number }
+    : undefined;
+  const fitCoordinates = partnerCoordinate ? [...routePoints.map((item) => item.coordinate), partnerCoordinate] : routePoints.map((item) => item.coordinate);
+  const firstCoordinate = fitCoordinates[0];
+  const canRenderNativeMap = (Platform.OS !== 'android' || Boolean(googleMapsApiKey)) && Boolean(firstCoordinate);
+  const initialRegion: Region = {
+    latitude: firstCoordinate?.latitude ?? defaultMapCenter.lat,
+    longitude: firstCoordinate?.longitude ?? defaultMapCenter.lng,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05
+  };
+  const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const fitKey = fitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|');
+
+  useEffect(() => {
+    if (!canRenderNativeMap || !mapRef.current || !fitCoordinates.length) return;
+    const timer = setTimeout(() => {
+      if (fitCoordinates.length === 1) {
+        mapRef.current?.animateToRegion({ ...initialRegion, ...fitCoordinates[0] }, 250);
+        return;
+      }
+      mapRef.current?.fitToCoordinates(fitCoordinates, {
+        edgePadding: { top: 58, right: 38, bottom: 58, left: 38 },
+        animated: true
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [canRenderNativeMap, fitKey]);
+
   return (
     <View style={styles.map}>
-      <View style={styles.mapRoad} />
-      <View style={[styles.mapRoad, styles.mapRoadTwo]} />
-      <View style={styles.mapRoute} />
-      <View style={styles.mapPinA} />
-      {extraStops.slice(0, 3).map((stop, index) => (
-        <View key={`${stop.label}-${index}`} style={[styles.mapStopPin, index === 1 && styles.mapStopPinTwo, index === 2 && styles.mapStopPinThree]}>
-          <Text style={styles.mapStopText}>{index + 1}</Text>
-        </View>
-      ))}
-      <View style={styles.mapPinB} />
-      <View style={[styles.vehiclePulse, hasLiveLocation && styles.vehiclePulseLive]} />
-      <View style={[styles.vehicleMarker, hasLiveLocation && styles.vehicleMarkerLive]}>
-        <Ionicons name="bicycle" size={16} color={colors.white} />
-      </View>
+      {canRenderNativeMap ? (
+        <MapView
+          ref={mapRef}
+          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+          style={styles.mapNativeView}
+          initialRegion={initialRegion}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          toolbarEnabled={false}
+        >
+          {routePoints.length > 1 ? (
+            <Polyline
+              coordinates={routePoints.map((item) => item.coordinate)}
+              strokeColor={colors.customer}
+              strokeWidth={4}
+            />
+          ) : null}
+          {routePoints.map((item) => {
+            const isPickup = item.index === 0;
+            const isDrop = item.index === extraStops.length + 1;
+            const pinColor = isPickup ? colors.green : isDrop ? colors.red : colors.amber;
+            const label = isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`;
+            return (
+              <Marker
+                key={`${label}-${item.coordinate.latitude}-${item.coordinate.longitude}`}
+                coordinate={item.coordinate}
+                title={label}
+                description={item.point.label}
+                pinColor={pinColor}
+              />
+            );
+          })}
+          {partnerCoordinate ? (
+            <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
+              <View style={styles.mapPartnerMarker}>
+                <Ionicons name="bicycle" size={15} color={colors.white} />
+              </View>
+            </Marker>
+          ) : null}
+        </MapView>
+      ) : (
+        <>
+          <View style={styles.mapRoad} />
+          <View style={[styles.mapRoad, styles.mapRoadTwo]} />
+          <View style={styles.mapRoute} />
+          <View style={styles.mapPinA} />
+          {extraStops.slice(0, 3).map((stop, index) => (
+            <View key={`${stop.label}-${index}`} style={[styles.mapStopPin, index === 1 && styles.mapStopPinTwo, index === 2 && styles.mapStopPinThree]}>
+              <Text style={styles.mapStopText}>{index + 1}</Text>
+            </View>
+          ))}
+          <View style={styles.mapPinB} />
+          <View style={[styles.vehiclePulse, hasLiveLocation && styles.vehiclePulseLive]} />
+          <View style={[styles.vehicleMarker, hasLiveLocation && styles.vehicleMarkerLive]}>
+            <Ionicons name="bicycle" size={16} color={colors.white} />
+          </View>
+        </>
+      )}
       <View style={styles.etaChip}>
         <Text style={styles.etaValue}>{eta}</Text>
         <Text style={styles.etaLabel}>{copy.min}</Text>
@@ -5339,7 +5890,7 @@ function MapPreview({
         <View style={[styles.liveDot, hasLiveLocation && styles.liveDotOn]} />
         <Text style={styles.liveText}>{hasLiveLocation ? copy.liveGps : copy.waitingGps}</Text>
       </View>
-      <Text style={styles.mapText}>{pickup} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop}</Text>
+      <Text style={styles.mapText} numberOfLines={1}>{pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}</Text>
     </View>
   );
 }
@@ -5390,7 +5941,6 @@ function FareCard({ fare }: { fare: FareBreakup }) {
       ) : null}
       <FareRow label="GST" value={money(fare.gst)} />
       <FareRow label="Coins" value={`-${money(fare.coins)}`} />
-      <FareRow label="Late refund coins" value={money(fare.lateRefundCoins)} />
       {hasWaitingPolicy ? (
         <Text style={styles.farePolicyText}>
           Waiting: {waitingFare.waitingFreeMinutes} min free, then {money(waitingFare.waitingPerMinute)}/min
@@ -5635,7 +6185,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   avatarText: { color: colors.white, fontWeight: '800' },
-  content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
+  content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
   homeContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F8FAFC' },
   homeShell: { flex: 1, backgroundColor: '#F8FAFC', overflow: 'hidden' },
   homeMapPattern: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.55 },
@@ -5666,6 +6216,36 @@ const styles = StyleSheet.create({
   homeLocationLabel: { color: colors.muted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
   homeLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginTop: 2 },
   homeLocationSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  pickupSearchShell: { flex: 1, backgroundColor: '#F8FAFC' },
+  pickupSearchKeyboard: { flex: 1 },
+  pickupSearchTopBar: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight + 6 : 6 },
+  pickupSearchBackButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  pickupSearchCard: {
+    marginHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3
+  },
+  pickupSearchInputShell: { minHeight: 48, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 8, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 },
+  pickupSearchDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.green },
+  pickupSearchInput: { flex: 1, color: colors.ink, fontSize: 14, fontWeight: '800', paddingVertical: 11 },
+  pickupSearchMapButton: { alignSelf: 'center', minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 14, paddingHorizontal: 12 },
+  pickupSearchMapText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  pickupSearchCurrentButton: { alignSelf: 'center', minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12 },
+  pickupSearchCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  pickupSearchError: { color: colors.red, fontSize: 12, fontWeight: '900', marginHorizontal: 18, marginTop: 8, textAlign: 'center' },
+  pickupSearchResults: { flex: 1, marginTop: 10 },
+  pickupSearchResultsContent: { paddingHorizontal: 8, paddingBottom: 24 },
+  pickupSearchResultItem: { minHeight: 58, borderBottomWidth: 1, borderBottomColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 10, paddingVertical: 10, backgroundColor: colors.white },
+  pickupSearchResultIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  pickupSearchResultTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  pickupSearchResultSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
   homeServiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   homeServiceCard: {
     width: '48%',
@@ -5922,13 +6502,15 @@ const styles = StyleSheet.create({
   locationSelectedText: { color: colors.customer, fontSize: 10, fontWeight: '900' },
   locationSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginTop: 8, overflow: 'hidden' },
   locationSuggestionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.line },
+  locationTypedSuggestionItem: { backgroundColor: colors.customerLight },
+  locationTypedSuggestionIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   locationSuggestionTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   locationSuggestionSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
   locationHint: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 7, lineHeight: 15 },
   locationError: { color: colors.red, fontSize: 11, fontWeight: '800', marginTop: 7 },
   mapSelectButton: { alignSelf: 'flex-start', minHeight: 36, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, marginTop: 8 },
   mapSelectText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
-  mapPickerShell: { flex: 1, backgroundColor: colors.white, padding: 16 },
+  mapPickerShell: { flex: 1, backgroundColor: colors.white, paddingHorizontal: 16, paddingBottom: 16, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight + 16 : 16 },
   mapPickerHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   mapPickerClose: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   mapPickerTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
@@ -6004,15 +6586,66 @@ const styles = StyleSheet.create({
   contactSummaryValue: { color: colors.ink, fontSize: 13, fontWeight: '900', marginBottom: 4 },
   contactSummaryMissing: { color: colors.customer, fontSize: 13, fontWeight: '900', marginBottom: 4 },
   contactSummaryLocation: { color: colors.muted, fontSize: 11, fontWeight: '800', marginBottom: 10 },
+  contactPageShell: { flex: 1, backgroundColor: colors.white, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight : 0 },
+  contactPageKeyboard: { flex: 1 },
+  contactPageForm: { flex: 1, backgroundColor: colors.white },
+  contactPageFormContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 },
+  contactPageHeader: { marginBottom: 12 },
+  contactPageActions: { marginTop: 4 },
+  contactPageFooter: { backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: Platform.OS === 'android' ? 34 : 16 },
   contactSheetOverlay: { flex: 1, justifyContent: 'flex-end' },
   contactSheetBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
-  contactSheet: { backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, paddingBottom: 18 },
+  contactSheet: { maxHeight: '92%', backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, paddingBottom: Platform.OS === 'android' ? 20 : 18 },
+  contactSheetScroll: { paddingBottom: 2 },
   contactSheetHandle: { width: 44, height: 4, borderRadius: 4, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 12 },
   contactSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
   contactSheetTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
   contactSheetSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
   contactPlaceBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.faint, borderRadius: 14, padding: 12, marginBottom: 12 },
   contactPlaceText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  contactExactHero: { backgroundColor: colors.white },
+  contactExactCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 12, marginBottom: 12 },
+  contactExactHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 10 },
+  contactExactIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  contactExactTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  contactExactAddress: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  contactMapSearchShell: { minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, marginBottom: 9 },
+  contactMapSearchInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '800', paddingVertical: 9 },
+  contactMapSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 13, backgroundColor: colors.white, marginBottom: 9, overflow: 'hidden', maxHeight: 145 },
+  contactMapCanvas: { height: 178, borderRadius: 15, backgroundColor: '#EAF5EF', overflow: 'hidden', marginBottom: 10 },
+  contactMapHeroCanvas: { height: 410, backgroundColor: '#EAF5EF', overflow: 'hidden' },
+  contactMapRealMap: { flex: 1 },
+  contactMapHint: { position: 'absolute', left: 12, right: 12, bottom: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 7, paddingHorizontal: 10, alignItems: 'center' },
+  contactMapHeroHint: { position: 'absolute', left: 70, right: 70, top: 84, borderRadius: 8, backgroundColor: 'rgba(17,24,39,0.88)', paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
+  contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '900' },
+  contactMapBackButton: { position: 'absolute', left: 10, top: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapTitlePill: { position: 'absolute', alignSelf: 'center', top: 90, minHeight: 31, borderRadius: 5, backgroundColor: 'rgba(17,24,39,0.88)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
+  contactMapTitleText: { color: colors.white, fontSize: 11, fontWeight: '900' },
+  contactLocationPanel: { borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: colors.white, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, marginTop: -18, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 4 },
+  contactExactFooter: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  contactUseCurrentButton: { flex: 1, minHeight: 40, borderRadius: 12, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
+  contactUseCurrentText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  contactPagePanel: { flex: 1, backgroundColor: colors.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, marginTop: 0, shadowColor: '#0F172A', shadowOpacity: 0.10, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 5 },
+  contactPagePanelContent: { paddingHorizontal: 13, paddingTop: 7, paddingBottom: Platform.OS === 'android' ? 18 : 14 },
+  contactAddressHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
+  contactAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  contactAddressSubtitle: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: '700', marginTop: 3 },
+  contactChangeButton: { minWidth: 64, minHeight: 34, borderRadius: 5, borderWidth: 1, borderColor: '#D8D3C6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.white },
+  contactChangeButtonText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  contactFormField: { marginBottom: 8 },
+  contactFormLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', marginBottom: 3 },
+  contactFormInputShell: { minHeight: 39, borderWidth: 1, borderColor: '#DDE3EC', borderRadius: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10 },
+  contactFormInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700', paddingVertical: 8 },
+  contactMobileCheckRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
+  contactMobileCheckText: { flex: 1, color: colors.ink, fontSize: 11, fontWeight: '800' },
+  contactSaveAsLabel: { color: colors.muted, fontSize: 11, fontWeight: '800', marginBottom: 8 },
+  contactTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  contactTypeChip: { minHeight: 36, minWidth: 75, borderRadius: 6, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
+  contactTypeChipActive: { borderColor: '#93C5FD', backgroundColor: colors.customerLight },
+  contactTypeChipText: { color: colors.ink, fontSize: 11, fontWeight: '900' },
+  contactTypeChipTextActive: { color: colors.customer },
+  contactConfirmButton: { minHeight: 48, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
+  contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '900' },
   contactSheetActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 },
   sameAsUserPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.faint, padding: 12, marginBottom: 12 },
   sameAsUserTitle: { color: colors.ink, fontSize: 13, fontWeight: '900', marginBottom: 9 },
@@ -6093,7 +6726,8 @@ const styles = StyleSheet.create({
   payRowDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   payText: { color: colors.ink, fontWeight: '800' },
   payTextDisabled: { color: colors.muted },
-  map: { height: 170, borderRadius: 18, backgroundColor: '#F0EBFF', overflow: 'hidden', marginBottom: 14 },
+  map: { height: 218, borderRadius: 16, backgroundColor: '#E5E7EB', overflow: 'hidden', marginBottom: 12 },
+  mapNativeView: { flex: 1 },
   mapRoad: { position: 'absolute', top: 72, left: -20, right: -20, height: 20, backgroundColor: '#DDD6FE', transform: [{ rotate: '-8deg' }] },
   mapRoadTwo: { top: 30, transform: [{ rotate: '12deg' }], opacity: 0.7 },
   mapRoute: { position: 'absolute', left: 72, top: 88, width: 190, height: 4, borderRadius: 2, backgroundColor: colors.customer },
@@ -6107,14 +6741,15 @@ const styles = StyleSheet.create({
   vehiclePulseLive: { backgroundColor: 'rgba(5,150,105,0.16)' },
   vehicleMarker: { position: 'absolute', left: 153, top: 77, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   vehicleMarkerLive: { backgroundColor: colors.green },
-  etaChip: { position: 'absolute', right: 12, top: 12, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
+  etaChip: { position: 'absolute', right: 12, top: 12, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   etaValue: { color: colors.customer, fontSize: 20, fontWeight: '800' },
   etaLabel: { color: colors.muted, fontSize: 9, fontWeight: '800' },
-  liveChip: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10 },
+  liveChip: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },
   liveDotOn: { backgroundColor: colors.green },
   liveText: { color: colors.ink, fontSize: 11, fontWeight: '800' },
-  mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '800' },
+  mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '800', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },
   card: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   cardTitle: { color: colors.ink, fontWeight: '800', fontSize: 15 },
   driverCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, padding: 14, backgroundColor: colors.faint, marginBottom: 12 },
@@ -6141,12 +6776,15 @@ const styles = StyleSheet.create({
   bold: { fontWeight: '900', fontSize: 15 },
   divider: { height: 1, backgroundColor: '#C4B5FD', marginVertical: 8 },
   walletCard: { borderRadius: 18, padding: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', gap: 10 },
-  walletHero: { borderRadius: 18, padding: 18, backgroundColor: colors.customer, marginBottom: 14 },
-  walletHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '800', marginTop: 4, maxWidth: 210, lineHeight: 17 },
+  walletSurface: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14, gap: 13 },
+  walletHero: { borderRadius: 14, padding: 15, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  walletHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '800', marginTop: 4, lineHeight: 17 },
   walletHeroIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
-  walletBalance: { color: colors.white, fontSize: 38, fontWeight: '900', marginTop: 12 },
+  walletBalanceBlock: { marginLeft: 'auto', alignItems: 'flex-end' },
+  walletBalance: { color: colors.white, fontSize: 26, fontWeight: '900' },
   walletBalanceLabel: { color: '#EDE9FE', fontSize: 12, fontWeight: '900', marginTop: 2 },
   walletPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14, gap: 10 },
+  walletTopupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   walletSecureBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.partnerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 8 },
   walletSecureText: { color: colors.green, fontSize: 10, fontWeight: '900' },
   walletAmountRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
@@ -6157,6 +6795,9 @@ const styles = StyleSheet.create({
   walletMethodRow: { minHeight: 42, borderWidth: 1, borderColor: colors.line, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   walletMethodRowActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   walletMethodText: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  walletCoinsRow: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  walletCouponButton: { minHeight: 40, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  walletCouponText: { color: colors.customer, fontSize: 13, fontWeight: '900' },
   coinPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FEF3C7', borderRadius: 999, paddingVertical: 7, paddingHorizontal: 10 },
   coinPillText: { color: '#92400E', fontSize: 13, fontWeight: '900' },
   walletTxnRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, marginBottom: 10 },
@@ -6171,8 +6812,7 @@ const styles = StyleSheet.create({
   coinValue: { color: colors.customer, fontSize: 48, fontWeight: '900' },
   listRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
   listText: { color: colors.ink, fontWeight: '700' },
-  accountHero: { position: 'relative', borderRadius: 22, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
-  accountHeroGlow: { position: 'absolute', right: -48, top: -46, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,255,255,0.14)' },
+  accountHero: { position: 'relative', borderRadius: 18, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
   accountHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
   accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
   accountHeroSubtitle: { color: colors.white, fontSize: 19, fontWeight: '900', marginTop: 4, lineHeight: 25 },
@@ -6210,6 +6850,7 @@ const styles = StyleSheet.create({
   enterpriseContactCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 15, gap: 10, marginTop: 18 },
   savedAddressList: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, overflow: 'hidden' },
   savedAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  savedAddressRowLast: { borderBottomWidth: 0 },
   savedAddressIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   savedAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
   savedAddressSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
@@ -6272,8 +6913,8 @@ const styles = StyleSheet.create({
   secondaryButtonText: { color: colors.ink, fontWeight: '800' },
   deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 10 },
   deleteAccountButtonText: { color: colors.red, fontWeight: '900' },
-  logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
-  logoutButtonText: { color: colors.red, fontWeight: '900' },
+  logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
+  logoutButtonText: { color: colors.ink, fontWeight: '900' },
   toast: { position: 'absolute', left: 16, right: 16, bottom: 88, backgroundColor: colors.ink, borderRadius: 14, padding: 14 },
   toastText: { color: colors.white, fontWeight: '800' },
   empty: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center', gap: 12 },

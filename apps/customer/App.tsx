@@ -2023,8 +2023,11 @@ function HomeScreen({
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const [pickupSheetOpen, setPickupSheetOpen] = useState(false);
+  const [announcementIndex, setAnnouncementIndex] = useState(0);
+  const [announcementWidth, setAnnouncementWidth] = useState(0);
   const autoPickupAttemptedRef = useRef(false);
   const pickupSheetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announcementScrollRef = useRef<React.ElementRef<typeof ScrollView> | null>(null);
   const vehicleChoices = customerVehicles(data.vehicles);
   const pickupText = booking.pickup.trim();
   const pickupDisplay = pickupText || (autoPickupLoading ? copy.settingPickupLocation : copy.useCurrentLocation);
@@ -2043,6 +2046,35 @@ function HomeScreen({
     vehicle,
     accent: homeVehicleAccent(vehicle)
   }));
+  const homeAnnouncements: Array<{
+    id: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    iconColor: string;
+    title: string;
+    subtitle: string;
+  }> = [
+    {
+      id: 'instant',
+      icon: 'megaphone',
+      iconColor: colors.blue,
+      title: copy.instantBooking,
+      subtitle: `${copy.otpSecured} - ${copy.liveTracking}`
+    },
+    {
+      id: 'coins',
+      icon: 'gift',
+      iconColor: colors.amber,
+      title: copy.indieryCoins,
+      subtitle: copy.useCoinsDiscount
+    },
+    {
+      id: 'tracking',
+      icon: 'navigate-circle',
+      iconColor: colors.customer,
+      title: copy.liveTracking,
+      subtitle: copy.completedCancelledBookingsAppear
+    }
+  ];
 
   function schedulePickupSheet(delayMs = 900) {
     if (pickupSheetTimerRef.current) clearTimeout(pickupSheetTimerRef.current);
@@ -2055,6 +2087,18 @@ function HomeScreen({
   useEffect(() => () => {
     if (pickupSheetTimerRef.current) clearTimeout(pickupSheetTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    if (!announcementWidth || homeAnnouncements.length <= 1) return undefined;
+    const timer = setInterval(() => {
+      setAnnouncementIndex((current) => {
+        const next = (current + 1) % homeAnnouncements.length;
+        announcementScrollRef.current?.scrollTo({ x: next * announcementWidth, animated: true });
+        return next;
+      });
+    }, 3500);
+    return () => clearInterval(timer);
+  }, [announcementWidth, homeAnnouncements.length]);
 
   useEffect(() => {
     if (autoPickupAttemptedRef.current || pickupText) return undefined;
@@ -2190,20 +2234,42 @@ function HomeScreen({
             <Ionicons name="chevron-forward" size={14} color={colors.customer} />
           </Pressable>
         </View>
-        <View style={styles.homeAnnouncementCard}>
-          <View style={styles.homeAnnouncementIcon}>
-            <Ionicons name="megaphone" size={22} color={colors.blue} />
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.homeAnnouncementCopy}>Instant booking</Text>
-            <Text style={styles.homeAnnouncementMeta}>{copy.otpSecured} - {copy.liveTracking}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.ink} />
+        <View
+          style={styles.homeAnnouncementCarousel}
+          onLayout={(event) => setAnnouncementWidth(event.nativeEvent.layout.width)}
+        >
+          <ScrollView
+            ref={announcementScrollRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(event) => {
+              if (!announcementWidth) return;
+              setAnnouncementIndex(Math.round(event.nativeEvent.contentOffset.x / announcementWidth));
+            }}
+          >
+            {homeAnnouncements.map((item) => (
+              <Pressable
+                key={item.id}
+                style={[styles.homeAnnouncementCard, announcementWidth ? { width: announcementWidth } : null]}
+                onPress={() => onTrack()}
+              >
+                <View style={styles.homeAnnouncementIcon}>
+                  <Ionicons name={item.icon} size={22} color={item.iconColor} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.homeAnnouncementCopy}>{item.title}</Text>
+                  <Text style={styles.homeAnnouncementMeta}>{item.subtitle}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.ink} />
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
         <View style={styles.homeDots}>
-          <View style={[styles.homeDot, styles.homeDotActive]} />
-          <View style={styles.homeDot} />
-          <View style={styles.homeDot} />
+          {homeAnnouncements.map((item, index) => (
+            <View key={item.id} style={[styles.homeDot, index === announcementIndex && styles.homeDotActive]} />
+          ))}
         </View>
 
       {activeOrders.length ? (
@@ -2301,7 +2367,7 @@ function LocationPickerField({
 
   useEffect(() => {
     const query = value.trim();
-    if (!focused || selected || query.length < 3) {
+    if (!focused || query.length < 3) {
       setSuggestions([]);
       setLocalError('');
       return;
@@ -2327,7 +2393,7 @@ function LocationPickerField({
     }, 320);
 
     return () => clearTimeout(timer);
-  }, [api, focused, selected, value]);
+  }, [api, focused, value]);
 
   async function chooseSuggestion(suggestion: LocationSuggestion) {
     setLoading(true);
@@ -2372,9 +2438,7 @@ function LocationPickerField({
             setFocused(false);
             if (skipDoneTypingRef.current) {
               skipDoneTypingRef.current = false;
-              return;
             }
-            if (!suggestions.length) onDoneTyping?.(value);
           }}
           onSubmitEditing={() => onDoneTyping?.(value)}
           onChangeText={(nextValue) => {
@@ -3816,14 +3880,16 @@ function MapLocationPicker({
           </View>
         </View>
 
-        <Pressable style={styles.mapPickerCurrentButton} onPress={useCurrentLocation}>
-          {locating ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="locate" size={18} color={colors.customer} />}
-          <Text style={styles.mapPickerCurrentText}>{copy.useCurrentLocation}</Text>
-        </Pressable>
+        <View style={styles.mapPickerBottomPanel}>
+          <Pressable style={styles.mapPickerCurrentButton} onPress={useCurrentLocation}>
+            {locating ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="locate" size={18} color={colors.customer} />}
+            <Text style={styles.mapPickerCurrentText}>{copy.useCurrentLocation}</Text>
+          </Pressable>
 
-        <View style={styles.mapPickerActions}>
-          <SecondaryButton title={copy.cancel} icon="close" onPress={onClose} />
-          <PrimaryButton title={copy.confirmLocation} icon="checkmark" onPress={confirmPin} />
+          <View style={styles.mapPickerActions}>
+            <SecondaryButton title={copy.cancel} icon="close" onPress={onClose} />
+            <PrimaryButton title={copy.confirmLocation} icon="checkmark" onPress={confirmPin} />
+          </View>
         </View>
       </SafeAreaView>
     </Modal>
@@ -5644,6 +5710,7 @@ const styles = StyleSheet.create({
   homeAnnouncementTitle: { color: colors.muted, fontSize: 13, fontWeight: '900' },
   homeSeeAllButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   homeSeeAllText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  homeAnnouncementCarousel: { borderRadius: 16, overflow: 'hidden' },
   homeAnnouncementCard: {
     minHeight: 72,
     borderRadius: 16,
@@ -5892,7 +5959,8 @@ const styles = StyleSheet.create({
   mapPickerControls: { alignItems: 'center', gap: 8, marginBottom: 12 },
   mapPickerControlMiddle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   mapPickerControlButton: { width: 42, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
-  mapPickerCurrentButton: { minHeight: 38, borderRadius: 13, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 14 },
+  mapPickerBottomPanel: { gap: 10, paddingTop: 2, paddingBottom: Platform.OS === 'android' ? 18 : 0 },
+  mapPickerCurrentButton: { minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
   mapPickerCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
   mapPickerActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   savedAddressStrip: { marginTop: -4, marginBottom: 12 },

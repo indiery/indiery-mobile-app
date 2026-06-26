@@ -2,7 +2,9 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -13,9 +15,9 @@ import {
   StatusBar,
   Text,
   TextInput,
-  View,
-  Linking
+  View
 } from 'react-native';
+import type { ImageSourcePropType } from 'react-native';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -24,6 +26,10 @@ import RazorpayCheckout from 'react-native-razorpay';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
+import bikeVehicleImage from './assets/bike.png';
+import loaderVehicleImage from './assets/loader.png';
+import mini500VehicleImage from './assets/mini500.png';
+import mini700VehicleImage from './assets/mini700.png';
 import {
   colors,
   CreateOrderInput,
@@ -53,6 +59,11 @@ const apiBaseUrl =
   process?.env?.EXPO_PUBLIC_API_URL ||
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
   (__DEV__ ? 'http://localhost:4000/api' : '');
+const googleMapsApiKey =
+  process?.env?.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process?.env?.GOOGLE_MAPS_API_KEY ||
+  (Constants.expoConfig?.extra?.googleMapsApiKey as string | undefined) ||
+  '';
 const allowInsecureApiBaseUrl =
   process?.env?.EXPO_PUBLIC_ALLOW_INSECURE_API_URL === 'true' ||
   Constants.expoConfig?.extra?.allowInsecureApiBaseUrl === true;
@@ -80,6 +91,16 @@ Notifications.setNotificationHandler({
 type Tab = 'home' | 'book' | 'orders' | 'wallet' | 'account';
 type ServiceCategory = 'bike' | 'truck' | 'movers' | 'enterprise';
 type AppLanguage = 'en' | 'hi';
+type CustomerAccountPage =
+  | 'overview'
+  | 'personal'
+  | 'addresses'
+  | 'wallet'
+  | 'language'
+  | 'support'
+  | 'enterprise'
+  | 'legal'
+  | LegalPolicy['id'];
 type BookingStop = {
   id: string;
   label: string;
@@ -125,6 +146,12 @@ const restrictedGoodsItems = [
 ];
 const maxExtraStops = 3;
 const customerVehicleCodes = ['bike', 'loader90', 'mini500', 'mini750'];
+const vehicleArtSources: Record<string, ImageSourcePropType> = {
+  bike: bikeVehicleImage,
+  loader90: loaderVehicleImage,
+  mini500: mini500VehicleImage,
+  mini750: mini700VehicleImage
+};
 type PorterVehicleRule = {
   maxWeightKg: number;
   minWeightKg?: number;
@@ -844,6 +871,25 @@ function visibleTripOtp(order?: Order, cachedTripOtp?: TripOtp): TripOtp | undef
 }
 
 const defaultMapCenter = { lat: 26.8467, lng: 80.9462 };
+
+function hasValidCoordinates(lat?: number, lng?: number) {
+  return (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
+function assertLocationHasCoordinates(location: LocationDetails) {
+  if (!hasValidCoordinates(location.lat, location.lng)) {
+    throw new Error('Location coordinates are invalid');
+  }
+}
 
 function regionsAreClose(a: Region, b: Region) {
   return (
@@ -2202,11 +2248,20 @@ function HomeScreen({
 }
 
 function HomeVehicleVisual({ vehicle, color }: { vehicle: Vehicle; color: string }) {
+  const source = vehicleArtSources[vehicle.code] ?? mini700VehicleImage;
   return (
     <View style={styles.homeServiceArt}>
       <View style={[styles.homeServiceArtHalo, { backgroundColor: `${color}1F` }]} />
-      <Ionicons name={vehicleIcon(vehicle)} size={48} color={color} />
       <View style={[styles.homeServiceArtShadow, { backgroundColor: color }]} />
+      <Image
+        source={source}
+        resizeMode="contain"
+        style={[
+          styles.homeVehicleImage,
+          vehicle.code === 'bike' && styles.homeVehicleImageBike,
+          vehicle.code === 'loader90' && styles.homeVehicleImageLoader
+        ]}
+      />
     </View>
   );
 }
@@ -2279,6 +2334,7 @@ function LocationPickerField({
     setLocalError('');
     try {
       const result = await api.locationDetails(suggestion.placeId, sessionTokenRef.current);
+      assertLocationHasCoordinates(result.location);
       onSelect(result.location);
       setSuggestions([]);
       setFocused(false);
@@ -2514,13 +2570,21 @@ function VehicleFareOption({
 }
 
 function VehicleMiniArt({ vehicle, muted, selected }: { vehicle: Vehicle; muted?: boolean; selected?: boolean }) {
-  const isBike = vehicle.code === 'bike';
-  const accent = muted ? colors.muted : selected ? colors.blue : colors.customer;
+  const source = vehicleArtSources[vehicle.code] ?? mini700VehicleImage;
+  const shadowColor = muted ? colors.muted : selected ? colors.blue : colors.customer;
   return (
     <View style={styles.vehicleMiniArt}>
-      <View style={[styles.vehicleMiniShadow, { backgroundColor: accent }]} />
-      <Ionicons name={isBike ? 'bicycle' : 'car-sport'} size={isBike ? 28 : 31} color={accent} />
-      {!isBike ? <View style={[styles.vehicleMiniBox, { borderColor: accent }]} /> : null}
+      <View style={[styles.vehicleMiniShadow, { backgroundColor: shadowColor }]} />
+      <Image
+        source={source}
+        resizeMode="contain"
+        style={[
+          styles.vehicleMiniImage,
+          vehicle.code === 'bike' && styles.vehicleMiniImageBike,
+          vehicle.code === 'loader90' && styles.vehicleMiniImageLoader,
+          muted && styles.vehicleMiniImageMuted
+        ]}
+      />
     </View>
   );
 }
@@ -3553,6 +3617,7 @@ function MapLocationPicker({
   const sessionTokenRef = useRef(`map-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const lat = region.latitude;
   const lng = region.longitude;
+  const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
 
   useEffect(() => {
     const search = query.trim();
@@ -3588,6 +3653,7 @@ function MapLocationPicker({
     setLocalError('');
     try {
       const result = await api.locationDetails(suggestion.placeId, sessionTokenRef.current);
+      assertLocationHasCoordinates(result.location);
       const nextRegion = {
         ...region,
         latitude: result.location.lat,
@@ -3632,7 +3698,7 @@ function MapLocationPicker({
 
   function moveMapToRegion(nextRegion: Region) {
     setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
-    mapRef.current?.animateToRegion(nextRegion, 240);
+    if (canRenderNativeMap) mapRef.current?.animateToRegion(nextRegion, 240);
   }
 
   function updatePinFromMap(nextRegion: Region) {
@@ -3654,6 +3720,10 @@ function MapLocationPicker({
   }
 
   function confirmPin() {
+    if (!hasValidCoordinates(lat, lng)) {
+      setLocalError('Select a valid location first');
+      return;
+    }
     onConfirm({
       placeId: `map-${lat.toFixed(6)}-${lng.toFixed(6)}`,
       label: pinLabel || 'Pinned location',
@@ -3706,25 +3776,36 @@ function MapLocationPicker({
         ) : null}
 
         <View style={styles.mapPickerCanvas}>
-          <MapView
-            ref={mapRef}
-            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-            style={styles.mapPickerRealMap}
-            initialRegion={initialRegion}
-            onRegionChangeComplete={updatePinFromMap}
-          >
-            <Marker
-              draggable
-              coordinate={{ latitude: region.latitude, longitude: region.longitude }}
-              onDragEnd={(event) => updatePinFromMarker(event.nativeEvent.coordinate.latitude, event.nativeEvent.coordinate.longitude)}
-            />
-          </MapView>
-          <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
-            <Ionicons name="location" size={34} color={colors.customer} />
-          </View>
-          <View pointerEvents="none" style={styles.mapPickerHint}>
-            <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
-          </View>
+          {canRenderNativeMap ? (
+            <>
+              <MapView
+                ref={mapRef}
+                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                style={styles.mapPickerRealMap}
+                initialRegion={initialRegion}
+                onRegionChangeComplete={updatePinFromMap}
+              >
+                <Marker
+                  draggable
+                  coordinate={{ latitude: region.latitude, longitude: region.longitude }}
+                  onDragEnd={(event) => updatePinFromMarker(event.nativeEvent.coordinate.latitude, event.nativeEvent.coordinate.longitude)}
+                />
+              </MapView>
+              <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
+                <Ionicons name="location" size={34} color={colors.customer} />
+              </View>
+              <View pointerEvents="none" style={styles.mapPickerHint}>
+                <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.mapPickerFallback}>
+              <Ionicons name="map-outline" size={32} color={colors.customer} />
+              <Text style={styles.mapPickerFallbackText}>
+                Map preview needs Google Maps setup. Search a place or use current location to continue.
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.mapPickerSelectedCard}>
@@ -4298,31 +4379,36 @@ function AccountScreen({
   const copy = useCopy();
   const completedOrders = data.orders.filter((order) => order.status === 'delivered').length;
   const activeOrders = data.orders.filter((order) => !['delivered', 'cancelled'].includes(order.status)).length;
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const savedAddresses = data.user.customerProfile?.savedAddresses ?? [];
+  const coins = data.user.customerProfile?.coins ?? data.wallet.coins;
+  const [page, setPage] = useState<CustomerAccountPage>('overview');
   const [name, setName] = useState(data.user.name);
   const [email, setEmail] = useState(data.user.email || '');
   const [city, setCity] = useState(data.user.city);
   const [localError, setLocalError] = useState('');
-  const [supportOpen, setSupportOpen] = useState(false);
-  const [languageOpen, setLanguageOpen] = useState(false);
-  const [enterpriseOpen, setEnterpriseOpen] = useState(false);
   const selectedLanguageLabel = languageNativeLabel(language);
+  const openPolicy = legalPolicies.find((policy) => policy.id === page);
 
   useEffect(() => {
-    if (!detailsOpen) {
+    if (page !== 'personal') {
       setName(data.user.name);
       setEmail(data.user.email || '');
       setCity(data.user.city);
       setLocalError('');
     }
-  }, [data.user.city, data.user.email, data.user.name, detailsOpen]);
+  }, [data.user.city, data.user.email, data.user.name, page]);
+
+  function openPage(nextPage: CustomerAccountPage) {
+    setLocalError('');
+    setPage(nextPage);
+  }
 
   function cancelEditDetails() {
     setName(data.user.name);
     setEmail(data.user.email || '');
     setCity(data.user.city);
     setLocalError('');
-    setDetailsOpen(false);
+    setPage('overview');
   }
 
   async function submitDetails() {
@@ -4343,27 +4429,148 @@ function AccountScreen({
     }
     setLocalError('');
     await onSaveProfile({ name: nextName, email: nextEmail, city: nextCity });
-    setDetailsOpen(false);
+    setPage('overview');
   }
 
-  if (enterpriseOpen) {
-    return <EnterpriseInfoScreen onBack={() => setEnterpriseOpen(false)} />;
+  if (page === 'enterprise') {
+    return <EnterpriseInfoScreen onBack={() => openPage('overview')} />;
+  }
+
+  if (openPolicy) {
+    return <AccountPolicyDetail policy={openPolicy} onBack={() => openPage('legal')} />;
+  }
+
+  if (page !== 'overview') {
+    const title =
+      page === 'personal' ? copy.personalDetails
+        : page === 'addresses' ? copy.savedAddresses
+          : page === 'wallet' ? copy.indieryCoinsMenu
+            : page === 'language' ? copy.changeLanguage
+              : page === 'support' ? copy.helpSupport
+                : copy.policiesLegal;
+    const subtitle =
+      page === 'personal' ? copy.mobileNumber
+        : page === 'addresses' ? copy.savePickupDropAddresses
+          : page === 'wallet' ? copy.useCoinsDiscount
+            : page === 'language' ? selectedLanguageLabel
+              : page === 'support' ? copy.supportSubtitle
+                : copy.updated;
+
+    return (
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <AccountDetailHeader title={title} subtitle={subtitle} onBack={() => openPage('overview')} />
+
+          {page === 'personal' ? (
+            <View style={styles.accountDetailCard}>
+              <View style={styles.accountProfilePreview}>
+                <View style={styles.accountAvatarSmall}>
+                  <Text style={styles.accountAvatarText}>{data.user.initials}</Text>
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.accountMenuTitle}>{data.user.name}</Text>
+                  <Text style={styles.accountMenuSubtitle}>{data.user.phone}</Text>
+                </View>
+                <View style={styles.accountVerifiedBadge}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.green} />
+                  <Text style={styles.accountVerifiedText}>{copy.verified}</Text>
+                </View>
+              </View>
+              <Field label={copy.name} value={name} onChangeText={setName} />
+              <Field label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" />
+              <Field label={copy.city} value={city} onChangeText={setCity} />
+              <Field label={copy.mobileNumber} value={data.user.phone} editable={false} keyboardType="phone-pad" />
+              <View style={styles.accountInfoStrip}>
+                <Ionicons name="shield-checkmark" size={19} color={colors.customer} />
+                <Text style={styles.accountInfoText}>Your mobile number is linked to this customer account.</Text>
+              </View>
+              {localError ? <Text style={styles.accountEditError}>{localError}</Text> : null}
+              <View style={styles.accountEditActions}>
+                <SecondaryButton title={copy.cancel} icon="close" onPress={cancelEditDetails} />
+                <PrimaryButton title={busy ? copy.saving : copy.save} icon="checkmark" onPress={submitDetails} />
+              </View>
+            </View>
+          ) : null}
+
+          {page === 'addresses' ? (
+            <SavedAddressesSection addresses={savedAddresses} busy={busy} onDeleteAddress={onDeleteAddress} />
+          ) : null}
+
+          {page === 'wallet' ? (
+            <>
+              <View style={styles.accountWalletHero}>
+                <View style={styles.walletHeroIcon}>
+                  <Ionicons name="gift" size={22} color={colors.white} />
+                </View>
+                <Text style={styles.accountWalletValue}>{coins}</Text>
+                <Text style={styles.accountWalletLabel}>{copy.coinsAvailable}</Text>
+                <Text style={styles.accountWalletText}>{copy.useCoinsDiscount}</Text>
+              </View>
+              <View style={styles.accountBalanceCard}>
+                <View>
+                  <Text style={styles.accountMenuSubtitle}>{copy.cashBalance}</Text>
+                  <Text style={styles.accountBalanceValue}>{money(data.wallet.balance)}</Text>
+                </View>
+                <View style={styles.coinPill}>
+                  <Ionicons name="gift" size={15} color={colors.amber} />
+                  <Text style={styles.coinPillText}>{coins}</Text>
+                </View>
+              </View>
+              <SectionTitle title={copy.coinRules} />
+              {[copy.coinRuleEarn, copy.coinRuleUse, copy.coinRuleRefunds].map((item) => (
+                <View key={item} style={styles.listRow}>
+                  <Ionicons name="checkmark-circle" size={18} color={colors.green} />
+                  <Text style={styles.listText}>{item}</Text>
+                </View>
+              ))}
+              <SectionTitle title={copy.coinActivity} />
+              {data.wallet.coinLedger.length ? (
+                data.wallet.coinLedger.map((item) => <WalletTransactionRow key={item.id} item={item} isCoins />)
+              ) : (
+                <View style={styles.savedAddressEmpty}>
+                  <Ionicons name="gift-outline" size={24} color={colors.muted} />
+                  <Text style={styles.savedAddressEmptyTitle}>{copy.noCoinActivity}</Text>
+                </View>
+              )}
+            </>
+          ) : null}
+
+          {page === 'language' ? <LanguagePanel selected={language} onSelect={onChangeLanguage} /> : null}
+
+          {page === 'support' ? <SupportPanel /> : null}
+
+          {page === 'legal' ? <PolicyList onOpenPolicy={(policyId) => openPage(policyId)} /> : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
   }
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.accountHero}>
-        <View style={styles.accountAvatar}>
-          <Text style={styles.accountAvatarText}>{data.user.initials}</Text>
+        <View style={styles.accountHeroGlow} />
+        <View style={styles.accountHeroTop}>
+          <View>
+            <Text style={styles.accountEyebrow}>{copy.account}</Text>
+            <Text style={styles.accountHeroSubtitle}>Profile, places, rewards, and support</Text>
+          </View>
+          <View style={styles.accountVerifiedBadge}>
+            <Ionicons name="checkmark-circle" size={14} color={colors.green} />
+            <Text style={styles.accountVerifiedText}>{copy.verified}</Text>
+          </View>
         </View>
-        <View style={styles.flex}>
-          <Text style={styles.accountName}>{data.user.name}</Text>
-          <Text style={styles.accountSubtext}>{data.user.phone}</Text>
-          <Text style={styles.accountSubtext}>{data.user.city}</Text>
-        </View>
-        <View style={styles.accountVerifiedBadge}>
-          <Ionicons name="checkmark-circle" size={14} color={colors.green} />
-          <Text style={styles.accountVerifiedText}>{copy.verified}</Text>
+        <View style={styles.accountIdentityCard}>
+          <View style={styles.accountAvatar}>
+            <Text style={styles.accountAvatarText}>{data.user.initials}</Text>
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.accountName}>{data.user.name}</Text>
+            <Text style={styles.accountSubtext}>{data.user.phone}</Text>
+            <Text style={styles.accountSubtext}>{data.user.city}</Text>
+          </View>
+          <Pressable style={styles.accountEditButton} onPress={() => openPage('personal')}>
+            <Ionicons name="create-outline" size={18} color={colors.customer} />
+          </Pressable>
         </View>
       </View>
 
@@ -4382,7 +4589,7 @@ function AccountScreen({
         </View>
       </View>
 
-      <Pressable style={styles.enterpriseCard} onPress={() => setEnterpriseOpen(true)}>
+      <Pressable style={styles.enterpriseCard} onPress={() => openPage('enterprise')}>
         <View style={styles.enterpriseIcon}>
           <Ionicons name="business" size={24} color={colors.white} />
         </View>
@@ -4393,60 +4600,46 @@ function AccountScreen({
         <Ionicons name="chevron-forward" size={19} color={colors.customer} />
       </Pressable>
 
-      <SavedAddressesSection
-        addresses={data.user.customerProfile?.savedAddresses ?? []}
-        busy={busy}
-        onDeleteAddress={onDeleteAddress}
-      />
-
       <SectionTitle title={copy.account} />
       <View style={styles.accountMenu}>
         <AccountMenuRow
           icon="person-outline"
           title={copy.personalDetails}
-          subtitle={data.user.email || copy.emailNotAdded}
-          expanded={detailsOpen}
-          onPress={() => setDetailsOpen((current) => !current)}
+          subtitle={`${data.user.email || copy.emailNotAdded} - ${data.user.city}`}
+          onPress={() => openPage('personal')}
         />
-        <AccountMenuRow icon="location-outline" title={copy.savedCity} subtitle={data.user.city} onPress={() => setDetailsOpen(true)} />
-        <AccountMenuRow icon="wallet-outline" title={copy.indieryCoinsMenu} subtitle={`${data.user.customerProfile?.coins ?? 0} ${copy.coinsAvailable}`} />
+        <AccountMenuRow
+          icon="bookmark-outline"
+          title={copy.savedAddresses}
+          subtitle={`${savedAddresses.length} saved places`}
+          onPress={() => openPage('addresses')}
+        />
+        <AccountMenuRow
+          icon="wallet-outline"
+          title={copy.indieryCoinsMenu}
+          subtitle={`${coins} ${copy.coinsAvailable}`}
+          onPress={() => openPage('wallet')}
+        />
         <AccountMenuRow
           icon="language-outline"
           title={copy.changeLanguage}
           subtitle={selectedLanguageLabel}
-          expanded={languageOpen}
-          onPress={() => setLanguageOpen((current) => !current)}
+          onPress={() => openPage('language')}
         />
         <AccountMenuRow
           icon="headset-outline"
           title={copy.helpSupport}
           subtitle={copy.supportSubtitle}
-          expanded={supportOpen}
-          onPress={() => setSupportOpen((current) => !current)}
+          onPress={() => openPage('support')}
+        />
+        <AccountMenuRow
+          icon="document-text-outline"
+          title={copy.policiesLegal}
+          subtitle={legalPolicies.map((policy) => policy.title).join(', ')}
+          onPress={() => openPage('legal')}
+          last
         />
       </View>
-
-      {detailsOpen ? (
-        <View style={styles.accountEditCard}>
-          <Field label={copy.name} value={name} onChangeText={setName} />
-          <Field label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" />
-          <Field label={copy.city} value={city} onChangeText={setCity} />
-          <Field label={copy.mobileNumber} value={data.user.phone} editable={false} keyboardType="phone-pad" />
-          {localError ? <Text style={styles.accountEditError}>{localError}</Text> : null}
-          <View style={styles.accountEditActions}>
-            <SecondaryButton title={copy.cancel} icon="close" onPress={cancelEditDetails} />
-            <PrimaryButton title={busy ? copy.saving : copy.save} icon="checkmark" onPress={submitDetails} />
-          </View>
-        </View>
-      ) : null}
-
-      {languageOpen ? (
-        <LanguagePanel selected={language} onSelect={onChangeLanguage} />
-      ) : null}
-
-      {supportOpen ? <SupportPanel /> : null}
-
-      <PolicyList />
 
       <View style={styles.accountDangerZone}>
         <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
@@ -4459,6 +4652,21 @@ function AccountScreen({
         </Pressable>
       </View>
     </ScrollView>
+  );
+}
+
+function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+  return (
+    <View style={styles.accountDetailHeader}>
+      <Pressable style={styles.mapPickerClose} onPress={onBack}>
+        <Ionicons name="arrow-back" size={21} color={colors.ink} />
+      </Pressable>
+      <View style={styles.flex}>
+        <Text style={styles.eyebrowDark}>{title.toUpperCase()}</Text>
+        <Text style={styles.accountDetailTitle}>{title}</Text>
+        <Text style={styles.accountDetailSubtitle}>{subtitle}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -4664,17 +4872,17 @@ function AccountMenuRow({
   icon,
   title,
   subtitle,
-  expanded,
-  onPress
+  onPress,
+  last
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
-  expanded?: boolean;
   onPress?: () => void;
+  last?: boolean;
 }) {
   return (
-    <Pressable style={styles.accountMenuRow} onPress={onPress} disabled={!onPress}>
+    <Pressable style={[styles.accountMenuRow, last && styles.accountMenuRowLast]} onPress={onPress} disabled={!onPress}>
       <View style={styles.accountMenuIcon}>
         <Ionicons name={icon} size={18} color={colors.customer} />
       </View>
@@ -4682,14 +4890,13 @@ function AccountMenuRow({
         <Text style={styles.accountMenuTitle}>{title}</Text>
         <Text style={styles.accountMenuSubtitle}>{subtitle}</Text>
       </View>
-      <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={17} color={colors.muted} />
+      <Ionicons name="chevron-forward" size={17} color={colors.muted} />
     </Pressable>
   );
 }
 
-function PolicyList() {
+function PolicyList({ onOpenPolicy }: { onOpenPolicy: (policyId: LegalPolicy['id']) => void }) {
   const copy = useCopy();
-  const [openPolicy, setOpenPolicy] = useState<LegalPolicy['id'] | null>(null);
 
   return (
     <View style={styles.policyList}>
@@ -4698,8 +4905,7 @@ function PolicyList() {
         <PolicyCard
           key={policy.id}
           policy={policy}
-          expanded={openPolicy === policy.id}
-          onToggle={() => setOpenPolicy((current) => (current === policy.id ? null : policy.id))}
+          onPress={() => onOpenPolicy(policy.id)}
         />
       ))}
     </View>
@@ -4708,12 +4914,10 @@ function PolicyList() {
 
 function PolicyCard({
   policy,
-  expanded,
-  onToggle
+  onPress
 }: {
   policy: LegalPolicy;
-  expanded: boolean;
-  onToggle: () => void;
+  onPress: () => void;
 }) {
   const copy = useCopy();
   const icons: Record<LegalPolicy['id'], keyof typeof Ionicons.glyphMap> = {
@@ -4724,7 +4928,7 @@ function PolicyCard({
 
   return (
     <View style={styles.policyCard}>
-      <Pressable style={styles.policyHeader} onPress={onToggle}>
+      <Pressable style={styles.policyHeader} onPress={onPress}>
         <View style={styles.policyIcon}>
           <Ionicons name={icons[policy.id]} size={18} color={colors.customer} />
         </View>
@@ -4733,21 +4937,30 @@ function PolicyCard({
           <Text style={styles.mutedSmall}>{copy.updated} {policy.updatedAt}</Text>
           <Text style={styles.policySummary}>{policy.summary}</Text>
         </View>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
       </Pressable>
-      {expanded ? (
-        <View style={styles.policyBody}>
-          {policy.sections.map((section) => (
-            <View key={section.heading} style={styles.policySection}>
-              <Text style={styles.policyHeading}>{section.heading}</Text>
-              {section.body.map((line) => (
-                <Text key={line} style={styles.policyText}>{line}</Text>
-              ))}
-            </View>
+    </View>
+  );
+}
+
+function AccountPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: () => void }) {
+  const copy = useCopy();
+  return (
+    <ScrollView contentContainerStyle={styles.scroll}>
+      <AccountDetailHeader title={policy.title} subtitle={`${copy.updated} ${policy.updatedAt}`} onBack={onBack} />
+      <View style={styles.policyDetailHero}>
+        <Ionicons name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'} size={24} color={colors.customer} />
+        <Text style={styles.policyDetailSummary}>{policy.summary}</Text>
+      </View>
+      {policy.sections.map((section) => (
+        <View key={section.heading} style={styles.policyDetailSection}>
+          <Text style={styles.policyHeading}>{section.heading}</Text>
+          {section.body.map((line) => (
+            <Text key={line} style={styles.policyText}>{line}</Text>
           ))}
         </View>
-      ) : null}
-    </View>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -5404,8 +5617,11 @@ const styles = StyleSheet.create({
     elevation: 1
   },
   homeServiceArt: { height: 76, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  homeServiceArtHalo: { position: 'absolute', width: 88, height: 54, borderRadius: 28, opacity: 0.95 },
-  homeServiceArtShadow: { position: 'absolute', bottom: 7, width: 58, height: 5, borderRadius: 5, opacity: 0.18 },
+  homeServiceArtHalo: { position: 'absolute', width: 104, height: 58, borderRadius: 29, opacity: 0.95 },
+  homeServiceArtShadow: { position: 'absolute', bottom: 7, width: 64, height: 5, borderRadius: 5, opacity: 0.18 },
+  homeVehicleImage: { width: 96, height: 70 },
+  homeVehicleImageBike: { width: 92, height: 72 },
+  homeVehicleImageLoader: { width: 90, height: 66, borderRadius: 10 },
   homeServiceFooter: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   homeServiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
   homeServiceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 15, marginTop: 3 },
@@ -5655,6 +5871,8 @@ const styles = StyleSheet.create({
   mapPickerSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginTop: 8, overflow: 'hidden', maxHeight: 210 },
   mapPickerCanvas: { flex: 1, minHeight: 300, borderRadius: 18, backgroundColor: '#EAF5EF', overflow: 'hidden', marginTop: 14, marginBottom: 12 },
   mapPickerRealMap: { flex: 1 },
+  mapPickerFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24, backgroundColor: '#EFF6FF' },
+  mapPickerFallbackText: { color: colors.ink, fontSize: 13, fontWeight: '800', lineHeight: 18, textAlign: 'center' },
   mapPickerPinOverlay: { position: 'absolute', left: '50%', top: '50%', width: 44, height: 44, marginLeft: -22, marginTop: -40, alignItems: 'center', justifyContent: 'center' },
   mapPickerHint: { position: 'absolute', left: 16, right: 16, bottom: 14, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   mapPickerHintText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
@@ -5783,7 +6001,7 @@ const styles = StyleSheet.create({
   vehicleFareOption: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
   vehicleFareOptionSelected: { minHeight: 104, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderRadius: 16, margin: 8 },
   vehicleFareOptionDisabled: { opacity: 0.55, backgroundColor: colors.faint },
-  vehicleFareOptionIcon: { width: 58, height: 54, borderRadius: 16, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  vehicleFareOptionIcon: { width: 52, height: 44, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   vehicleFareOptionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
   vehicleFareOptionTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
   vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 3 },
@@ -5791,9 +6009,12 @@ const styles = StyleSheet.create({
   vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '900' },
   vehicleNewBadge: { borderRadius: 7, backgroundColor: '#F97316', paddingHorizontal: 6, paddingVertical: 2 },
   vehicleNewBadgeText: { color: colors.white, fontSize: 9, fontWeight: '900' },
-  vehicleMiniArt: { width: 52, height: 46, alignItems: 'center', justifyContent: 'center' },
-  vehicleMiniShadow: { position: 'absolute', bottom: 6, width: 38, height: 5, borderRadius: 5, opacity: 0.16 },
-  vehicleMiniBox: { position: 'absolute', right: 6, top: 9, width: 19, height: 15, borderWidth: 1.5, borderRadius: 4, backgroundColor: colors.white },
+  vehicleMiniArt: { width: 50, height: 40, alignItems: 'center', justifyContent: 'center' },
+  vehicleMiniShadow: { position: 'absolute', bottom: 2, width: 34, height: 4, borderRadius: 4, opacity: 0.14 },
+  vehicleMiniImage: { width: 48, height: 38 },
+  vehicleMiniImageBike: { width: 46, height: 39 },
+  vehicleMiniImageLoader: { width: 46, height: 34, borderRadius: 8 },
+  vehicleMiniImageMuted: { opacity: 0.5 },
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginBottom: 8 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },
@@ -5882,13 +6103,20 @@ const styles = StyleSheet.create({
   coinValue: { color: colors.customer, fontSize: 48, fontWeight: '900' },
   listRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
   listText: { color: colors.ink, fontWeight: '700' },
-  accountHero: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16 },
+  accountHero: { position: 'relative', borderRadius: 22, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
+  accountHeroGlow: { position: 'absolute', right: -48, top: -46, width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,255,255,0.14)' },
+  accountHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
+  accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  accountHeroSubtitle: { color: colors.white, fontSize: 19, fontWeight: '900', marginTop: 4, lineHeight: 25 },
+  accountIdentityCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.94)', padding: 12 },
   accountAvatar: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  accountAvatarSmall: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '900' },
   accountName: { color: colors.ink, fontSize: 18, fontWeight: '900' },
   accountSubtext: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
   accountVerifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
   accountVerifiedText: { color: colors.green, fontSize: 10, fontWeight: '900' },
+  accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   accountStatsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   accountStatBox: { flex: 1, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
   accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '900' },
@@ -5921,8 +6149,22 @@ const styles = StyleSheet.create({
   savedAddressDeleteButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
   savedAddressEmpty: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16, alignItems: 'center', gap: 5 },
   savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  accountDetailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  accountDetailTitle: { color: colors.ink, fontSize: 21, fontWeight: '900', marginTop: 2 },
+  accountDetailSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
+  accountDetailCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
+  accountProfilePreview: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 12, marginBottom: 14 },
+  accountInfoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginBottom: 12 },
+  accountInfoText: { flex: 1, color: colors.customer, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  accountWalletHero: { alignItems: 'center', borderRadius: 22, backgroundColor: colors.customer, padding: 18, marginBottom: 14 },
+  accountWalletValue: { color: colors.white, fontSize: 42, fontWeight: '900', marginTop: 10 },
+  accountWalletLabel: { color: '#EDE9FE', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
+  accountWalletText: { color: '#EDE9FE', fontSize: 12, fontWeight: '800', textAlign: 'center', lineHeight: 17, marginTop: 8 },
+  accountBalanceCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
+  accountBalanceValue: { color: colors.ink, fontSize: 22, fontWeight: '900', marginTop: 2 },
   accountMenu: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, overflow: 'hidden' },
   accountMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  accountMenuRowLast: { borderBottomWidth: 0 },
   accountMenuIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   accountMenuTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
   accountMenuSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
@@ -5946,6 +6188,9 @@ const styles = StyleSheet.create({
   policySummary: { color: colors.ink, fontSize: 12, fontWeight: '700', marginTop: 5, lineHeight: 17 },
   policyBody: { borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 14, paddingBottom: 12, backgroundColor: '#FAFAFE' },
   policySection: { marginTop: 12 },
+  policyDetailHero: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 15, marginBottom: 12, gap: 8 },
+  policyDetailSummary: { color: colors.ink, fontSize: 13, fontWeight: '800', lineHeight: 19 },
+  policyDetailSection: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
   policyHeading: { color: colors.customer, fontSize: 13, fontWeight: '900', marginBottom: 4 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
   tabs: { height: 76, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white, paddingBottom: 8 },

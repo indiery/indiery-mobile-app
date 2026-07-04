@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -26,6 +27,7 @@ import RazorpayCheckout from 'react-native-razorpay';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
+import indieryLogoImage from './assets/indiery-logo.png';
 import bikeVehicleImage from './assets/bike.png';
 import loaderVehicleImage from './assets/loader.png';
 import mini500VehicleImage from './assets/mini500.png';
@@ -174,6 +176,7 @@ const enCopy = {
   loading: 'Loading Indiery',
   continue: 'Continue',
   back: 'Back',
+  pressBackAgainToExit: 'Press back again to exit',
   cancel: 'Cancel',
   save: 'Save',
   saving: 'Saving',
@@ -681,6 +684,14 @@ function useLanguage() {
   return useContext(LanguageContext);
 }
 
+function useAndroidBackHandler(onBack: () => boolean, dependencies: React.DependencyList) {
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => subscription.remove();
+  }, dependencies);
+}
+
 function languageNativeLabel(language: AppLanguage) {
   return language === 'hi' ? appCopy.hi.languageHindiNative : appCopy.en.languageEnglish;
 }
@@ -1120,6 +1131,7 @@ async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (messag
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
+  const exitBackPressedAtRef = useRef(0);
   const [tab, setTab] = useState<Tab>('home');
   const [data, setData] = useState<CustomerBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1163,6 +1175,27 @@ export default function App() {
       setSelectedActiveOrderId(activeOrders[0].id);
     }
   }, [activeOrderIds, data?.orders.length, selectedActiveOrderId]);
+
+  useAndroidBackHandler(() => {
+    if (loading || !data) return false;
+    if (pickupDetailsMode) {
+      exitBackPressedAtRef.current = 0;
+      setPickupDetailsMode(null);
+      return true;
+    }
+    if (pickupSearchOpen) {
+      exitBackPressedAtRef.current = 0;
+      setPickupSearchOpen(false);
+      return true;
+    }
+    if (needsCustomerProfile(data.user)) return confirmExitFromRoot();
+    if (tab === 'wallet') {
+      goHomeFromBack();
+      return true;
+    }
+    if (tab !== 'home') return false;
+    return confirmExitFromRoot();
+  }, [loading, data, pickupDetailsMode, pickupSearchOpen, tab, language]);
 
   async function boot() {
     setLoading(true);
@@ -1254,6 +1287,19 @@ export default function App() {
   function showToast(message: string) {
     setToast(message.includes('à¤') ? copyFor('hi', 'languageSetHindi') : message);
     setTimeout(() => setToast(''), 2600);
+  }
+
+  function confirmExitFromRoot() {
+    const now = Date.now();
+    if (now - exitBackPressedAtRef.current < 1800) return false;
+    exitBackPressedAtRef.current = now;
+    showToast(copyFor(language, 'pressBackAgainToExit'));
+    return true;
+  }
+
+  function goHomeFromBack() {
+    exitBackPressedAtRef.current = 0;
+    setTab('home');
   }
 
   async function estimateNow(nextStep = step, vehicleId = booking.vehicleId) {
@@ -1677,6 +1723,7 @@ export default function App() {
             onSaveAddress={addSavedAddress}
             estimateNow={estimateNow}
             placeOrder={placeOrder}
+            onBackToHome={goHomeFromBack}
           />
         )}
         {tab === 'orders' && (
@@ -1693,6 +1740,7 @@ export default function App() {
             onDetailOrderRequestHandled={() => setRequestedOrderDetailId(undefined)}
             onShare={shareActiveOrder}
             onCancel={cancelActiveOrder}
+            onBackToHome={goHomeFromBack}
           />
         )}
         {tab === 'wallet' && (
@@ -1734,6 +1782,7 @@ export default function App() {
             onDeleteAddress={deleteSavedAddress}
             onLogout={logout}
             onRequestAccountDeletion={requestAccountDeletion}
+            onBackToHome={goHomeFromBack}
           />
         )}
       </View>
@@ -1793,6 +1842,14 @@ function LoginScreen({
   useEffect(() => {
     setError(initialError);
   }, [initialError]);
+
+  useAndroidBackHandler(() => {
+    if (!confirmation) return false;
+    setConfirmation(null);
+    setCode('');
+    setError('');
+    return true;
+  }, [confirmation]);
 
   async function sendOtp() {
     setBusy(true);
@@ -1867,10 +1924,7 @@ function LoginHero({ title, caption }: { title: string; caption: string }) {
     <View style={styles.loginHero}>
       <View style={styles.loginSkyGlow} />
       <View style={styles.loginBrandRow}>
-        <View style={styles.loginBrandIcon}>
-          <Ionicons name="cube" size={23} color={colors.white} />
-        </View>
-        <Text style={styles.loginBrandText}>{title}</Text>
+        <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
       </View>
       <Text style={styles.loginHeroCaption}>{caption}</Text>
       <DeliveryIllustration />
@@ -2074,34 +2128,9 @@ function AuthField({
 }
 
 function BrandLogo({ title, accentColor }: { title: string; accentColor: string }) {
-  const titleLetters = title.toUpperCase().split('');
   return (
     <View style={styles.brandLogo}>
-      <View style={styles.brandMark}>
-        <View style={styles.motionStack}>
-          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionLine, styles.motionLineWide, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionLine, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionLine, styles.motionLineShort, { backgroundColor: accentColor }]} />
-        </View>
-        <View style={styles.packageMark}>
-          <Ionicons name="cube" size={54} color={colors.ink} />
-          <View style={[styles.packageFace, { backgroundColor: accentColor }]} />
-        </View>
-        <View style={styles.routeMark}>
-          <View style={styles.routeRoad} />
-          <Ionicons name="location" size={42} color={accentColor} />
-        </View>
-      </View>
-      <Text style={styles.loginTitle}>
-        {titleLetters.map((letter, index) => (
-          <Text key={`${letter}-${index}`} style={letter === 'I' && index > 0 ? { color: accentColor } : undefined}>
-            {letter}
-          </Text>
-        ))}
-      </Text>
+      <Image source={indieryLogoImage} style={styles.brandLogoImage} resizeMode="contain" accessibilityLabel={title} />
       <View style={styles.taglineRow}>
         <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
         <Text style={styles.tagline}>SMART LAST-MILE LOGISTICS INDIA</Text>
@@ -2898,7 +2927,8 @@ function BookScreen({
   busy,
   onSaveAddress,
   estimateNow,
-  placeOrder
+  placeOrder,
+  onBackToHome
 }: {
   api: IndieryApi;
   user: UserProfile;
@@ -2913,6 +2943,7 @@ function BookScreen({
   onSaveAddress: (input: Omit<SavedAddress, 'id'>) => Promise<void>;
   estimateNow: (nextStep?: number, vehicleId?: string) => Promise<void>;
   placeOrder: () => Promise<void>;
+  onBackToHome: () => void;
 }) {
   const copy = useCopy();
   const language = useLanguage();
@@ -2991,6 +3022,28 @@ function BookScreen({
       cancelled = true;
     };
   }, [hasPickupLocation, setBooking]);
+
+  useAndroidBackHandler(() => {
+    if (mapPickerTarget) {
+      setMapPickerTarget(null);
+      return true;
+    }
+    if (contactSheetTarget) {
+      setContactError('');
+      setContactSheetTarget(null);
+      return true;
+    }
+    if (goodsRulesOpen) {
+      setGoodsRulesOpen(false);
+      return true;
+    }
+    if (step > 1) {
+      setStep(step - 1);
+      return true;
+    }
+    onBackToHome();
+    return true;
+  }, [mapPickerTarget, contactSheetTarget, goodsRulesOpen, step, onBackToHome]);
 
   function updateBookingWeight(weightKg: string) {
     const nextWeight = parseBookingWeight(weightKg);
@@ -4438,7 +4491,8 @@ function OrdersScreen({
   detailOrderRequestId,
   onDetailOrderRequestHandled,
   onShare,
-  onCancel
+  onCancel,
+  onBackToHome
 }: {
   orders: Order[];
   activeOrders: Order[];
@@ -4452,6 +4506,7 @@ function OrdersScreen({
   onDetailOrderRequestHandled?: () => void;
   onShare?: (order: Order) => void;
   onCancel?: (order: Order) => void;
+  onBackToHome: () => void;
 }) {
   const copy = useCopy();
   const activeOrderIds = new Set(activeOrders.map((order) => order.id));
@@ -4481,6 +4536,15 @@ function OrdersScreen({
     onDetailOrderRequestHandled?.();
     setTimeout(() => ordersScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
   }, [activeOrders, detailOrderRequestId, onDetailOrderRequestHandled, orders]);
+
+  useAndroidBackHandler(() => {
+    if (detailOrderId) {
+      setDetailOrderId(undefined);
+      return true;
+    }
+    onBackToHome();
+    return true;
+  }, [detailOrderId, onBackToHome]);
 
   function openOrderDetails(order: Order) {
     if (isActiveOrder(order)) onSelectActiveOrder(order.id);
@@ -4907,7 +4971,8 @@ function AccountScreen({
   onChangeLanguage,
   onDeleteAddress,
   onLogout,
-  onRequestAccountDeletion
+  onRequestAccountDeletion,
+  onBackToHome
 }: {
   data: CustomerBootstrap;
   busy: boolean;
@@ -4917,6 +4982,7 @@ function AccountScreen({
   onDeleteAddress: (addressId: string) => Promise<void>;
   onLogout: () => void;
   onRequestAccountDeletion: () => void;
+  onBackToHome: () => void;
 }) {
   const copy = useCopy();
   const completedOrders = data.orders.filter((order) => order.status === 'delivered').length;
@@ -4953,6 +5019,19 @@ function AccountScreen({
     setLocalError('');
     setPage('overview');
   }
+
+  useAndroidBackHandler(() => {
+    if (openPolicy) {
+      openPage('legal');
+      return true;
+    }
+    if (page !== 'overview') {
+      openPage('overview');
+      return true;
+    }
+    onBackToHome();
+    return true;
+  }, [openPolicy?.id, page, onBackToHome]);
 
   async function submitDetails() {
     const nextName = name.trim();
@@ -5994,6 +6073,7 @@ const styles = StyleSheet.create({
     opacity: 0.75
   },
   loginBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  loginBrandLogo: { width: 172, height: 54 },
   loginBrandIcon: {
     width: 38,
     height: 38,
@@ -6147,6 +6227,7 @@ const styles = StyleSheet.create({
   authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', lineHeight: 16, marginTop: 4 },
   loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
   brandLogo: { alignItems: 'center' },
+  brandLogoImage: { width: 258, height: 88 },
   brandMark: { width: 222, height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   motionStack: { position: 'absolute', left: 14, top: 36, gap: 8 },
   motionDot: { width: 10, height: 10, borderRadius: 5 },

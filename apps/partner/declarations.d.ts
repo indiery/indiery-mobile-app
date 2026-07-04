@@ -1,3 +1,8 @@
+declare module '*.png' {
+  const source: import('react-native').ImageSourcePropType;
+  export default source;
+}
+
 declare module 'react-native-razorpay' {
   export interface RazorpayOptions {
     key: string;

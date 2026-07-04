@@ -5,7 +5,13 @@
     "scheme": "indierycustomer",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -21,7 +27,7 @@
       "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
       "googleMapsApiKey": "AIzaSyCAHnijSr23O0jAr0aHoeQ7Hz__gopueSg",
       "eas": {
-        "projectId": "4d47d89a-7023-4ab3-b715-b4f9cc35c9f8"
+        "projectId": "2f2aca8b-b4e7-481e-a3aa-1915f322c707"
       }
     },
     "ios": {
@@ -38,6 +44,10 @@
         "ACCESS_FINE_LOCATION",
         "POST_NOTIFICATIONS"
       ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#ffffff"
+      },
       "usesCleartextTraffic": false
     }
   }

@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -22,6 +24,7 @@ import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import RazorpayCheckout from 'react-native-razorpay';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
+import indieryLogoImage from './assets/indiery-logo.png';
 import {
   colors,
   IndieryApi,
@@ -129,6 +132,7 @@ const enCopy = {
   captureFrontClearly: 'Capture front side clearly',
   next: 'Next',
   back: 'Back',
+  pressBackAgainToExit: 'Press back again to exit',
   vehicleDetails: 'Vehicle details',
   vehicleDetailsSubtitle: 'Vehicle type, number, and RC',
   vehicleType: 'Vehicle type',
@@ -606,6 +610,14 @@ function useLanguage() {
   return useContext(LanguageContext);
 }
 
+function useAndroidBackHandler(onBack: () => boolean, dependencies: React.DependencyList) {
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => subscription.remove();
+  }, dependencies);
+}
+
 function languageNativeLabel(language: AppLanguage) {
   return language === 'hi' ? appCopy.hi.hindiNative : appCopy.en.english;
 }
@@ -841,6 +853,7 @@ export default function App() {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const locationSyncInFlightRef = useRef(false);
+  const exitBackPressedAtRef = useRef(0);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [language, setLanguage] = useState<AppLanguage>('en');
   const [data, setData] = useState<PartnerBootstrap | null>(null);
@@ -878,6 +891,17 @@ export default function App() {
       setSelectedActiveOrderId(data.activeOrders[0].id);
     }
   }, [activeOrderIds, selectedActiveOrderId]);
+
+  useAndroidBackHandler(() => {
+    if (loading || !data) return false;
+    if (needsPartnerOnboarding(data.user)) return false;
+    if (tab === 'profile') return false;
+    if (tab !== 'dashboard') {
+      goDashboardFromBack();
+      return true;
+    }
+    return confirmExitFromRoot();
+  }, [loading, data, tab, language]);
 
   async function boot() {
     setLoading(true);
@@ -1036,6 +1060,20 @@ export default function App() {
   function showToast(message: string) {
     setToast(message);
     setTimeout(() => setToast(''), 2600);
+  }
+
+  function confirmExitFromRoot() {
+    const now = Date.now();
+    if (now - exitBackPressedAtRef.current < 1800) return false;
+    exitBackPressedAtRef.current = now;
+    showToast(copyFor(language, 'pressBackAgainToExit'));
+    return true;
+  }
+
+  function goDashboardFromBack() {
+    exitBackPressedAtRef.current = 0;
+    setProfileDetailOpen(false);
+    setTab('dashboard');
   }
 
   async function withBusy(action: () => Promise<void>) {
@@ -1248,6 +1286,7 @@ export default function App() {
             error={error}
             onSaveProfile={saveProfile}
             onCapture={(doc) => withBusy(() => captureKycDocument(doc))}
+            onRootBack={confirmExitFromRoot}
           />
         </View>
         {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
@@ -1367,6 +1406,7 @@ export default function App() {
             onDetailChange={setProfileDetailOpen}
             onLogout={logout}
             onRequestAccountDeletion={requestAccountDeletion}
+            onBackToDashboard={goDashboardFromBack}
             onCapture={(doc) => withBusy(() => captureKycDocument(doc))}
             onSubmitBank={(bankDetails) => withBusy(() => submitKycBankDetails(bankDetails))}
             language={language}
@@ -1415,6 +1455,14 @@ function LoginScreen({
   useEffect(() => {
     setError(initialError);
   }, [initialError]);
+
+  useAndroidBackHandler(() => {
+    if (!confirmation) return false;
+    setConfirmation(null);
+    setCode('');
+    setError('');
+    return true;
+  }, [confirmation]);
 
   async function sendOtp() {
     setBusy(true);
@@ -1490,10 +1538,7 @@ function LoginHero({ title, caption }: { title: string; caption: string }) {
     <View style={styles.loginHero}>
       <View style={styles.loginSkyGlow} />
       <View style={styles.loginBrandRow}>
-        <View style={styles.loginBrandIcon}>
-          <Ionicons name="cube" size={23} color={colors.white} />
-        </View>
-        <Text style={styles.loginBrandText}>{title}</Text>
+        <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
       </View>
       <Text style={styles.loginHeroCaption}>{caption}</Text>
       <DeliveryIllustration />
@@ -1601,7 +1646,8 @@ function PartnerOnboardingScreen({
   busy,
   error,
   onSaveProfile,
-  onCapture
+  onCapture,
+  onRootBack
 }: {
   user: UserProfile;
   vehicles: Vehicle[];
@@ -1609,6 +1655,7 @@ function PartnerOnboardingScreen({
   error: string;
   onSaveProfile: (input: PartnerProfileInput) => Promise<void>;
   onCapture: (doc: KycDoc) => void;
+  onRootBack: () => boolean;
 }) {
   const copy = useCopy();
   const docs = user.partnerProfile?.docs;
@@ -1639,6 +1686,15 @@ function PartnerOnboardingScreen({
     setLocalError('');
     setActiveStep(step);
   }
+
+  useAndroidBackHandler(() => {
+    if (activeStep > 1) {
+      setLocalError('');
+      setActiveStep(activeStep === 3 ? 2 : 1);
+      return true;
+    }
+    return onRootBack();
+  }, [activeStep, onRootBack]);
 
   function validatePersonalDetails() {
     const nextName = name.trim();
@@ -2016,34 +2072,9 @@ function AuthField({
 }
 
 function BrandLogo({ title, accentColor }: { title: string; accentColor: string }) {
-  const titleLetters = title.toUpperCase().split('');
   return (
     <View style={styles.brandLogo}>
-      <View style={styles.brandMark}>
-        <View style={styles.motionStack}>
-          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionLine, styles.motionLineWide, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionLine, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionDot, { backgroundColor: accentColor }]} />
-          <View style={[styles.motionLine, styles.motionLineShort, { backgroundColor: accentColor }]} />
-        </View>
-        <View style={styles.packageMark}>
-          <Ionicons name="cube" size={54} color={colors.ink} />
-          <View style={[styles.packageFace, { backgroundColor: accentColor }]} />
-        </View>
-        <View style={styles.routeMark}>
-          <View style={styles.routeRoad} />
-          <Ionicons name="location" size={42} color={accentColor} />
-        </View>
-      </View>
-      <Text style={styles.loginTitle}>
-        {titleLetters.map((letter, index) => (
-          <Text key={`${letter}-${index}`} style={letter === 'I' && index > 0 ? { color: accentColor } : undefined}>
-            {letter}
-          </Text>
-        ))}
-      </Text>
+      <Image source={indieryLogoImage} style={styles.brandLogoImage} resizeMode="contain" accessibilityLabel={title} />
       <View style={styles.taglineRow}>
         <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
         <Text style={styles.tagline}>SMART LAST-MILE LOGISTICS INDIA</Text>
@@ -2337,6 +2368,7 @@ function ProfileScreen({
   onSubmitBank,
   onLogout,
   onRequestAccountDeletion,
+  onBackToDashboard,
   language,
   onChangeLanguage
 }: {
@@ -2349,6 +2381,7 @@ function ProfileScreen({
   onSubmitBank: (bankDetails: BankDetailsInput) => void;
   onLogout: () => void;
   onRequestAccountDeletion: () => void;
+  onBackToDashboard: () => void;
   language: AppLanguage;
   onChangeLanguage: (language: AppLanguage) => void;
 }) {
@@ -2382,6 +2415,15 @@ function ProfileScreen({
     setPage(nextPage);
     onDetailChange(nextPage !== 'overview');
   }
+
+  useAndroidBackHandler(() => {
+    if (page !== 'overview') {
+      openPage('overview');
+      return true;
+    }
+    onBackToDashboard();
+    return true;
+  }, [page, onBackToDashboard]);
 
   async function submitPersonalDetails() {
     const nextName = name.trim();
@@ -3096,6 +3138,7 @@ const styles = StyleSheet.create({
     opacity: 0.75
   },
   loginBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  loginBrandLogo: { width: 172, height: 54 },
   loginBrandIcon: {
     width: 38,
     height: 38,
@@ -3290,6 +3333,7 @@ const styles = StyleSheet.create({
   authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', lineHeight: 16, marginTop: 4 },
   loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
   brandLogo: { alignItems: 'center' },
+  brandLogoImage: { width: 258, height: 88 },
   brandMark: { width: 222, height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   motionStack: { position: 'absolute', left: 14, top: 36, gap: 8 },
   motionDot: { width: 10, height: 10, borderRadius: 5 },

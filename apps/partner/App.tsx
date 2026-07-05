@@ -971,6 +971,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener((notification) => {
+      const payload = notification.request.content.data ?? {};
+      if (payload.role && payload.role !== 'partner') return;
+      if (typeof payload.orderId !== 'string' || !payload.orderId) return;
+      if (payload.screen === 'active') {
+        setSelectedActiveOrderId(payload.orderId);
+        setTab('active');
+      } else {
+        setTab('dashboard');
+      }
+      scheduleRefresh(50);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
     if (!data || !notificationIntent) return;
     const isActive = data.activeOrders.some((order) => order.id === notificationIntent.orderId);
     if (notificationIntent.screen === 'active' || isActive) {

@@ -202,13 +202,13 @@ export async function offerOrderToNextDrivers(
   }
 
   await order.save();
-  await Promise.all([
-    nextPartners.length ? sendPartnerBatchPush(order, nextPartners) : Promise.resolve(),
-    options.reason === 'new' || options.reason === 'payment'
-      ? sendCustomerSearchPush(order, nextPartners.length)
-      : Promise.resolve(),
-    emitOfferUpdates(String(order._id), nextPartnerIds)
-  ]);
+  await emitOfferUpdates(String(order._id), nextPartnerIds);
+  if (nextPartners.length) {
+    await sendPartnerBatchPush(order, nextPartners);
+  }
+  if (options.reason === 'new' || options.reason === 'payment') {
+    await sendCustomerSearchPush(order, nextPartners.length);
+  }
   scheduleOfferAdvance(String(order._id));
   return serializeOrder((await populatedOrder(order._id)) ?? order);
 }

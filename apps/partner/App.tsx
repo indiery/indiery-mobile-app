@@ -5,6 +5,8 @@ import {
   BackHandler,
   Image,
   KeyboardAvoidingView,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -22,6 +24,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import RazorpayCheckout from 'react-native-razorpay';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
@@ -31,6 +34,7 @@ import {
   legalPolicies,
   LegalPolicy,
   money,
+  LocationPoint,
   Order,
   PartnerBootstrap,
   PartnerLocation,
@@ -50,6 +54,11 @@ const apiBaseUrl =
 const allowInsecureApiBaseUrl =
   process?.env?.EXPO_PUBLIC_ALLOW_INSECURE_API_URL === 'true' ||
   Constants.expoConfig?.extra?.allowInsecureApiBaseUrl === true;
+const googleMapsApiKey =
+  process?.env?.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process?.env?.GOOGLE_MAPS_API_KEY ||
+  (Constants.expoConfig?.extra?.googleMapsApiKey as string | undefined) ||
+  '';
 
 if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_URL is required for production builds');
 if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) {
@@ -264,6 +273,19 @@ const enCopy = {
   customer: 'Customer',
   pickup: 'Pickup',
   drop: 'Drop',
+  stop: 'Stop',
+  liveGps: 'Live GPS',
+  waitingGps: 'Waiting for GPS',
+  panic: 'SOS',
+  emergencyHelp: 'Emergency help',
+  emergencyHelpBody: 'Choose who you want to call. Your phone dialer will open with the number.',
+  emergencyWarning: 'Use SOS only in an emergency. Stay in a safe place before calling.',
+  callAmbulance: 'Ambulance 108',
+  callPolice: 'Police 112',
+  ambulanceHint: 'Medical emergency support',
+  policeHint: 'Police emergency assistance',
+  callNow: 'Call now',
+  unableToOpenDialer: 'Could not open phone dialer',
   min: 'MIN',
   arrivedAtPickup: 'Arrived at Pickup',
   capturePickupPod: 'Capture Pickup POD',
@@ -781,7 +803,11 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 }
 
 async function readDeviceLocation(language: AppLanguage = 'en') {
-  const permission = await Location.requestForegroundPermissionsAsync();
+  const existingPermission = await Location.getForegroundPermissionsAsync();
+  const permission =
+    existingPermission.status === 'granted'
+      ? existingPermission
+      : await Location.requestForegroundPermissionsAsync();
   if (permission.status !== 'granted') {
     throw new Error(copyFor(language, 'locationPermissionRequired'));
   }
@@ -913,6 +939,18 @@ function formatPickupDistance(distanceKm: number) {
   return `${Math.round(distanceKm)} km`;
 }
 
+const defaultMapCenter = { lat: 26.8467, lng: 80.9462 };
+
+function hasValidCoordinates(lat?: number, lng?: number) {
+  return typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng);
+}
+
+function routeStopSummary(stops?: LocationPoint[]) {
+  const count = stops?.filter((stop) => stop.label.trim().length > 1).length ?? 0;
+  if (!count) return '';
+  return count === 1 ? '1 stop' : `${count} stops`;
+}
+
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
@@ -930,6 +968,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
+  const [panicOpen, setPanicOpen] = useState(false);
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
   const [notificationIntent, setNotificationIntent] = useState<{
     responseId: string;
@@ -1140,13 +1179,22 @@ export default function App() {
     };
   }
 
-  async function sendLocationUpdate(coords: Location.LocationObjectCoords) {
+  async function sendLocationUpdate(coords: Location.LocationObjectCoords, options: { throwOnError?: boolean } = {}) {
     if (locationSyncInFlightRef.current) return;
     locationSyncInFlightRef.current = true;
     try {
       const result = await api.updatePartnerLocation(toLocationPayload(coords));
-      setData((current) => current ? { ...current, user: result.user } : current);
-    } catch {
+      const nextLocation = result.user.partnerProfile?.currentLocation ?? toLocationPayload(coords);
+      setData((current) => current ? {
+        ...current,
+        user: result.user,
+        activeOrders: current.activeOrders.map((order) => ({
+          ...order,
+          partnerLocation: nextLocation
+        }))
+      } : current);
+    } catch (err) {
+      if (options.throwOnError) throw err;
       // Location is helpful but should not block accepting or completing jobs.
     } finally {
       locationSyncInFlightRef.current = false;
@@ -1179,17 +1227,22 @@ export default function App() {
   }
 
   async function syncLocation() {
-    try {
-      const current = await readDeviceLocation(language);
-      await sendLocationUpdate(current.coords);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : copyFor(language, 'waitingGpsLocation'));
-    }
+    const current = await readDeviceLocation(language);
+    await sendLocationUpdate(current.coords, { throwOnError: true });
   }
 
   function showToast(message: string) {
     setToast(message);
     setTimeout(() => setToast(''), 2600);
+  }
+
+  function openEmergencyNumber(phoneNumber: string) {
+    setPanicOpen(false);
+    Linking.openURL(`tel:${phoneNumber}`).catch(() => showToast(copyFor(language, 'unableToOpenDialer')));
+  }
+
+  function openPanicOptions() {
+    setPanicOpen(true);
   }
 
   function confirmExitFromRoot() {
@@ -1408,8 +1461,14 @@ export default function App() {
             <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
             <Text style={styles.headerTitle}>{copyFor(language, 'partnerSetup')}</Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{data.user.initials}</Text>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.panicButton} onPress={openPanicOptions}>
+              <Ionicons name="alert-circle" size={18} color={colors.white} />
+              <Text style={styles.panicButtonText}>{copyFor(language, 'panic')}</Text>
+            </Pressable>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{data.user.initials}</Text>
+            </View>
           </View>
         </View>
         <View style={styles.content}>
@@ -1423,6 +1482,11 @@ export default function App() {
             onRootBack={confirmExitFromRoot}
           />
         </View>
+        <PanicSheet
+          visible={panicOpen}
+          onClose={() => setPanicOpen(false)}
+          onCall={openEmergencyNumber}
+        />
         {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
       </SafeAreaView>
       </LanguageContext.Provider>
@@ -1441,8 +1505,14 @@ export default function App() {
             <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
             <Text style={styles.headerTitle}>{data.user.name}</Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{data.user.initials}</Text>
+          <View style={styles.headerActions}>
+            <Pressable style={styles.panicButton} onPress={openPanicOptions}>
+              <Ionicons name="alert-circle" size={18} color={colors.white} />
+              <Text style={styles.panicButtonText}>{copyFor(language, 'panic')}</Text>
+            </Pressable>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{data.user.initials}</Text>
+            </View>
           </View>
         </View>
       ) : null}
@@ -1455,8 +1525,8 @@ export default function App() {
             onToggle={() =>
               withBusy(async () => {
                 const online = !data.user.partnerProfile?.online;
-                await api.setAvailability(online);
                 if (online) await syncLocation();
+                await api.setAvailability(online);
                 await refresh();
                 showToast(online ? copyFor(language, 'youAreOnline') : copyFor(language, 'youAreOffline'));
               })
@@ -1465,6 +1535,7 @@ export default function App() {
             onTopup={(amount) => topUpPartnerWallet(amount)}
             onAccept={(orderId) =>
               withBusy(async () => {
+                await syncLocation();
                 if (!data.user.partnerProfile?.online) {
                   await api.setAvailability(true);
                 }
@@ -1589,6 +1660,11 @@ export default function App() {
           activeCount={data.activeOrders.length}
         />
       ) : null}
+      <PanicSheet
+        visible={panicOpen}
+        onClose={() => setPanicOpen(false)}
+        onCall={openEmergencyNumber}
+      />
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
     </SafeAreaView>
     </LanguageContext.Provider>
@@ -2423,9 +2499,16 @@ function ActiveScreen({
             })}
           </ScrollView>
       ) : null}
-      <MapPreview pickup={order.pickup.label} drop={order.drop.label} eta={order.etaMinutes} />
+      <MapPreview
+        pickup={order.pickup}
+        drop={order.drop}
+        extraStops={order.extraStops}
+        eta={order.etaMinutes}
+        partnerLocation={order.partnerLocation}
+      />
       <View style={styles.orderCard}>
         <OrderHeader order={order} />
+        <ActiveOrderContacts order={order} />
         <RouteBlock order={order} />
       </View>
 
@@ -3219,6 +3302,35 @@ function OrderHeader({ order }: { order: Order }) {
   );
 }
 
+function ActiveOrderContacts({ order }: { order: Order }) {
+  const copy = useCopy();
+  const customerName = order.customer?.name || copy.customer;
+  const customerPhone = order.customer?.phone;
+  const contactRows = [
+    { key: 'customer', icon: 'person-circle-outline' as const, label: copy.customer, name: customerName, phone: customerPhone },
+    { key: 'pickup', icon: 'radio-button-on' as const, label: copy.pickup, name: order.pickup.contactName, phone: order.pickup.contactPhone },
+    { key: 'drop', icon: 'location' as const, label: copy.drop, name: order.drop.contactName, phone: order.drop.contactPhone }
+  ].filter((row) => row.name || row.phone);
+
+  if (!contactRows.length) return null;
+
+  return (
+    <View style={styles.activeContactCard}>
+      {contactRows.map((row) => (
+        <View key={row.key} style={styles.activeContactRow}>
+          <Ionicons name={row.icon} size={18} color={colors.partner} />
+          <View style={styles.flex}>
+            <Text style={styles.activeContactLabel}>{row.label}</Text>
+            <Text style={styles.activeContactValue} numberOfLines={1}>
+              {[row.name, row.phone].filter(Boolean).join(' - ')}
+            </Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function RouteBlock({ order }: { order: Order }) {
   const copy = useCopy();
   return (
@@ -3257,20 +3369,206 @@ function Chip({ label }: { label: string }) {
   );
 }
 
-function MapPreview({ pickup, drop, eta }: { pickup: string; drop: string; eta: number }) {
+function PanicSheet({
+  visible,
+  onClose,
+  onCall
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onCall: (phoneNumber: string) => void;
+}) {
   const copy = useCopy();
   return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.panicOverlay} onPress={onClose}>
+        <Pressable style={styles.panicSheet} onPress={(event) => event.stopPropagation()}>
+          <View style={styles.panicHandle} />
+
+          <View style={styles.panicHero}>
+            <View style={styles.panicHeroTop}>
+              <View style={styles.panicBadge}>
+                <Ionicons name="shield-checkmark" size={26} color={colors.white} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.panicHeroLabel}>{copy.panic}</Text>
+                <Text style={styles.panicTitle}>{copy.emergencyHelp}</Text>
+              </View>
+              <Pressable style={styles.panicCloseButton} onPress={onClose}>
+                <Ionicons name="close" size={18} color={colors.ink} />
+              </Pressable>
+            </View>
+            <Text style={styles.panicHeroText}>{copy.emergencyHelpBody}</Text>
+          </View>
+
+          <View style={styles.panicWarning}>
+            <Ionicons name="information-circle" size={18} color={colors.amber} />
+            <Text style={styles.panicWarningText}>{copy.emergencyWarning}</Text>
+          </View>
+
+          <View style={styles.panicCallGrid}>
+            <Pressable style={[styles.panicCallCard, styles.panicAmbulanceCard]} onPress={() => onCall('108')}>
+              <View style={[styles.panicCallIcon, styles.panicAmbulanceIcon]}>
+                <Ionicons name="medical" size={24} color={colors.white} />
+              </View>
+              <Text style={styles.panicCallTitle}>{copy.callAmbulance}</Text>
+              <Text style={styles.panicCallSubtitle}>{copy.ambulanceHint}</Text>
+              <View style={styles.panicCallNowPill}>
+                <Ionicons name="call" size={14} color={colors.white} />
+                <Text style={styles.panicCallNowText}>{copy.callNow}</Text>
+              </View>
+            </Pressable>
+
+            <Pressable style={[styles.panicCallCard, styles.panicPoliceCard]} onPress={() => onCall('112')}>
+              <View style={[styles.panicCallIcon, styles.panicPoliceIcon]}>
+                <Ionicons name="shield-checkmark" size={24} color={colors.white} />
+              </View>
+              <Text style={styles.panicCallTitle}>{copy.callPolice}</Text>
+              <Text style={styles.panicCallSubtitle}>{copy.policeHint}</Text>
+              <View style={[styles.panicCallNowPill, styles.panicPoliceCallNowPill]}>
+                <Ionicons name="call" size={14} color={colors.white} />
+                <Text style={styles.panicCallNowText}>{copy.callNow}</Text>
+              </View>
+            </Pressable>
+          </View>
+
+          <Pressable style={styles.panicCancelButton} onPress={onClose}>
+            <Text style={styles.panicCancelText}>{copy.cancel}</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function MapPreview({
+  pickup,
+  drop,
+  extraStops = [],
+  eta,
+  partnerLocation
+}: {
+  pickup: LocationPoint;
+  drop: LocationPoint;
+  extraStops?: LocationPoint[];
+  eta: number;
+  partnerLocation?: Order['partnerLocation'];
+}) {
+  const copy = useCopy();
+  const hasLiveLocation = hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng);
+  const stopLabel = routeStopSummary(extraStops);
+  const routePoints = [pickup, ...extraStops, drop]
+    .map((point, index) => ({
+      point,
+      index,
+      coordinate: hasValidCoordinates(point.lat, point.lng)
+        ? { latitude: point.lat as number, longitude: point.lng as number }
+        : undefined
+    }))
+    .filter((item): item is { point: LocationPoint; index: number; coordinate: { latitude: number; longitude: number } } => Boolean(item.coordinate));
+  const partnerCoordinate = hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng)
+    ? { latitude: partnerLocation?.lat as number, longitude: partnerLocation?.lng as number }
+    : undefined;
+  const fitCoordinates = partnerCoordinate
+    ? [...routePoints.map((item) => item.coordinate), partnerCoordinate]
+    : routePoints.map((item) => item.coordinate);
+  const firstCoordinate = fitCoordinates[0];
+  const canRenderNativeMap = (Platform.OS !== 'android' || Boolean(googleMapsApiKey)) && Boolean(firstCoordinate);
+  const initialRegion: Region = {
+    latitude: firstCoordinate?.latitude ?? defaultMapCenter.lat,
+    longitude: firstCoordinate?.longitude ?? defaultMapCenter.lng,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05
+  };
+  const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const fitKey = fitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|');
+
+  useEffect(() => {
+    if (!canRenderNativeMap || !mapRef.current || !fitCoordinates.length) return;
+    const timer = setTimeout(() => {
+      if (fitCoordinates.length === 1) {
+        mapRef.current?.animateToRegion({ ...initialRegion, ...fitCoordinates[0] }, 250);
+        return;
+      }
+      mapRef.current?.fitToCoordinates(fitCoordinates, {
+        edgePadding: { top: 58, right: 38, bottom: 58, left: 38 },
+        animated: true
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [canRenderNativeMap, fitKey]);
+
+  return (
     <View style={styles.map}>
-      <View style={styles.mapRoad} />
-      <View style={[styles.mapRoad, styles.mapRoadTwo]} />
-      <View style={styles.mapRoute} />
-      <View style={styles.mapPinA} />
-      <View style={styles.mapPinB} />
+      {canRenderNativeMap ? (
+        <MapView
+          ref={mapRef}
+          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+          style={styles.mapNativeView}
+          initialRegion={initialRegion}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          toolbarEnabled={false}
+        >
+          {routePoints.length > 1 ? (
+            <Polyline
+              coordinates={routePoints.map((item) => item.coordinate)}
+              strokeColor={colors.partner}
+              strokeWidth={4}
+            />
+          ) : null}
+          {routePoints.map((item) => {
+            const isPickup = item.index === 0;
+            const isDrop = item.index === extraStops.length + 1;
+            const pinColor = isPickup ? colors.green : isDrop ? colors.red : colors.amber;
+            const label = isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`;
+            return (
+              <Marker
+                key={`${label}-${item.coordinate.latitude}-${item.coordinate.longitude}`}
+                coordinate={item.coordinate}
+                title={label}
+                description={item.point.label}
+                pinColor={pinColor}
+              />
+            );
+          })}
+          {partnerCoordinate ? (
+            <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
+              <View style={styles.mapPartnerMarker}>
+                <Ionicons name="bicycle" size={15} color={colors.white} />
+              </View>
+            </Marker>
+          ) : null}
+        </MapView>
+      ) : (
+        <>
+          <View style={styles.mapRoad} />
+          <View style={[styles.mapRoad, styles.mapRoadTwo]} />
+          <View style={styles.mapRoute} />
+          <View style={styles.mapPinA} />
+          {extraStops.slice(0, 3).map((stop, index) => (
+            <View key={`${stop.label}-${index}`} style={[styles.mapStopPin, index === 1 && styles.mapStopPinTwo, index === 2 && styles.mapStopPinThree]}>
+              <Text style={styles.mapStopText}>{index + 1}</Text>
+            </View>
+          ))}
+          <View style={styles.mapPinB} />
+          <View style={[styles.vehiclePulse, hasLiveLocation && styles.vehiclePulseLive]} />
+          <View style={[styles.vehicleMarker, hasLiveLocation && styles.vehicleMarkerLive]}>
+            <Ionicons name="bicycle" size={16} color={colors.white} />
+          </View>
+        </>
+      )}
       <View style={styles.etaChip}>
         <Text style={styles.etaValue}>{eta}</Text>
         <Text style={styles.etaLabel}>{copy.min}</Text>
       </View>
-      <Text style={styles.mapText}>{pickup} {'->'} {drop}</Text>
+      <View style={styles.liveChip}>
+        <View style={[styles.liveDot, hasLiveLocation && styles.liveDotOn]} />
+        <Text style={styles.liveText}>{hasLiveLocation ? copy.liveGps : copy.waitingGps}</Text>
+      </View>
+      <Text style={styles.mapText} numberOfLines={1}>
+        {pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}
+      </Text>
     </View>
   );
 }
@@ -3580,6 +3878,35 @@ const styles = StyleSheet.create({
   eyebrow: { color: '#D1FAE5', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
   headerTitle: { color: colors.white, fontSize: 21, fontWeight: '800' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  panicButton: { minHeight: 42, borderRadius: 14, backgroundColor: colors.red, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' },
+  panicButtonText: { color: colors.white, fontSize: 12, fontWeight: '900' },
+  panicOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.48)' },
+  panicSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.white, paddingHorizontal: 18, paddingTop: 10, paddingBottom: Platform.OS === 'android' ? 24 : 34, gap: 12 },
+  panicHandle: { width: 48, height: 5, borderRadius: 999, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 4 },
+  panicHero: { borderRadius: 22, backgroundColor: colors.red, padding: 15, overflow: 'hidden' },
+  panicHeroTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  panicBadge: { width: 50, height: 50, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' },
+  panicHeroLabel: { color: '#FEE2E2', fontSize: 11, fontWeight: '900', letterSpacing: 1.1 },
+  panicTitle: { color: colors.white, fontSize: 21, fontWeight: '900' },
+  panicHeroText: { color: '#FFF1F2', fontSize: 12, fontWeight: '700', lineHeight: 17, marginTop: 12 },
+  panicCloseButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  panicWarning: { borderRadius: 16, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 11 },
+  panicWarningText: { flex: 1, color: '#92400E', fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  panicCallGrid: { flexDirection: 'row', gap: 10 },
+  panicCallCard: { flex: 1, minHeight: 158, borderRadius: 20, borderWidth: 1, alignItems: 'flex-start', gap: 7, padding: 13 },
+  panicAmbulanceCard: { borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
+  panicPoliceCard: { borderColor: '#BFDBFE', backgroundColor: '#EFF6FF' },
+  panicCallIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  panicAmbulanceIcon: { backgroundColor: colors.red },
+  panicPoliceIcon: { backgroundColor: colors.customer },
+  panicCallTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
+  panicCallSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 15 },
+  panicCallNowPill: { marginTop: 'auto', minHeight: 34, borderRadius: 999, backgroundColor: colors.red, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, alignSelf: 'stretch' },
+  panicPoliceCallNowPill: { backgroundColor: colors.customer },
+  panicCallNowText: { color: colors.white, fontSize: 11, fontWeight: '900' },
+  panicCancelButton: { minHeight: 46, borderRadius: 15, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  panicCancelText: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.white, fontWeight: '800' },
   content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
@@ -3606,6 +3933,10 @@ const styles = StyleSheet.create({
   activeTripSwitchTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   activeTripSwitchTitleSelected: { color: colors.partner },
   activeTripSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 5 },
+  activeContactCard: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.line, marginVertical: 10, paddingVertical: 4 },
+  activeContactRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  activeContactLabel: { color: colors.muted, fontSize: 10, fontWeight: '800' },
+  activeContactValue: { color: colors.ink, fontSize: 13, fontWeight: '800', marginTop: 2 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '900' },
   cardTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
@@ -3636,14 +3967,28 @@ const styles = StyleSheet.create({
   cancelOrderButtonText: { color: colors.red, fontSize: 13, fontWeight: '900' },
   cancelOrderButtonMeta: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 2 },
   map: { height: 170, borderRadius: 18, backgroundColor: '#ECFDF5', overflow: 'hidden', marginBottom: 14 },
+  mapNativeView: { flex: 1 },
   mapRoad: { position: 'absolute', top: 72, left: -20, right: -20, height: 20, backgroundColor: '#BBF7D0', transform: [{ rotate: '-8deg' }] },
   mapRoadTwo: { top: 30, transform: [{ rotate: '12deg' }], opacity: 0.7 },
   mapRoute: { position: 'absolute', left: 72, top: 88, width: 190, height: 4, borderRadius: 2, backgroundColor: colors.partner },
   mapPinA: { position: 'absolute', left: 64, top: 78, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.partner },
   mapPinB: { position: 'absolute', left: 248, top: 78, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.green },
-  etaChip: { position: 'absolute', right: 12, top: 12, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
+  mapStopPin: { position: 'absolute', left: 145, top: 76, width: 22, height: 22, borderRadius: 11, backgroundColor: colors.amber, borderWidth: 2, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  mapStopPinTwo: { left: 178, top: 63 },
+  mapStopPinThree: { left: 210, top: 91 },
+  mapStopText: { color: colors.white, fontSize: 10, fontWeight: '900' },
+  vehiclePulse: { position: 'absolute', left: 135, top: 59, width: 58, height: 58, borderRadius: 29, backgroundColor: 'rgba(5,150,105,0.12)' },
+  vehiclePulseLive: { backgroundColor: 'rgba(5,150,105,0.18)' },
+  vehicleMarker: { position: 'absolute', left: 153, top: 77, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.partner, alignItems: 'center', justifyContent: 'center' },
+  vehicleMarkerLive: { backgroundColor: colors.green },
+  etaChip: { position: 'absolute', right: 12, top: 12, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   etaValue: { color: colors.partner, fontSize: 20, fontWeight: '900' },
   etaLabel: { color: colors.muted, fontSize: 9, fontWeight: '900' },
+  liveChip: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.muted },
+  liveDotOn: { backgroundColor: colors.green },
+  liveText: { color: colors.ink, fontSize: 11, fontWeight: '900' },
+  mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '900' },
   payoutCard: { backgroundColor: colors.partnerLight, borderRadius: 16, padding: 14, marginBottom: 14 },
   fareLabel: { color: colors.partner, fontSize: 13 },

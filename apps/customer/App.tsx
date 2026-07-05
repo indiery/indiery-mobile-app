@@ -972,7 +972,11 @@ function withLocationTimeout<T>(promise: Promise<T>, timeoutMs: number, message:
 }
 
 async function readDeviceLocation() {
-  const permission = await Location.requestForegroundPermissionsAsync();
+  const existingPermission = await Location.getForegroundPermissionsAsync();
+  const permission =
+    existingPermission.status === 'granted'
+      ? existingPermission
+      : await Location.requestForegroundPermissionsAsync();
   if (permission.status !== 'granted') {
     throw new Error('Location permission is required');
   }
@@ -2618,13 +2622,20 @@ function LocationPickerField({
   const requestSeqRef = useRef(0);
   const sessionTokenRef = useRef(`loc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const skipDoneTypingRef = useRef(false);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typedLocation = value.trim();
   const showTypedLocationOption = Boolean(onDoneTyping && focused && typedLocation.length >= 3);
+
+  useEffect(() => () => {
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const query = value.trim();
     if (!focused || query.length < 3) {
+      requestSeqRef.current += 1;
       setSuggestions([]);
+      setLoading(false);
       setLocalError('');
       return;
     }
@@ -2652,6 +2663,9 @@ function LocationPickerField({
   }, [api, focused, value]);
 
   async function chooseSuggestion(suggestion: LocationSuggestion) {
+    requestSeqRef.current += 1;
+    setSuggestions([]);
+    setFocused(false);
     setLoading(true);
     setLocalError('');
     try {
@@ -2689,12 +2703,17 @@ function LocationPickerField({
         <Ionicons name={isPickup ? 'radio-button-on' : 'location'} size={18} color={colors.customer} />
         <TextInput
           value={value}
-          onFocus={() => setFocused(true)}
+          onFocus={() => {
+            if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+            setFocused(true);
+          }}
           onBlur={() => {
-            setFocused(false);
-            if (skipDoneTypingRef.current) {
+            if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+            blurTimerRef.current = setTimeout(() => {
+              if (!skipDoneTypingRef.current) setFocused(false);
               skipDoneTypingRef.current = false;
-            }
+              blurTimerRef.current = null;
+            }, 180);
           }}
           onSubmitEditing={() => onDoneTyping?.(value)}
           onChangeText={(nextValue) => {
@@ -3147,17 +3166,17 @@ function BookScreen({
     }
   }
 
-  function continueFromRouteDetails() {
-    if (!hasPickupLocation || !hasDropLocation) {
+  function continueFromRouteDetails(nextBooking = booking) {
+    if (!nextBooking.pickup.trim() || !nextBooking.drop.trim()) {
       setContactError(copy.selectLocationFirst);
       return;
     }
-    if (!hasConfirmedPickupDetails(booking)) {
+    if (!hasConfirmedPickupDetails(nextBooking)) {
       setContactError(copy.enterSenderName);
       setContactSheetTarget('pickup');
       return;
     }
-    if (!hasConfirmedDropDetails(booking)) {
+    if (!hasConfirmedDropDetails(nextBooking)) {
       setContactError(copy.enterReceiverName);
       setContactSheetTarget('drop');
       return;
@@ -3277,7 +3296,7 @@ function BookScreen({
 
   return (
     <>
-    <ScrollView contentContainerStyle={styles.scroll}>
+    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="always">
       <View style={styles.bookingStepHeader}>
         <Pressable
           style={styles.bookingStepBack}
@@ -3617,8 +3636,8 @@ function BookScreen({
           setContactError('');
           setContactSheetTarget(null);
         }}
-        onSaved={() => {
-          if (contactSheetTarget === 'drop') continueFromRouteDetails();
+        onSaved={(nextBooking) => {
+          if (contactSheetTarget === 'drop') continueFromRouteDetails(nextBooking);
         }}
       />
     ) : null}
@@ -3886,7 +3905,7 @@ function InlineExactLocationPicker({
     }
   }
 
-  function updatePinFromMap(nextRegion: Region) {
+  async function updatePinFromMap(nextRegion: Region) {
     setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
     setSuggestions([]);
     if (programmaticMoveRef.current) {
@@ -3894,7 +3913,14 @@ function InlineExactLocationPicker({
       return;
     }
     if (userAdjustedMapRef.current) {
-      commitLocation(nextRegion, displayLabel);
+      const reverse = await Location.reverseGeocodeAsync({
+        latitude: nextRegion.latitude,
+        longitude: nextRegion.longitude
+      }).catch(() => []);
+      const address = formatReverseAddress(reverse[0]) || displayLabel || 'Pinned location';
+      setPinLabel(address);
+      setQuery(address);
+      commitLocation(nextRegion, address);
     }
   }
 
@@ -3924,18 +3950,27 @@ function InlineExactLocationPicker({
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               style={styles.contactMapRealMap}
               initialRegion={initialRegion}
-              scrollEnabled={false}
-              zoomEnabled={false}
+              onPanDrag={() => {
+                userAdjustedMapRef.current = true;
+              }}
+              onRegionChangeComplete={updatePinFromMap}
+              scrollEnabled
+              zoomEnabled
               rotateEnabled={false}
               pitchEnabled={false}
             >
               <Marker
+                draggable
                 coordinate={{ latitude: region.latitude, longitude: region.longitude }}
                 pinColor={pinColor}
+                onDragEnd={(event) => updatePinFromMarker(event.nativeEvent.coordinate.latitude, event.nativeEvent.coordinate.longitude)}
               />
             </MapView>
             <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
               <Ionicons name="location" size={42} color={pinColor} />
+            </View>
+            <View pointerEvents="none" style={styles.mapPickerHint}>
+              <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
             </View>
           </>
         ) : (
@@ -3978,7 +4013,7 @@ function ContactDetailsModal({
   onSaveAddress?: (input: Omit<SavedAddress, 'id'>) => Promise<void>;
   onClose: () => void;
   onChangeLocation?: () => void;
-  onSaved?: () => void;
+  onSaved?: (nextBooking: typeof initialBooking) => void;
 }) {
   const copy = useCopy();
   const [localError, setLocalError] = useState('');
@@ -4105,12 +4140,13 @@ function ContactDetailsModal({
         type: selectedAddressType
       });
     }
-    setBooking((current) => ({
-      ...current,
+    const nextBooking = {
+      ...booking,
       ...(isPickup ? { pickupContactConfirmed: true } : { dropContactConfirmed: true })
-    }));
+    };
+    setBooking(nextBooking);
     onClose();
-    onSaved?.();
+    onSaved?.(nextBooking);
   }
 
   return (

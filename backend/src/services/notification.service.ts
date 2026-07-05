@@ -143,7 +143,7 @@ export async function sendPush(
 
     let accepted = 0;
     let rejected = malformedTokens.length;
-    const deviceNotRegistered: string[] = [];
+    const staleTokens: string[] = [];
     const pendingReceipts: Array<{ receiptId: string; token: string }> = [];
 
     const buildMessage = (to: string) => ({
@@ -170,8 +170,11 @@ export async function sendPush(
         error: ticket?.status === 'error' ? ticket.details?.error : 'MissingTicket',
         message: ticket?.status === 'error' ? ticket.message : undefined
       });
-      if (ticket?.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
-        deviceNotRegistered.push(token);
+      if (
+        ticket?.status === 'error' &&
+        (ticket.details?.error === 'DeviceNotRegistered' || ticket.details?.error === 'InvalidCredentials')
+      ) {
+        staleTokens.push(token);
       }
     };
 
@@ -198,9 +201,14 @@ export async function sendPush(
             console.error('Expo rejected an individual push notification request', singleError);
             if (
               singleError instanceof Error &&
-              (singleError.message.includes('DeviceNotRegistered') || singleError.message.includes('not a valid Expo push token'))
+              (
+                singleError.message.includes('DeviceNotRegistered') ||
+                singleError.message.includes('InvalidCredentials') ||
+                singleError.message.includes('Unable to retrieve the FCM server key') ||
+                singleError.message.includes('not a valid Expo push token')
+              )
             ) {
-              deviceNotRegistered.push(token);
+              staleTokens.push(token);
             }
           }
         }
@@ -208,7 +216,7 @@ export async function sendPush(
     }
 
     await rememberReceipts(pendingReceipts);
-    removedTokens += await removePushTokens(deviceNotRegistered);
+    removedTokens += await removePushTokens(staleTokens);
     return { attempted: uniqueTokens.length, accepted, rejected, removedTokens };
   } catch (error) {
     console.error('Expo push delivery failed', error);

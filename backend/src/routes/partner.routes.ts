@@ -505,9 +505,12 @@ partnerRouter.post(
 
     const fullOrder = await loadOrderForPartner(String(transitionedOrder._id));
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(transitionedOrder._id) };
-    const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
-    await sendPush(
-      customer?.expoPushTokens,
+    const populatedCustomer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
+    const customerForPush = populatedCustomer?.expoPushTokens
+      ? populatedCustomer
+      : await User.findById(transitionedOrder.customer).select('expoPushTokens');
+    const pushResult = await sendPush(
+      customerForPush?.expoPushTokens,
       'Finding another driver',
       `Your driver cancelled ${transitionedOrder.orderNo}. We are finding a replacement now.`,
       {
@@ -518,8 +521,16 @@ partnerRouter.post(
         orderNo: transitionedOrder.orderNo,
         status: 'searching'
       },
-      { ttl: 3600, collapseId: `order-${String(transitionedOrder._id)}` }
+      { ttl: 3600, collapseId: `order-${String(transitionedOrder._id)}-driver-cancel-${cancelledAt.getTime()}` }
     );
+    if (!pushResult.accepted) {
+      console.warn('Customer driver-cancel push was not accepted by Expo', {
+        orderId: String(transitionedOrder._id),
+        attempted: pushResult.attempted,
+        rejected: pushResult.rejected,
+        removedTokens: pushResult.removedTokens
+      });
+    }
     emitOrderChanged(payload, String(transitionedOrder.customer), req.auth!.userId);
     emitPartnerQueueChanged();
     await offerOrderToNextDrivers(transitionedOrder._id, { force: true, reason: 'driver_cancel' }).catch((error) => {

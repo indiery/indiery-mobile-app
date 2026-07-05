@@ -119,6 +119,10 @@ async function rememberReceipts(receipts: Array<{ receiptId: string; token: stri
   });
 }
 
+function isMixedExperienceError(error: unknown) {
+  return error instanceof Error && error.message.includes('PUSH_TOO_MANY_EXPERIENCE_IDS');
+}
+
 export async function sendPush(
   tokens: string[] | undefined,
   title: string,
@@ -142,38 +146,65 @@ export async function sendPush(
     const deviceNotRegistered: string[] = [];
     const pendingReceipts: Array<{ receiptId: string; token: string }> = [];
 
-    for (const tokenChunk of chunks(validTokens, EXPO_CHUNK_SIZE)) {
-      const messages = tokenChunk.map((to) => ({
-        to,
-        title,
-        body,
-        data,
-        sound: 'default',
-        channelId: options.channelId ?? 'orders',
-        priority: options.priority ?? 'high',
-        ...(options.ttl !== undefined ? { ttl: options.ttl } : {}),
-        ...(options.expiration !== undefined ? { expiration: options.expiration } : {}),
-        ...(options.collapseId ? { collapseId: options.collapseId } : {})
-      }));
-      const response = await expoRequest<{ data?: ExpoTicket[] | ExpoTicket }>(EXPO_PUSH_URL, messages);
-      const tickets = Array.isArray(response.data) ? response.data : response.data ? [response.data] : [];
+    const buildMessage = (to: string) => ({
+      to,
+      title,
+      body,
+      data,
+      sound: 'default',
+      channelId: options.channelId ?? 'orders',
+      priority: options.priority ?? 'high',
+      ...(options.ttl !== undefined ? { ttl: options.ttl } : {}),
+      ...(options.expiration !== undefined ? { expiration: options.expiration } : {}),
+      ...(options.collapseId ? { collapseId: options.collapseId } : {})
+    });
 
-      tokenChunk.forEach((token, index) => {
-        const ticket = tickets[index];
-        if (ticket?.status === 'ok') {
-          accepted += 1;
-          pendingReceipts.push({ receiptId: ticket.id, token });
-          return;
-        }
-        rejected += 1;
-        console.error('Expo rejected a push notification', {
-          error: ticket?.status === 'error' ? ticket.details?.error : 'MissingTicket',
-          message: ticket?.status === 'error' ? ticket.message : undefined
-        });
-        if (ticket?.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
-          deviceNotRegistered.push(token);
-        }
+    const recordTicket = (token: string, ticket: ExpoTicket | undefined) => {
+      if (ticket?.status === 'ok') {
+        accepted += 1;
+        pendingReceipts.push({ receiptId: ticket.id, token });
+        return;
+      }
+      rejected += 1;
+      console.error('Expo rejected a push notification', {
+        error: ticket?.status === 'error' ? ticket.details?.error : 'MissingTicket',
+        message: ticket?.status === 'error' ? ticket.message : undefined
       });
+      if (ticket?.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
+        deviceNotRegistered.push(token);
+      }
+    };
+
+    for (const tokenChunk of chunks(validTokens, EXPO_CHUNK_SIZE)) {
+      try {
+        const response = await expoRequest<{ data?: ExpoTicket[] | ExpoTicket }>(
+          EXPO_PUSH_URL,
+          tokenChunk.map(buildMessage)
+        );
+        const tickets = Array.isArray(response.data) ? response.data : response.data ? [response.data] : [];
+        tokenChunk.forEach((token, index) => recordTicket(token, tickets[index]));
+      } catch (error) {
+        if (!isMixedExperienceError(error) || tokenChunk.length === 1) throw error;
+        console.warn('Expo push batch had mixed project tokens; retrying one token per request', {
+          tokenCount: tokenChunk.length
+        });
+        for (const token of tokenChunk) {
+          try {
+            const response = await expoRequest<{ data?: ExpoTicket[] | ExpoTicket }>(EXPO_PUSH_URL, [buildMessage(token)]);
+            const tickets = Array.isArray(response.data) ? response.data : response.data ? [response.data] : [];
+            recordTicket(token, tickets[0]);
+          } catch (singleError) {
+            rejected += 1;
+            console.error('Expo rejected an individual push notification request', singleError);
+            if (
+              singleError instanceof Error &&
+              (singleError.message.includes('DeviceNotRegistered') || singleError.message.includes('not a valid Expo push token'))
+            ) {
+              deviceNotRegistered.push(token);
+            }
+          }
+        }
+      }
     }
 
     await rememberReceipts(pendingReceipts);

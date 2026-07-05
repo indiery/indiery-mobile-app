@@ -27,6 +27,16 @@ function requireRazorpayConfig() {
 }
 
 export async function createPaymentIntent(input: PaymentIntentInput): Promise<PaymentIntent> {
+  if (input.amount <= 0) {
+    return {
+      provider: 'wallet',
+      reference: `coins_${input.orderNo}`,
+      status: 'paid',
+      amount: 0,
+      currency: 'INR'
+    };
+  }
+
   if (input.paymentMode === 'wallet') {
     return {
       provider: 'wallet',

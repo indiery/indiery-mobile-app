@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "Indiery",
+    "owner": "amit96287",
     "slug": "indiery-customer",
     "scheme": "indierycustomer",
     "version": "1.0.0",
@@ -18,7 +19,13 @@
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "color": "#7C3AED",
+          "defaultChannel": "orders"
+        }
+      ]
     ],
     "extra": {
       "apiBaseUrl": "https://indiery-mobile-app-bp9h.onrender.com/api",

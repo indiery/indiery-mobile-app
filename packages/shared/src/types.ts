@@ -237,6 +237,8 @@ export interface PartnerStats {
   activeCount: number;
   completedCount: number;
   todayEarn: number;
+  cancellationsToday: number;
+  cancellationsRemaining: number;
   ledger: LedgerItem[];
 }
 

@@ -33,6 +33,7 @@ import {
   money,
   Order,
   PartnerBootstrap,
+  PartnerLocation,
   statusLabels,
   uploadFileToCloudinary,
   UserProfile,
@@ -57,7 +58,9 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 const minPartnerWalletBalance = 200;
-const expoProjectId = (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+const expoProjectId =
+  (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
+  (Constants.easConfig as { projectId?: string } | null)?.projectId;
 const androidStatusBarInset = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
 
 Notifications.setNotificationHandler({
@@ -66,7 +69,8 @@ Notifications.setNotificationHandler({
     shouldShowBanner: true,
     shouldShowList: true,
     shouldPlaySound: true,
-    shouldSetBadge: false
+    shouldSetBadge: false,
+    priority: Notifications.AndroidNotificationPriority.HIGH
   })
 });
 
@@ -163,6 +167,9 @@ const enCopy = {
   activeTrip: 'Active Trip',
   nearbyOrders: 'Nearby Orders',
   availableOrders: 'Available Orders',
+  pickupDistance: 'Approx. {distance} from your location to pickup',
+  tripDistance: 'Trip distance',
+  waitingForGpsDistance: 'Waiting for GPS to calculate pickup distance',
   noOrdersRightNow: 'No orders right now',
   stayOnlineRefresh: 'Stay online and refresh after a customer books.',
   skip: 'Skip',
@@ -239,6 +246,12 @@ const enCopy = {
   requestAccountDeletionBody: 'We will review your request and delete eligible account data. Some order, payout, KYC, fraud prevention, tax, or legal records may be retained where required.',
   submitRequest: 'Submit request',
   cancel: 'Cancel',
+  cancelDelivery: 'Cancel this order',
+  cancelDeliveryTitle: 'Cancel this order?',
+  cancelDeliveryBody: 'It will be offered to another driver. You have {remaining} cancellation(s) remaining today.',
+  cancellationsRemaining: '{remaining} driver cancellation(s) remaining today',
+  dailyCancellationLimit: 'Daily cancellation limit reached',
+  driverCancellationSubmitted: 'Order cancelled. We are finding another driver for the customer.',
   logout: 'Logout',
   changeLanguage: 'Change language',
   english: 'English',
@@ -495,6 +508,12 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   requestAccountDeletionBody: 'हम आपका अनुरोध रिव्यू करेंगे और योग्य अकाउंट डेटा हटाएंगे. कुछ ऑर्डर, पेआउट, KYC, धोखाधड़ी रोकथाम, टैक्स या कानूनी रिकॉर्ड जरूरत के अनुसार रखे जा सकते हैं.',
   submitRequest: 'अनुरोध भेजें',
   cancel: 'रद्द करें',
+  cancelDelivery: 'यह ऑर्डर रद्द करें',
+  cancelDeliveryTitle: 'यह ऑर्डर रद्द करें?',
+  cancelDeliveryBody: 'यह ऑर्डर दूसरे ड्राइवर को दिया जाएगा। आज {remaining} कैंसलेशन बाकी हैं।',
+  cancellationsRemaining: 'आज {remaining} ड्राइवर कैंसलेशन बाकी हैं',
+  dailyCancellationLimit: 'आज की कैंसलेशन सीमा पूरी हो गई',
+  driverCancellationSubmitted: 'ऑर्डर रद्द हुआ। ग्राहक के लिए नया ड्राइवर खोजा जा रहा है।',
   logout: 'लॉगआउट',
   changeLanguage: 'भाषा बदलें',
   english: 'English',
@@ -787,6 +806,7 @@ async function readDeviceLocation(language: AppLanguage = 'en') {
 
 async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message: string) => void, language: AppLanguage) {
   const denied: string[] = [];
+  let registeredPushToken: string | undefined;
 
   try {
     const locationPermission = await Location.getForegroundPermissionsAsync();
@@ -804,6 +824,8 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
       await Notifications.setNotificationChannelAsync('orders', {
         name: copyFor(language, 'orderAlerts'),
         importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        enableVibrate: true,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: colors.partner
       });
@@ -820,9 +842,12 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
         try {
           const token = await Notifications.getExpoPushTokenAsync({ projectId: expoProjectId });
           await api.registerPartnerPushToken(token.data);
+          registeredPushToken = token.data;
         } catch {
           onMessage(copyFor(language, 'notificationRegisterLater'));
         }
+      } else {
+        onMessage('Push notification setup is incomplete. Link this app to an Expo project before release.');
       }
     } else {
       denied.push(copyFor(language, 'permissionNotifications'));
@@ -845,11 +870,41 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
   if (denied.length) {
     onMessage(fillCopy(copyFor(language, 'permissionSettings'), { permissions: denied.join(', ') }));
   }
+  return registeredPushToken;
+}
+
+function pickupDistanceKm(currentLocation: PartnerLocation | undefined, pickup: Order['pickup']) {
+  if (
+    typeof currentLocation?.lat !== 'number' ||
+    typeof currentLocation.lng !== 'number' ||
+    typeof pickup.lat !== 'number' ||
+    typeof pickup.lng !== 'number'
+  ) {
+    return undefined;
+  }
+
+  const earthRadiusKm = 6371;
+  const dLat = ((pickup.lat - currentLocation.lat) * Math.PI) / 180;
+  const dLng = ((pickup.lng - currentLocation.lng) * Math.PI) / 180;
+  const currentLat = (currentLocation.lat * Math.PI) / 180;
+  const pickupLat = (pickup.lat * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(currentLat) * Math.cos(pickupLat) * Math.sin(dLng / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatPickupDistance(distanceKm: number) {
+  if (distanceKm < 0.1) return '< 0.1 km';
+  if (distanceKm < 10) return `${distanceKm.toFixed(1)} km`;
+  return `${Math.round(distanceKm)} km`;
 }
 
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
+  const pushTokenRef = useRef<string | undefined>(undefined);
+  const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const locationSyncInFlightRef = useRef(false);
@@ -863,6 +918,11 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
+  const [notificationIntent, setNotificationIntent] = useState<{
+    responseId: string;
+    orderId: string;
+    screen?: string;
+  } | null>(null);
   const activeOrderIds = (data?.activeOrders ?? []).map((order) => order.id).join('|');
 
   useEffect(() => {
@@ -873,6 +933,42 @@ export default function App() {
       stopLocationStream();
     };
   }, []);
+
+  useEffect(() => {
+    const handleResponse = (response: Notifications.NotificationResponse) => {
+      const responseId = response.notification.request.identifier;
+      if (lastNotificationResponseIdRef.current === responseId) return;
+      const payload = response.notification.request.content.data ?? {};
+      if (payload.role && payload.role !== 'partner') return;
+      if (typeof payload.orderId !== 'string' || !payload.orderId) return;
+      lastNotificationResponseIdRef.current = responseId;
+      setNotificationIntent({
+        responseId,
+        orderId: payload.orderId,
+        screen: typeof payload.screen === 'string' ? payload.screen : undefined
+      });
+      void Notifications.clearLastNotificationResponseAsync();
+    };
+
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) handleResponse(response);
+    });
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!data || !notificationIntent) return;
+    const isActive = data.activeOrders.some((order) => order.id === notificationIntent.orderId);
+    if (notificationIntent.screen === 'active' || isActive) {
+      setSelectedActiveOrderId(notificationIntent.orderId);
+      setTab('active');
+    } else {
+      setTab('dashboard');
+    }
+    setNotificationIntent(null);
+    void refresh();
+  }, [data, notificationIntent]);
 
   useEffect(() => {
     if (data?.user.partnerProfile?.online || data?.activeOrders[0]) {
@@ -930,7 +1026,11 @@ export default function App() {
     setTab('dashboard');
     setProfileDetailOpen(false);
     connectRealtime(login.token);
-    requestPartnerAppPermissions(api, showToast, language).catch(() => undefined);
+    requestPartnerAppPermissions(api, showToast, language)
+      .then((token) => {
+        pushTokenRef.current = token;
+      })
+      .catch(() => undefined);
   }
 
   async function refresh() {
@@ -1015,7 +1115,8 @@ export default function App() {
     if (locationSyncInFlightRef.current) return;
     locationSyncInFlightRef.current = true;
     try {
-      await api.updatePartnerLocation(toLocationPayload(coords));
+      const result = await api.updatePartnerLocation(toLocationPayload(coords));
+      setData((current) => current ? { ...current, user: result.user } : current);
     } catch {
       // Location is helpful but should not block accepting or completing jobs.
     } finally {
@@ -1202,6 +1303,10 @@ export default function App() {
       stopLocationStream();
       socketRef.current?.disconnect();
       socketRef.current = null;
+      if (pushTokenRef.current) {
+        await api.unregisterPartnerPushToken(pushTokenRef.current).catch(() => undefined);
+        pushTokenRef.current = undefined;
+      }
       api.setToken('');
       await auth().signOut();
       setData(null);
@@ -1355,6 +1460,7 @@ export default function App() {
             orders={data.activeOrders}
             completedOrders={data.completedOrders}
             selectedOrderId={activeOrder?.id}
+            cancellationsRemaining={data.stats.cancellationsRemaining}
             busy={busy}
             refresh={refresh}
             onSelectOrder={setSelectedActiveOrderId}
@@ -1380,6 +1486,32 @@ export default function App() {
                 showToast(`${copyFor(language, 'orderUpdated')}: ${orderStatusLabel(language, status)}`);
               })
             }
+            onCancel={(order) => {
+              Alert.alert(
+                copyFor(language, 'cancelDeliveryTitle'),
+                fillCopy(copyFor(language, 'cancelDeliveryBody'), {
+                  remaining: data.stats.cancellationsRemaining
+                }),
+                [
+                  { text: copyFor(language, 'cancel'), style: 'cancel' },
+                  {
+                    text: copyFor(language, 'cancelDelivery'),
+                    style: 'destructive',
+                    onPress: () =>
+                      withBusy(async () => {
+                        const result = await api.cancelPartnerOrder(order.id, 'Cancelled by driver');
+                        await refresh();
+                        showToast(
+                          `${copyFor(language, 'driverCancellationSubmitted')} ${fillCopy(
+                            copyFor(language, 'cancellationsRemaining'),
+                            { remaining: result.cancellationsRemaining }
+                          )}`
+                        );
+                      })
+                  }
+                ]
+              );
+            }}
           />
         )}
         {tab === 'earnings' && (
@@ -2139,18 +2271,26 @@ function DashboardScreen({
       </View>
 
       <SectionTitle title={`${copy.availableOrders} (${data.availableOrders.length})`} />
-      <AvailableOrdersList orders={data.availableOrders} busy={busy} onAccept={onAccept} onReject={onReject} />
+      <AvailableOrdersList
+        orders={data.availableOrders}
+        driverLocation={profile?.currentLocation}
+        busy={busy}
+        onAccept={onAccept}
+        onReject={onReject}
+      />
     </ScrollView>
   );
 }
 
 function AvailableOrdersList({
   orders,
+  driverLocation,
   busy,
   onAccept,
   onReject
 }: {
   orders: Order[];
+  driverLocation?: PartnerLocation;
   busy: boolean;
   onAccept: (orderId: string) => void;
   onReject: (orderId: string) => void;
@@ -2161,21 +2301,32 @@ function AvailableOrdersList({
       {orders.length === 0 ? (
         <Empty icon="time-outline" title={copy.noOrdersRightNow} subtitle={copy.stayOnlineRefresh} />
       ) : null}
-      {orders.map((order) => (
-        <View key={order.id} style={styles.orderCard}>
-          <OrderHeader order={order} />
-          <RouteBlock order={order} />
-          <View style={styles.chips}>
-            <Chip label={`${order.distanceKm} km`} />
-            <Chip label={`${order.weightKg} kg`} />
-            <Chip label={order.goodsType} />
+      {orders.map((order) => {
+        const distanceToPickup = pickupDistanceKm(driverLocation, order.pickup);
+        return (
+          <View key={order.id} style={styles.orderCard}>
+            <OrderHeader order={order} />
+            <RouteBlock order={order} />
+            <View style={styles.pickupDistanceBanner}>
+              <Ionicons name="navigate-circle" size={22} color={colors.partner} />
+              <Text style={styles.pickupDistanceText}>
+                {distanceToPickup === undefined
+                  ? copy.waitingForGpsDistance
+                  : fillCopy(copy.pickupDistance, { distance: formatPickupDistance(distanceToPickup) })}
+              </Text>
+            </View>
+            <View style={styles.chips}>
+              <Chip label={`${copy.tripDistance}: ${order.distanceKm} km`} />
+              <Chip label={`${order.weightKg} kg`} />
+              <Chip label={order.goodsType} />
+            </View>
+            <View style={styles.row}>
+              <SecondaryButton title={copy.skip} icon="close" onPress={() => onReject(order.id)} />
+              <PrimaryButton title={busy ? copy.wait : `${copy.accept} ${money(order.fare.partnerNet)}`} icon="checkmark" onPress={() => onAccept(order.id)} />
+            </View>
           </View>
-          <View style={styles.row}>
-            <SecondaryButton title={copy.skip} icon="close" onPress={() => onReject(order.id)} />
-            <PrimaryButton title={busy ? copy.wait : `${copy.accept} ${money(order.fare.partnerNet)}`} icon="checkmark" onPress={() => onAccept(order.id)} />
-          </View>
-        </View>
-      ))}
+        );
+      })}
     </>
   );
 }
@@ -2184,22 +2335,26 @@ function ActiveScreen({
   orders,
   completedOrders,
   selectedOrderId,
+  cancellationsRemaining,
   busy,
   refresh,
   onSelectOrder,
   onOtp,
   onPod,
-  onStatus
+  onStatus,
+  onCancel
 }: {
   orders: Order[];
   completedOrders: Order[];
   selectedOrderId?: string;
+  cancellationsRemaining: number;
   busy: boolean;
   refresh: () => void;
   onSelectOrder: (orderId: string) => void;
   onOtp: (orderId: string, type: 'pickup' | 'drop', otp: string) => void;
   onPod: (orderId: string, type: 'pickup' | 'drop') => void;
   onStatus: (orderId: string, status: 'arrived_pickup' | 'picked_up' | 'in_transit' | 'delivered') => void;
+  onCancel: (order: Order) => void;
 }) {
   const copy = useCopy();
   const language = useLanguage();
@@ -2208,6 +2363,7 @@ function ActiveScreen({
   const nextActions = order ? getNextActions(order, copy) : [];
   const needsPickupOtp = order?.status === 'arrived_pickup' && !order.pod.pickupOtpVerified;
   const needsDropOtp = order?.status === 'in_transit' && !order.pod.dropOtpVerified;
+  const canCancelOrder = Boolean(order && ['accepted', 'arrived_pickup'].includes(order.status));
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <SectionTitle title={`${copy.activeOrders} (${orders.length})`} />
@@ -2289,6 +2445,26 @@ function ActiveScreen({
           }}
         />
       ))}
+      {canCancelOrder ? (
+        <Pressable
+          style={[
+            styles.cancelOrderButton,
+            (busy || cancellationsRemaining <= 0) && styles.cancelOrderButtonDisabled
+          ]}
+          disabled={busy || cancellationsRemaining <= 0}
+          onPress={() => order && onCancel(order)}
+        >
+          <Ionicons name="close-circle-outline" size={20} color={colors.red} />
+          <View style={styles.flex}>
+            <Text style={styles.cancelOrderButtonText}>
+              {cancellationsRemaining > 0 ? copy.cancelDelivery : copy.dailyCancellationLimit}
+            </Text>
+            <Text style={styles.cancelOrderButtonMeta}>
+              {fillCopy(copy.cancellationsRemaining, { remaining: cancellationsRemaining })}
+            </Text>
+          </View>
+        </Pressable>
+      ) : null}
       <SecondaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
         </>
       )}
@@ -3410,6 +3586,8 @@ const styles = StyleSheet.create({
   routeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.partner },
   routeDotGreen: { backgroundColor: colors.green },
   routeText: { color: colors.ink, fontSize: 14, fontWeight: '800' },
+  pickupDistanceBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, backgroundColor: colors.partnerLight, paddingVertical: 9, paddingHorizontal: 11, marginTop: 8 },
+  pickupDistanceText: { flex: 1, color: colors.partner, fontSize: 12, fontWeight: '800' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 8 },
   chip: { backgroundColor: colors.faint, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999 },
   chipText: { color: colors.muted, fontSize: 11, fontWeight: '800' },
@@ -3424,6 +3602,10 @@ const styles = StyleSheet.create({
   deleteAccountButtonText: { color: colors.red, fontWeight: '900' },
   logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 12 },
   logoutButtonText: { color: colors.red, fontWeight: '900' },
+  cancelOrderButton: { minHeight: 58, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13, paddingVertical: 9, marginBottom: 12 },
+  cancelOrderButtonDisabled: { opacity: 0.5 },
+  cancelOrderButtonText: { color: colors.red, fontSize: 13, fontWeight: '900' },
+  cancelOrderButtonMeta: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 2 },
   map: { height: 170, borderRadius: 18, backgroundColor: '#ECFDF5', overflow: 'hidden', marginBottom: 14 },
   mapRoad: { position: 'absolute', top: 72, left: -20, right: -20, height: 20, backgroundColor: '#BBF7D0', transform: [{ rotate: '-8deg' }] },
   mapRoadTwo: { top: 30, transform: [{ rotate: '12deg' }], opacity: 0.7 },

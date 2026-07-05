@@ -4,6 +4,7 @@ import {
   Alert,
   BackHandler,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -78,7 +79,9 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 const androidStatusBarHeight =
   Platform.OS === 'android' ? Math.max(StatusBar.currentHeight ?? 0, Constants.statusBarHeight ?? 0) : 0;
-const expoProjectId = (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+const expoProjectId =
+  (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
+  (Constants.easConfig as { projectId?: string } | null)?.projectId;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -86,7 +89,8 @@ Notifications.setNotificationHandler({
     shouldShowBanner: true,
     shouldShowList: true,
     shouldPlaySound: true,
-    shouldSetBadge: false
+    shouldSetBadge: false,
+    priority: Notifications.AndroidNotificationPriority.HIGH
   })
 });
 
@@ -320,12 +324,14 @@ const enCopy = {
   waitingGps: 'Waiting for driver GPS',
   min: 'MIN',
   indieryCoins: 'INDIERY COINS',
-  useCoinsDiscount: 'Use coins as discount on bookings.',
+  useCoinsDiscount: 'All available coins are applied automatically up to the order amount.',
+  coinDiscountNextOrders: 'available for order payment',
+  enterCoupon: 'Enter Coupon',
   applying: 'Applying',
   applyFirst50: 'Apply FIRST50',
   coinRules: 'Coin Rules',
   coinRuleEarn: 'Earn coins for successful deliveries',
-  coinRuleUse: 'Use coins on fare before GST',
+  coinRuleUse: 'Use coins on payment up to the order amount',
   coinRuleRefunds: 'Refunds return unused coins',
   walletTitle: 'Indiery Wallet',
   walletSubtitle: 'Pay bookings instantly and receive refunds here.',
@@ -556,12 +562,14 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   waitingGps: 'ड्राइवर GPS का इंतजार',
   min: 'मिनट',
   indieryCoins: 'INDIERY कॉइन',
-  useCoinsDiscount: 'बुकिंग पर छूट के लिए कॉइन उपयोग करें.',
+  useCoinsDiscount: 'ऑर्डर राशि तक सभी उपलब्ध कॉइन अपने आप लागू होते हैं.',
+  coinDiscountNextOrders: 'ऑर्डर पेमेंट के लिए उपलब्ध',
+  enterCoupon: 'कूपन डालें',
   applying: 'अप्लाई हो रहा है',
   applyFirst50: 'FIRST50 लगाएं',
   coinRules: 'कॉइन नियम',
   coinRuleEarn: 'सफल डिलीवरी पर कॉइन कमाएं',
-  coinRuleUse: 'GST से पहले किराए पर कॉइन उपयोग करें',
+  coinRuleUse: 'ऑर्डर राशि तक पेमेंट में कॉइन उपयोग करें',
   coinRuleRefunds: 'रिफंड में बचे कॉइन वापस मिलते हैं',
   walletTitle: 'Indiery वॉलेट',
   walletSubtitle: 'बुकिंग तुरंत पे करें और रिफंड यहां पाएं.',
@@ -765,7 +773,7 @@ const initialBooking = {
   dropContactConfirmed: false,
   goodsType: 'Documents',
   weightKg: '',
-  coins: '40',
+  coins: '0',
   paymentMode: 'upi' as PaymentMode,
   vehicleId: ''
 };
@@ -807,6 +815,11 @@ function hasConfirmedDropDetails(booking: typeof initialBooking) {
 function parseBookingWeight(value: string) {
   const weight = Number(value);
   return Number.isFinite(weight) && weight > 0 ? weight : undefined;
+}
+
+function automaticCoinDiscount(user?: UserProfile, wallet?: CustomerWallet) {
+  const availableCoins = wallet?.coins ?? user?.customerProfile?.coins ?? 0;
+  return Math.floor(Math.max(0, availableCoins));
 }
 
 function customerVehicleCodeForWeight(weightKg: number) {
@@ -1011,6 +1024,20 @@ function formatLedgerDate(value: string) {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
+function formatCoinActivityDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfDate = new Date(date);
+  startOfDate.setHours(0, 0, 0, 0);
+  const dayDiff = Math.round((startOfToday.getTime() - startOfDate.getTime()) / 86_400_000);
+  if (dayDiff === 0) return 'Today';
+  if (dayDiff === 1) return 'Yesterday';
+  if (dayDiff > 1 && dayDiff < 7) return `${dayDiff} days ago`;
+  return formatLedgerDate(value);
+}
+
 function orderTimelineTime(order: Order, key: string) {
   const at = order.timeline.find((item) => item.key === key)?.at;
   if (!at) return undefined;
@@ -1079,6 +1106,7 @@ function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
 
 async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (message: string) => void) {
   const denied: string[] = [];
+  let registeredPushToken: string | undefined;
 
   try {
     const locationPermission = await Location.getForegroundPermissionsAsync();
@@ -1096,6 +1124,8 @@ async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (messag
       await Notifications.setNotificationChannelAsync('orders', {
         name: 'Order updates',
         importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        enableVibrate: true,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: colors.customer
       });
@@ -1112,9 +1142,12 @@ async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (messag
         try {
           const token = await Notifications.getExpoPushTokenAsync({ projectId: expoProjectId });
           await api.registerCustomerPushToken(token.data);
+          registeredPushToken = token.data;
         } catch {
           onMessage('Notifications allowed. Push updates will register when network is available');
         }
+      } else {
+        onMessage('Push notification setup is incomplete. Link this app to an Expo project before release.');
       }
     } else {
       denied.push('notifications');
@@ -1126,11 +1159,14 @@ async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (messag
   if (denied.length) {
     onMessage(`Enable ${denied.join(' and ')} permission in phone settings for full tracking updates`);
   }
+  return registeredPushToken;
 }
 
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
+  const pushTokenRef = useRef<string | undefined>(undefined);
+  const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
   const exitBackPressedAtRef = useRef(0);
   const [tab, setTab] = useState<Tab>('home');
   const [data, setData] = useState<CustomerBootstrap | null>(null);
@@ -1145,6 +1181,7 @@ export default function App() {
   const [tripOtpByOrder, setTripOtpByOrder] = useState<Record<string, TripOtp>>({});
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
   const [requestedOrderDetailId, setRequestedOrderDetailId] = useState<string | undefined>();
+  const [notificationIntent, setNotificationIntent] = useState<{ responseId: string; orderId: string } | null>(null);
   const [pickupSearchOpen, setPickupSearchOpen] = useState(false);
   const [pickupDetailsMode, setPickupDetailsMode] = useState<'home' | 'book' | null>(null);
 
@@ -1154,6 +1191,34 @@ export default function App() {
       socketRef.current?.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    const handleResponse = (response: Notifications.NotificationResponse) => {
+      const responseId = response.notification.request.identifier;
+      if (lastNotificationResponseIdRef.current === responseId) return;
+      const payload = response.notification.request.content.data ?? {};
+      if (payload.role && payload.role !== 'customer') return;
+      if (typeof payload.orderId !== 'string' || !payload.orderId) return;
+      lastNotificationResponseIdRef.current = responseId;
+      setNotificationIntent({ responseId, orderId: payload.orderId });
+      void Notifications.clearLastNotificationResponseAsync();
+    };
+
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) handleResponse(response);
+    });
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!data || !notificationIntent) return;
+    setSelectedActiveOrderId(notificationIntent.orderId);
+    setRequestedOrderDetailId(notificationIntent.orderId);
+    setTab('orders');
+    setNotificationIntent(null);
+    void refresh();
+  }, [data, notificationIntent]);
 
   useEffect(() => {
     if (data?.vehicles.length && !booking.vehicleId) {
@@ -1223,7 +1288,11 @@ export default function App() {
     setData(bootstrap);
     setTab('home');
     connectRealtime(login.token);
-    requestCustomerAppPermissions(api, showToast).catch(() => undefined);
+    requestCustomerAppPermissions(api, showToast)
+      .then((token) => {
+        pushTokenRef.current = token;
+      })
+      .catch(() => undefined);
   }
 
   function mergeRealtimeOrder(order: Order) {
@@ -1312,7 +1381,7 @@ export default function App() {
         pickup,
         drop,
         vehicleId,
-        coins: Number(booking.coins || 0),
+        coins: automaticCoinDiscount(data?.user, data?.wallet),
         weightKg: Number(booking.weightKg || 1),
         extraStops: [],
         pickupLat: booking.pickupLat,
@@ -1341,7 +1410,7 @@ export default function App() {
         vehicleId: booking.vehicleId,
         goodsType: booking.goodsType.trim() || 'Other',
         weightKg: Number(booking.weightKg || 1),
-        coins: Number(booking.coins || 0),
+        coins: automaticCoinDiscount(data?.user, data?.wallet),
         paymentMode: booking.paymentMode,
         pickupContactName: booking.pickupContactName,
         pickupContactPhone: booking.pickupContactPhone,
@@ -1407,53 +1476,6 @@ export default function App() {
     }
   }
 
-  async function topUpWallet(amount: number, paymentMode: 'upi') {
-    if (!data) return;
-    setBusy(true);
-    try {
-      const result = await api.createWalletTopup({ amount, paymentMode });
-      const checkout = result.paymentIntent.checkout;
-      if (!checkout) throw new Error('Wallet top-up is not available');
-      const payment = await RazorpayCheckout.open({
-        key: checkout.keyId,
-        amount: Math.round(result.paymentIntent.amount * 100),
-        currency: result.paymentIntent.currency,
-        name: 'Indiery',
-        description: copyFor(language, 'walletTitle'),
-        order_id: checkout.orderId,
-        prefill: {
-          name: data.user.name,
-          email: data.user.email,
-          contact: data.user.phone
-        },
-        notes: {
-          wallet: 'customer'
-        },
-        theme: {
-          color: colors.customer
-        },
-        modal: {
-          confirm_close: true,
-          handleback: true
-        }
-      });
-      if (!payment.razorpay_order_id || !payment.razorpay_signature) {
-        throw new Error(copyFor(language, 'paymentCancelled'));
-      }
-      await api.verifyWalletTopup({
-        razorpayOrderId: payment.razorpay_order_id,
-        razorpayPaymentId: payment.razorpay_payment_id,
-        razorpaySignature: payment.razorpay_signature
-      });
-      await refresh();
-      showToast(copyFor(language, 'moneyAdded'));
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : copyFor(language, 'paymentCancelled'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function saveProfile(input: { name: string; email: string; city: string }) {
     setBusy(true);
     setError('');
@@ -1513,6 +1535,10 @@ export default function App() {
     try {
       socketRef.current?.disconnect();
       socketRef.current = null;
+      if (pushTokenRef.current) {
+        await api.unregisterCustomerPushToken(pushTokenRef.current).catch(() => undefined);
+        pushTokenRef.current = undefined;
+      }
       api.setToken('');
       await auth().signOut();
       setData(null);
@@ -1700,8 +1726,6 @@ export default function App() {
             data={data}
             booking={booking}
             setBooking={setBooking}
-            activeOrder={activeOrder}
-            activeOrders={activeOrders}
             onPickupPress={() => setPickupSearchOpen(true)}
             onVehicleSelect={handleHomeVehicleSelect}
             onBook={openBook}
@@ -1754,7 +1778,6 @@ export default function App() {
               }
             }
             busy={busy}
-            onTopup={topUpWallet}
             onCoupon={async () => {
               setBusy(true);
               try {
@@ -2145,8 +2168,6 @@ function HomeScreen({
   data,
   booking,
   setBooking,
-  activeOrder,
-  activeOrders,
   onPickupPress,
   onVehicleSelect,
   onBook,
@@ -2156,8 +2177,6 @@ function HomeScreen({
   data: CustomerBootstrap;
   booking: typeof initialBooking;
   setBooking: React.Dispatch<React.SetStateAction<typeof initialBooking>>;
-  activeOrder?: Order;
-  activeOrders: Order[];
   onPickupPress: () => void;
   onVehicleSelect: (vehicle: Vehicle) => void;
   onBook: (nextStep?: number) => void;
@@ -2378,21 +2397,6 @@ function HomeScreen({
             <View key={item.id} style={[styles.homeDot, index === announcementIndex && styles.homeDotActive]} />
           ))}
         </View>
-
-      {activeOrders.length ? (
-        <View>
-          <SectionTitle title={copy.activeDelivery} />
-          {activeOrders.slice(0, 3).map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              selected={order.id === activeOrder?.id}
-              compact
-              onPress={() => onTrack(order.id)}
-            />
-          ))}
-        </View>
-      ) : null}
 
       </ScrollView>
     </View>
@@ -2953,7 +2957,6 @@ function BookScreen({
   const selectedVehicle = vehicleChoices.find((vehicle) => vehicle.id === booking.vehicleId) ?? suggestedVehicle ?? vehicleChoices[0];
   const vehicleChoiceIds = vehicleChoices.map((vehicle) => vehicle.id).join('|');
   const routeDistanceKm = fare?.distanceKm;
-  const walletBalance = user.customerProfile?.walletBalance ?? 0;
   const selectedGoodsIsOther = !isPresetGoodsType(booking.goodsType);
   const [mapPickerTarget, setMapPickerTarget] = useState<MapPickerTarget | null>(null);
   const [contactSheetTarget, setContactSheetTarget] = useState<'pickup' | 'drop' | null>(null);
@@ -3553,44 +3556,27 @@ function BookScreen({
             <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} kg`} />
             <SummaryRow label={copy.eta} value={`${fare?.etaMinutes || selectedVehicle?.etaMinutes || 0} min`} />
           </View>
-          <Field
-            label={copy.useCoins}
-            keyboardType="numeric"
-            value={booking.coins}
-            onChangeText={(coins) => setBooking((current) => ({ ...current, coins }))}
-          />
           {fare ? <FareCard fare={fare} /> : null}
-          {(['wallet', 'upi', 'cash'] as PaymentMode[]).map((mode) => {
-            const walletDisabled = mode === 'wallet' && Boolean(fare && walletBalance < fare.total);
-            const subtitle =
-              mode === 'cash'
-                ? copy.payPartnerAfterDelivery
-                : mode === 'wallet'
-                  ? walletDisabled
-                    ? `${copy.insufficientWalletBalance} · ${money(walletBalance)}`
-                    : `${copy.walletPaySubtitle} · ${money(walletBalance)}`
-                  : copy.secureOnlinePayment;
+          {(['upi', 'cash'] as PaymentMode[]).map((mode) => {
+            const subtitle = mode === 'cash' ? copy.payPartnerAfterDelivery : copy.secureOnlinePayment;
             return (
               <Pressable
                 key={mode}
                 style={[
                   styles.payRow,
-                  booking.paymentMode === mode && styles.payRowActive,
-                  walletDisabled && styles.payRowDisabled
+                  booking.paymentMode === mode && styles.payRowActive
                 ]}
                 onPress={() => {
-                  if (!walletDisabled) setBooking((current) => ({ ...current, paymentMode: mode }));
+                  setBooking((current) => ({ ...current, paymentMode: mode }));
                 }}
               >
                 <Ionicons
                   name={booking.paymentMode === mode ? 'radio-button-on' : 'radio-button-off'}
                   size={18}
-                  color={walletDisabled ? colors.muted : colors.customer}
+                  color={colors.customer}
                 />
                 <View style={styles.flex}>
-                  <Text style={[styles.payText, walletDisabled && styles.payTextDisabled]}>
-                    {mode === 'wallet' ? copy.walletPay : mode.toUpperCase()}
-                  </Text>
+                  <Text style={styles.payText}>{mode.toUpperCase()}</Text>
                   <Text style={styles.mutedSmall}>{subtitle}</Text>
                 </View>
               </Pressable>
@@ -3751,6 +3737,7 @@ function InlineExactLocationPicker({
   value,
   lat,
   lng,
+  compact,
   onBack,
   onTypedLocationChange,
   onLocationChange
@@ -3761,6 +3748,7 @@ function InlineExactLocationPicker({
   value: string;
   lat?: number;
   lng?: number;
+  compact?: boolean;
   onBack: () => void;
   onTypedLocationChange: (value: string) => void;
   onLocationChange: (location: LocationDetails) => void;
@@ -3928,7 +3916,7 @@ function InlineExactLocationPicker({
 
   return (
     <View style={styles.contactExactHero}>
-      <View style={styles.contactMapHeroCanvas}>
+      <View style={[styles.contactMapHeroCanvas, compact && styles.contactMapHeroCanvasCompact]}>
         {canRenderNativeMap ? (
           <>
             <MapView
@@ -3995,6 +3983,7 @@ function ContactDetailsModal({
   const copy = useCopy();
   const [localError, setLocalError] = useState('');
   const [selectedAddressType, setSelectedAddressType] = useState<'home' | 'work' | 'other' | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const isPickup = target === 'pickup';
   const mapHint = isPickup ? 'Your goods will be picked up here' : 'Your goods will be dropped here';
   const name = isPickup ? booking.pickupContactName : booking.dropContactName;
@@ -4013,6 +4002,18 @@ function ContactDetailsModal({
   const usingMine =
     name.trim() === user.name.trim() &&
     phone.replace(/\D/g, '') === user.phone.replace(/\D/g, '');
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   function updateContact(patch: Partial<typeof initialBooking>) {
     setLocalError('');
@@ -4124,6 +4125,7 @@ function ContactDetailsModal({
             value={place}
             lat={placeLat}
             lng={placeLng}
+            compact={keyboardVisible}
             onBack={onClose}
             onTypedLocationChange={updateTypedLocation}
             onLocationChange={updateExactLocation}
@@ -4132,6 +4134,9 @@ function ContactDetailsModal({
             style={styles.contactPagePanel}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            bounces={false}
+            overScrollMode="never"
             contentContainerStyle={styles.contactPagePanelContent}
           >
             <View style={styles.contactSheetHandle} />
@@ -4836,99 +4841,64 @@ function TrackScreen({
 function WalletScreen({
   wallet,
   busy,
-  onTopup,
   onCoupon
 }: {
   wallet: CustomerWallet;
   busy: boolean;
-  onTopup: (amount: number, paymentMode: 'upi') => Promise<void>;
   onCoupon: () => Promise<void>;
 }) {
   const copy = useCopy();
-  const [amount, setAmount] = useState('500');
-  const [paymentMode, setPaymentMode] = useState<'upi'>('upi');
-  const topupAmount = Number(amount || 0);
-  const canTopup = topupAmount >= 10;
+  const recentCoinLedger = wallet.coinLedger.slice(0, 7);
+  const nextOrderDiscount = automaticCoinDiscount(undefined, wallet);
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.walletSurface}>
-        <View style={styles.walletHero}>
-          <View>
-            <Text style={styles.eyebrowDark}>{copy.walletTitle}</Text>
-            <Text style={styles.walletHeroText}>{copy.walletSubtitle}</Text>
+      <View style={styles.walletCoinsCard}>
+        <View style={styles.walletCoinsHeader}>
+          <View style={styles.walletCoinsIcon}>
+            <Ionicons name="wallet-outline" size={21} color={colors.customer} />
           </View>
-          <View style={styles.walletHeroIcon}>
-            <Ionicons name="wallet" size={24} color={colors.white} />
-          </View>
-          <View style={styles.walletBalanceBlock}>
-            <Text style={styles.walletBalance}>{money(wallet.balance)}</Text>
-            <Text style={styles.walletBalanceLabel}>{copy.availableToPay}</Text>
+          <View style={styles.flex}>
+            <Text style={styles.walletCoinsEyebrow}>{copy.indieryCoins}</Text>
+            <Text style={styles.walletCoinsCaption}>{copy.useCoinsDiscount}</Text>
           </View>
         </View>
 
-        <View style={styles.walletTopupHeader}>
+        <View style={styles.walletCoinsBalanceRow}>
           <View>
-            <Text style={styles.cardTitle}>{copy.addMoney}</Text>
-            <Text style={styles.mutedSmall}>UPI only</Text>
+            <Text style={styles.walletCoinsValue}>{wallet.coins}</Text>
+            <Text style={styles.walletCoinsAvailable}>{copy.coinsAvailable}</Text>
           </View>
-          <View style={styles.walletSecureBadge}>
-            <Ionicons name="shield-checkmark" size={14} color={colors.green} />
-            <Text style={styles.walletSecureText}>{copy.secureTopup}</Text>
+          <View style={styles.walletCoinsDiscountBox}>
+            <Ionicons name="sparkles" size={16} color={colors.green} />
+            <View style={styles.flex}>
+              <Text style={styles.walletCoinsDiscountValue}>{money(nextOrderDiscount)}</Text>
+              <Text style={styles.walletCoinsDiscount}>{copy.coinDiscountNextOrders}</Text>
+            </View>
           </View>
         </View>
-        <View style={styles.walletAmountRow}>
-          {[200, 500, 1000].map((value) => (
-            <Pressable
-              key={value}
-              style={[styles.walletAmountChip, amount === String(value) && styles.walletAmountChipActive]}
-              onPress={() => setAmount(String(value))}
-            >
-              <Text style={[styles.walletAmountChipText, amount === String(value) && styles.walletAmountChipTextActive]}>
-                {money(value)}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <Field label={copy.enterAmount} keyboardType="numeric" value={amount} onChangeText={setAmount} />
-        <PrimaryButton
-          title={busy ? copy.applying : copy.addMoney}
-          icon="add-circle"
-          onPress={() => {
-            if (canTopup) onTopup(topupAmount, paymentMode);
-          }}
-        />
 
-        <View style={styles.walletCoinsRow}>
-          <View>
-            <Text style={styles.cardTitle}>{copy.rewardsCoins}</Text>
-            <Text style={styles.mutedSmall}>{copy.useCoinsDiscount}</Text>
-          </View>
-          <View style={styles.coinPill}>
-            <Ionicons name="gift" size={15} color={colors.amber} />
-            <Text style={styles.coinPillText}>{wallet.coins}</Text>
-          </View>
-        </View>
-        <Pressable style={styles.walletCouponButton} onPress={onCoupon}>
-          <Ionicons name="gift" size={15} color={colors.customer} />
-          <Text style={styles.walletCouponText}>{busy ? copy.applying : copy.applyFirst50}</Text>
+        <Pressable
+          style={[styles.walletCouponButton, busy && styles.walletCouponButtonBusy]}
+          onPress={onCoupon}
+          disabled={busy}
+        >
+          <Ionicons name="ticket-outline" size={17} color={colors.customer} />
+          <Text style={styles.walletCouponText}>{busy ? copy.applying : copy.enterCoupon}</Text>
         </Pressable>
       </View>
 
-      <SectionTitle title={copy.recentTransactions} />
-      {wallet.ledger.length ? (
-        wallet.ledger.map((item) => <WalletTransactionRow key={item.id} item={item} />)
-      ) : (
-        <View style={styles.emptyHistoryCard}>
-          <Ionicons name="receipt-outline" size={24} color={colors.muted} />
-          <Text style={styles.cardTitle}>{copy.noWalletTransactions}</Text>
-          <Text style={styles.mutedSmall}>{copy.noWalletTransactionsText}</Text>
-        </View>
-      )}
-
       <SectionTitle title={copy.coinActivity} />
-      {wallet.coinLedger.length ? (
-        wallet.coinLedger.map((item) => <WalletTransactionRow key={item.id} item={item} isCoins />)
+      {recentCoinLedger.length ? (
+        <View style={styles.coinActivityCard}>
+          {recentCoinLedger.map((item, index) => (
+            <CoinActivityRow
+              key={item.id}
+              item={item}
+              showDivider={index < recentCoinLedger.length - 1}
+            />
+          ))}
+        </View>
       ) : (
         <View style={styles.emptyHistoryCard}>
           <Ionicons name="gift-outline" size={24} color={colors.muted} />
@@ -4939,26 +4909,23 @@ function WalletScreen({
   );
 }
 
-function WalletTransactionRow({ item, isCoins = false }: { item: LedgerItem; isCoins?: boolean }) {
-  const copy = useCopy();
+function CoinActivityRow({ item, showDivider = false }: { item: LedgerItem; showDivider?: boolean }) {
   const isCredit = item.kind === 'credit';
-  const value = isCoins ? `${isCredit ? '+' : '-'}${item.amount}` : `${isCredit ? '+' : '-'}${money(item.amount)}`;
   return (
-    <View style={styles.walletTxnRow}>
-      <View style={[styles.walletTxnIcon, isCredit ? styles.walletTxnCredit : styles.walletTxnDebit]}>
-        <Ionicons name={isCredit ? 'arrow-down' : 'arrow-up'} size={16} color={isCredit ? colors.green : colors.red} />
+    <View style={[styles.coinActivityRow, showDivider && styles.coinActivityRowDivider]}>
+      <View style={[styles.coinActivityIcon, isCredit ? styles.coinActivityIconCredit : styles.coinActivityIconDebit]}>
+        <Ionicons name={isCredit ? 'chevron-up' : 'chevron-down'} size={18} color={isCredit ? colors.green : colors.red} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.walletTxnTitle}>{item.title}</Text>
-        <Text style={styles.walletTxnMeta}>
-          {formatLedgerDate(item.createdAt)}
-          {item.reference ? ` · ${item.reference}` : ''}
-          {item.settled === false ? ` · ${copy.pending}` : ''}
-        </Text>
+        <Text style={styles.coinActivityTitle}>{item.title}</Text>
+        <Text style={styles.coinActivityDate}>{formatCoinActivityDate(item.createdAt)}</Text>
       </View>
-      <Text style={[styles.walletTxnAmount, isCredit ? styles.walletTxnAmountCredit : styles.walletTxnAmountDebit]}>
-        {value}
+      <Text style={[styles.coinActivityAmount, isCredit ? styles.coinActivityAmountCredit : styles.coinActivityAmountDebit]}>
+        {isCredit ? '+' : '-'}{item.amount}
       </Text>
+      <View style={styles.coinActivityBadge}>
+        <Ionicons name="ellipse" size={7} color={colors.white} />
+      </View>
     </View>
   );
 }
@@ -5137,7 +5104,15 @@ function AccountScreen({
               ))}
               <SectionTitle title={copy.coinActivity} />
               {data.wallet.coinLedger.length ? (
-                data.wallet.coinLedger.map((item) => <WalletTransactionRow key={item.id} item={item} isCoins />)
+                <View style={styles.coinActivityCard}>
+                  {data.wallet.coinLedger.slice(0, 7).map((item, index, recentCoinLedger) => (
+                    <CoinActivityRow
+                      key={item.id}
+                      item={item}
+                      showDivider={index < recentCoinLedger.length - 1}
+                    />
+                  ))}
+                </View>
               ) : (
                 <View style={styles.savedAddressEmpty}>
                   <Ionicons name="gift-outline" size={24} color={colors.muted} />
@@ -5214,22 +5189,10 @@ function AccountScreen({
       <SectionTitle title={copy.account} />
       <View style={styles.accountMenu}>
         <AccountMenuRow
-          icon="person-outline"
-          title={copy.personalDetails}
-          subtitle={`${data.user.email || copy.emailNotAdded} - ${data.user.city}`}
-          onPress={() => openPage('personal')}
-        />
-        <AccountMenuRow
           icon="bookmark-outline"
           title={copy.savedAddresses}
           subtitle={savedAddressCountText}
           onPress={() => openPage('addresses')}
-        />
-        <AccountMenuRow
-          icon="wallet-outline"
-          title={copy.indieryCoinsMenu}
-          subtitle={`${coins} ${copy.coinsAvailable}`}
-          onPress={() => openPage('wallet')}
         />
         <AccountMenuRow
           icon="language-outline"
@@ -5317,8 +5280,7 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
           <Ionicons name="arrow-back" size={21} color={colors.ink} />
         </Pressable>
         <View style={styles.flex}>
-          <Text style={styles.eyebrowDark}>{copy.enterprisesTitle.toUpperCase()}</Text>
-          <Text style={styles.enterprisePageTitle}>{copy.businessLogistics}</Text>
+          <Text style={styles.enterprisePageTitle}>{copy.enterprisesTitle}</Text>
         </View>
       </View>
 
@@ -6082,8 +6044,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  loginBrandText: { color: colors.ink, fontSize: 25, fontWeight: '900' },
-  loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '800', lineHeight: 19, marginTop: 10, maxWidth: 145 },
+  loginBrandText: { color: colors.ink, fontSize: 25, fontWeight: '700' },
+  loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '600', lineHeight: 19, marginTop: 10, maxWidth: 145 },
   deliveryArt: { height: 220, marginTop: -2 },
   skylineBlock: { position: 'absolute', bottom: 43, borderRadius: 12, backgroundColor: '#DDEAF8', opacity: 0.9 },
   skylineOne: { left: -8, width: 26, height: 82 },
@@ -6175,8 +6137,8 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     paddingBottom: 26
   },
-  authKicker: { color: colors.customer, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 8 },
-  authTitle: { color: colors.ink, fontSize: 32, fontWeight: '900', marginBottom: 6 },
+  authKicker: { color: colors.customer, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8 },
+  authTitle: { color: colors.ink, fontSize: 32, fontWeight: '700', marginBottom: 6 },
   authFieldGroup: { marginBottom: 14 },
   authInputShell: {
     minHeight: 54,
@@ -6190,7 +6152,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14
   },
   authInputReadonly: { backgroundColor: colors.faint },
-  authInputText: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: '800', paddingVertical: 12 },
+  authInputText: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: '600', paddingVertical: 12 },
   phoneInputShell: {
     minHeight: 54,
     borderWidth: 1,
@@ -6201,18 +6163,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12
   },
-  countryCode: { color: colors.ink, fontSize: 14, fontWeight: '800', marginLeft: 7 },
+  countryCode: { color: colors.ink, fontSize: 14, fontWeight: '600', marginLeft: 7 },
   phoneDivider: { width: 1, height: 24, backgroundColor: colors.line, marginHorizontal: 10 },
-  phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700', paddingVertical: 12 },
+  phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 12 },
   authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
-  authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '900' },
+  authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
   authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
   authDividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
   loginFeatureRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
   loginFeatureItem: { flex: 1, alignItems: 'center', gap: 4 },
   loginFeatureIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  loginFeatureTitle: { color: colors.ink, fontSize: 9, fontWeight: '900', textAlign: 'center' },
-  loginFeatureSubtitle: { color: colors.muted, fontSize: 8, fontWeight: '800', textAlign: 'center' },
+  loginFeatureTitle: { color: colors.ink, fontSize: 9, fontWeight: '600', textAlign: 'center' },
+  loginFeatureSubtitle: { color: colors.muted, fontSize: 8, fontWeight: '600', textAlign: 'center' },
   authNotice: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -6223,8 +6185,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 12
   },
-  authNoticeText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800' },
-  authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', lineHeight: 16, marginTop: 4 },
+  authNoticeText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600' },
+  authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center', lineHeight: 16, marginTop: 4 },
   loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
   brandLogo: { alignItems: 'center' },
   brandLogoImage: { width: 258, height: 88 },
@@ -6238,12 +6200,12 @@ const styles = StyleSheet.create({
   packageFace: { position: 'absolute', left: 5, bottom: 8, width: 28, height: 36, borderRadius: 2, opacity: 0.95 },
   routeMark: { position: 'absolute', right: 8, bottom: 10, width: 104, height: 58, alignItems: 'flex-end', justifyContent: 'center' },
   routeRoad: { position: 'absolute', left: 0, bottom: 6, width: 86, height: 15, borderRadius: 16, backgroundColor: colors.ink, transform: [{ rotate: '-24deg' }] },
-  loginTitle: { color: colors.ink, fontSize: 31, fontWeight: '900', letterSpacing: 6, textAlign: 'center' },
+  loginTitle: { color: colors.ink, fontSize: 31, fontWeight: '700', letterSpacing: 6, textAlign: 'center' },
   taglineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 6 },
   taglineRule: { width: 50, height: 2, borderRadius: 2 },
-  tagline: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1, textAlign: 'center' },
-  loginSubtitle: { color: colors.muted, fontSize: 14, fontWeight: '700', marginBottom: 22 },
-  loginError: { color: colors.red, fontSize: 12, fontWeight: '800', marginBottom: 12 },
+  tagline: { color: colors.muted, fontSize: 9, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
+  loginSubtitle: { color: colors.muted, fontSize: 14, fontWeight: '500', marginBottom: 22 },
+  loginError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
     backgroundColor: colors.customer,
@@ -6254,9 +6216,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between'
   },
-  eyebrow: { color: '#DDD6FE', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
-  headerTitle: { color: colors.white, fontSize: 22, fontWeight: '800' },
+  eyebrow: { color: '#DDD6FE', fontSize: 11, fontWeight: '600', letterSpacing: 1 },
+  eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
+  headerTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
   avatar: {
     width: 44,
     height: 44,
@@ -6265,7 +6227,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  avatarText: { color: colors.white, fontWeight: '800' },
+  avatarText: { color: colors.white, fontWeight: '600' },
   content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
   homeContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F8FAFC' },
   homeShell: { flex: 1, backgroundColor: '#F8FAFC', overflow: 'hidden' },
@@ -6294,9 +6256,9 @@ const styles = StyleSheet.create({
   },
   homeLocationIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   homeLocationIconSelected: { backgroundColor: colors.green },
-  homeLocationLabel: { color: colors.muted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  homeLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginTop: 2 },
-  homeLocationSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  homeLocationLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  homeLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
+  homeLocationSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   pickupSearchShell: { flex: 1, backgroundColor: '#F8FAFC' },
   pickupSearchKeyboard: { flex: 1 },
   pickupSearchTopBar: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight + 6 : 6 },
@@ -6315,18 +6277,18 @@ const styles = StyleSheet.create({
   },
   pickupSearchInputShell: { minHeight: 48, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 8, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 },
   pickupSearchDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.green },
-  pickupSearchInput: { flex: 1, color: colors.ink, fontSize: 14, fontWeight: '800', paddingVertical: 11 },
+  pickupSearchInput: { flex: 1, color: colors.ink, fontSize: 14, fontWeight: '600', paddingVertical: 11 },
   pickupSearchMapButton: { alignSelf: 'center', minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 14, paddingHorizontal: 12 },
-  pickupSearchMapText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  pickupSearchMapText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   pickupSearchCurrentButton: { alignSelf: 'center', minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12 },
-  pickupSearchCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
-  pickupSearchError: { color: colors.red, fontSize: 12, fontWeight: '900', marginHorizontal: 18, marginTop: 8, textAlign: 'center' },
+  pickupSearchCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
+  pickupSearchError: { color: colors.red, fontSize: 12, fontWeight: '600', marginHorizontal: 18, marginTop: 8, textAlign: 'center' },
   pickupSearchResults: { flex: 1, marginTop: 10 },
   pickupSearchResultsContent: { paddingHorizontal: 8, paddingBottom: 24 },
   pickupSearchResultItem: { minHeight: 58, borderBottomWidth: 1, borderBottomColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 10, paddingVertical: 10, backgroundColor: colors.white },
   pickupSearchResultIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  pickupSearchResultTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  pickupSearchResultSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
+  pickupSearchResultTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  pickupSearchResultSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   homeServiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   homeServiceCard: {
     width: '48%',
@@ -6350,8 +6312,8 @@ const styles = StyleSheet.create({
   homeVehicleImageBike: { width: 92, height: 72 },
   homeVehicleImageLoader: { width: 90, height: 66, borderRadius: 10 },
   homeServiceFooter: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
-  homeServiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  homeServiceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 15, marginTop: 3 },
+  homeServiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  homeServiceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 3 },
   homeRewardCard: {
     minHeight: 64,
     borderRadius: 16,
@@ -6365,12 +6327,12 @@ const styles = StyleSheet.create({
     marginTop: 18
   },
   homeRewardIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center' },
-  homeRewardTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  homeRewardText: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
+  homeRewardTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  homeRewardText: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   homeAnnouncementHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 10 },
-  homeAnnouncementTitle: { color: colors.muted, fontSize: 13, fontWeight: '900' },
+  homeAnnouncementTitle: { color: colors.muted, fontSize: 13, fontWeight: '600' },
   homeSeeAllButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  homeSeeAllText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  homeSeeAllText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   homeAnnouncementCarousel: { borderRadius: 16, overflow: 'hidden' },
   homeAnnouncementCard: {
     minHeight: 72,
@@ -6384,8 +6346,8 @@ const styles = StyleSheet.create({
     padding: 13
   },
   homeAnnouncementIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
-  homeAnnouncementCopy: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  homeAnnouncementMeta: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 3 },
+  homeAnnouncementCopy: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  homeAnnouncementMeta: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 3 },
   homeDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 8 },
   homeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' },
   homeDotActive: { width: 18, backgroundColor: colors.ink },
@@ -6403,40 +6365,40 @@ const styles = StyleSheet.create({
   },
   homeActiveIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   homeActiveTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 3 },
-  homeActiveOrderNo: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  homeActiveRoute: { color: colors.ink, fontSize: 13, fontWeight: '800', marginBottom: 2 },
-  homeActiveVehicle: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  homeActiveOrderNo: { color: colors.ink, fontSize: 12, fontWeight: '600' },
+  homeActiveRoute: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 2 },
+  homeActiveVehicle: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   scroll: { padding: 16, paddingBottom: 96 },
   customerHero: { backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 14 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-  heroTitle: { color: colors.ink, fontSize: 22, fontWeight: '900', lineHeight: 27, maxWidth: 230 },
+  heroTitle: { color: colors.ink, fontSize: 22, fontWeight: '700', lineHeight: 27, maxWidth: 230 },
   cityPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, backgroundColor: colors.customerLight, paddingVertical: 6, paddingHorizontal: 9 },
-  cityPillText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  cityPillText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   heroCard: { backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 12 },
-  heroLabel: { fontSize: 11, color: colors.muted, fontWeight: '800', letterSpacing: 1 },
+  heroLabel: { fontSize: 11, color: colors.muted, fontWeight: '600', letterSpacing: 1 },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.faint, borderRadius: 14, padding: 14 },
   searchText: { flex: 1, color: colors.muted, fontSize: 14 },
   row: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   serviceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
   serviceCard: { width: '48%', minHeight: 112, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, gap: 6 },
   serviceIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  serviceTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  serviceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 15 },
+  serviceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  serviceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15 },
   quickActionBand: { flexDirection: 'row', gap: 10, marginTop: 14 },
   quickAction: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
-  quickActionText: { color: colors.white, fontSize: 14, fontWeight: '900' },
+  quickActionText: { color: colors.white, fontSize: 14, fontWeight: '600' },
   quickActionSecondary: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
-  quickActionSecondaryText: { color: colors.customer, fontSize: 14, fontWeight: '900' },
+  quickActionSecondaryText: { color: colors.customer, fontSize: 14, fontWeight: '600' },
   rebookCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginTop: 14 },
   rebookIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   promiseBand: { flexDirection: 'row', gap: 8, marginTop: 14 },
   promiseItem: { flex: 1, minHeight: 42, borderRadius: 12, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6 },
-  promiseText: { color: colors.green, fontSize: 10, fontWeight: '900', textAlign: 'center' },
+  promiseText: { color: colors.green, fontSize: 10, fontWeight: '600', textAlign: 'center' },
   statRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
   statCard: { flex: 1, borderRadius: 14, padding: 14 },
-  statValue: { fontSize: 20, fontWeight: '800' },
-  statLabel: { fontSize: 11, fontWeight: '700', marginTop: 4 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.ink, marginTop: 20, marginBottom: 10 },
+  statValue: { fontSize: 20, fontWeight: '600' },
+  statLabel: { fontSize: 11, fontWeight: '500', marginTop: 4 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.ink, marginTop: 20, marginBottom: 10 },
   ordersHeroHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -6449,8 +6411,8 @@ const styles = StyleSheet.create({
     marginBottom: 14
   },
   ordersHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16, marginBottom: 2 },
-  ordersTitle: { color: colors.ink, fontSize: 22, fontWeight: '900', marginTop: 3 },
-  ordersHeroSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 4 },
+  ordersTitle: { color: colors.ink, fontSize: 22, fontWeight: '700', marginTop: 3 },
+  ordersHeroSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 4 },
   ordersBookButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   liveOrderPanel: {
     borderWidth: 1,
@@ -6467,8 +6429,8 @@ const styles = StyleSheet.create({
   },
   liveOrderHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 12 },
   liveOrderIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
-  liveOrderTitle: { color: colors.ink, fontSize: 16, fontWeight: '900' },
-  liveOrderNo: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  liveOrderTitle: { color: colors.ink, fontSize: 16, fontWeight: '600' },
+  liveOrderNo: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   orderDetailHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   orderDetailClose: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   liveRouteCard: { borderRadius: 15, backgroundColor: '#F8FAFC', padding: 12, marginBottom: 12 },
@@ -6477,33 +6439,33 @@ const styles = StyleSheet.create({
   liveRoutePickupDot: { backgroundColor: colors.customer },
   liveRouteStopDot: { backgroundColor: colors.amber },
   liveRouteDropDot: { backgroundColor: colors.green },
-  liveRouteLabel: { color: colors.muted, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  liveRouteText: { color: colors.ink, fontSize: 13, fontWeight: '900', marginTop: 2 },
+  liveRouteLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
+  liveRouteText: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
   liveOrderMetrics: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   liveOrderMetric: { flex: 1, borderRadius: 13, backgroundColor: '#F8FAFC', padding: 10 },
-  liveOrderMetricValue: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  liveOrderMetricLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: 3 },
+  liveOrderMetricValue: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  liveOrderMetricLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
   activeOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   countdownCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, marginTop: 2, marginBottom: 10 },
   countdownCardDelayed: { backgroundColor: '#FEF2F2' },
-  countdownValue: { color: colors.customer, fontSize: 22, fontWeight: '900' },
+  countdownValue: { color: colors.customer, fontSize: 22, fontWeight: '700' },
   countdownValueDelayed: { color: colors.red, fontSize: 16 },
-  countdownLabel: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  countdownLabel: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   assignedPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
   searchingPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
-  searchingPartnerText: { color: colors.ink, fontSize: 12, fontWeight: '800' },
+  searchingPartnerText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
   compactOtpRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   compactOtpBox: { flex: 1, backgroundColor: colors.customerLight, borderRadius: 14, padding: 11, alignItems: 'center' },
-  compactOtpText: { color: colors.customer, fontSize: 18, fontWeight: '900', marginTop: 2 },
+  compactOtpText: { color: colors.customer, fontSize: 18, fontWeight: '700', marginTop: 2 },
   ordersOtpPanel: { borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginTop: 12 },
   ordersOtpTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
-  ordersOtpTitle: { color: colors.customer, fontSize: 13, fontWeight: '900' },
+  ordersOtpTitle: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   ordersOtpRow: { flexDirection: 'row', gap: 10 },
   orderActionBar: { flexDirection: 'row', gap: 8, marginTop: 12 },
   orderActionButton: { flex: 1, minHeight: 40, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
   orderActionButtonPrimary: { backgroundColor: colors.customer },
   orderActionButtonDanger: { backgroundColor: '#FEF2F2' },
-  orderActionButtonText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  orderActionButtonText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
   orderActionButtonTextPrimary: { color: colors.white },
   orderActionButtonTextDanger: { color: colors.red },
   timelinePanel: { marginBottom: 4 },
@@ -6515,43 +6477,43 @@ const styles = StyleSheet.create({
   activeOrderSwitchRow: { gap: 10, paddingBottom: 10 },
   activeOrderSwitchCard: { width: 190, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12 },
   activeOrderSwitchCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  activeOrderSwitchTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  activeOrderSwitchTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   activeOrderSwitchTitleActive: { color: colors.customer },
-  activeOrderSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 5 },
+  activeOrderSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 5 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
-  orderNo: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  orderNo: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   orderCardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
-  orderCardDate: { color: colors.ink, fontSize: 14, fontWeight: '900', marginTop: 2 },
+  orderCardDate: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
   orderCardRouteBox: { borderRadius: 14, backgroundColor: '#F8FAFC', padding: 10, marginBottom: 10 },
   orderCardFareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
-  orderCardVehicle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  orderCardVehicle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   badge: { backgroundColor: colors.customerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
-  badgeText: { color: colors.customer, fontSize: 11, fontWeight: '800' },
+  badgeText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   route: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
   routeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.customer },
   routeDotStop: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.amber },
   routeDotGreen: { backgroundColor: colors.green },
-  routeText: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  routeText: { color: colors.ink, fontSize: 14, fontWeight: '500' },
   muted: { color: colors.muted, marginTop: 8, textAlign: 'center' },
   mutedSmall: { color: colors.muted, fontSize: 12 },
   emptyHistoryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 18, alignItems: 'center', marginBottom: 12 },
-  priceText: { color: colors.customer, fontSize: 13, fontWeight: '800' },
+  priceText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   bookingStepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   bookingStepBack: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
-  bookingStepTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
-  bookingStepSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
-  bookingStepCount: { color: colors.customer, fontSize: 12, fontWeight: '900', backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 9 },
+  bookingStepTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
+  bookingStepSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  bookingStepCount: { color: colors.customer, fontSize: 12, fontWeight: '600', backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 9 },
   bookingProgressTrack: { height: 4, borderRadius: 4, backgroundColor: colors.faint, marginBottom: 16, overflow: 'hidden' },
   bookingProgressFill: { height: 4, borderRadius: 4, backgroundColor: colors.customer },
   stepRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
   stepDot: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   stepDotActive: { backgroundColor: colors.customer },
-  stepText: { color: colors.muted, fontWeight: '800' },
+  stepText: { color: colors.muted, fontWeight: '600' },
   stepTextActive: { color: colors.white },
   serviceGridCompact: { gap: 10, marginBottom: 8 },
   serviceOptionCard: { minHeight: 58, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 11 },
   serviceOptionCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  serviceOptionTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  serviceOptionTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   vehicleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
   vehicleCard: { width: '48%', borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
   vehicleCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
@@ -6560,15 +6522,15 @@ const styles = StyleSheet.create({
   vehicleCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   vehicleBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
   vehicleSuggestedBadge: { backgroundColor: colors.green, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
-  vehicleSuggestedText: { color: colors.white, fontSize: 9, fontWeight: '900' },
-  vehicleEta: { color: colors.green, fontSize: 11, fontWeight: '900', backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
-  vehicleName: { color: colors.ink, fontWeight: '800', fontSize: 14 },
+  vehicleSuggestedText: { color: colors.white, fontSize: 9, fontWeight: '600' },
+  vehicleEta: { color: colors.green, fontSize: 11, fontWeight: '600', backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  vehicleName: { color: colors.ink, fontWeight: '600', fontSize: 14 },
   vehicleNameDisabled: { color: colors.muted },
-  vehiclePriceLine: { color: colors.customer, fontSize: 13, fontWeight: '900' },
-  vehicleSelectedText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
-  vehicleUnavailableText: { color: colors.red, fontSize: 11, fontWeight: '900' },
+  vehiclePriceLine: { color: colors.customer, fontSize: 13, fontWeight: '600' },
+  vehicleSelectedText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
+  vehicleUnavailableText: { color: colors.red, fontSize: 11, fontWeight: '600' },
   fieldGroup: { marginBottom: 12 },
-  fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginBottom: 6 },
+  fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 6 },
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.ink },
   inputReadonly: { backgroundColor: colors.faint },
   locationFieldGroup: { marginBottom: 14 },
@@ -6578,34 +6540,34 @@ const styles = StyleSheet.create({
   locationInputShellActive: { borderColor: colors.customer, backgroundColor: '#FBFAFF' },
   routeLocationInputShell: { minHeight: 48, borderColor: colors.customer, borderRadius: 12, paddingLeft: 11, paddingRight: 7 },
   routeLocationMapButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
-  locationInput: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '800', paddingVertical: 10 },
+  locationInput: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '600', paddingVertical: 10 },
   locationSelectedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
-  locationSelectedText: { color: colors.customer, fontSize: 10, fontWeight: '900' },
+  locationSelectedText: { color: colors.customer, fontSize: 10, fontWeight: '600' },
   locationSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginTop: 8, overflow: 'hidden' },
   locationSuggestionItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.line },
   locationTypedSuggestionItem: { backgroundColor: colors.customerLight },
   locationTypedSuggestionIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  locationSuggestionTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  locationSuggestionSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
-  locationHint: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 7, lineHeight: 15 },
-  locationError: { color: colors.red, fontSize: 11, fontWeight: '800', marginTop: 7 },
+  locationSuggestionTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  locationSuggestionSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
+  locationHint: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 7, lineHeight: 15 },
+  locationError: { color: colors.red, fontSize: 11, fontWeight: '600', marginTop: 7 },
   mapSelectButton: { alignSelf: 'flex-start', minHeight: 36, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, marginTop: 8 },
-  mapSelectText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  mapSelectText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   mapPickerShell: { flex: 1, backgroundColor: colors.white, paddingHorizontal: 16, paddingBottom: 16, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight + 16 : 16 },
   mapPickerHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   mapPickerClose: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
-  mapPickerTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
-  mapPickerSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  mapPickerTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
+  mapPickerSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   mapPickerSearchShell: { minHeight: 52, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
-  mapPickerSearchInput: { flex: 1, color: colors.ink, fontSize: 14, fontWeight: '800', paddingVertical: 11 },
+  mapPickerSearchInput: { flex: 1, color: colors.ink, fontSize: 14, fontWeight: '600', paddingVertical: 11 },
   mapPickerSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginTop: 8, overflow: 'hidden', maxHeight: 210 },
   mapPickerCanvas: { flex: 1, minHeight: 300, borderRadius: 18, backgroundColor: '#EAF5EF', overflow: 'hidden', marginTop: 14, marginBottom: 12 },
   mapPickerRealMap: { flex: 1 },
   mapPickerFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24, backgroundColor: '#EFF6FF' },
-  mapPickerFallbackText: { color: colors.ink, fontSize: 13, fontWeight: '800', lineHeight: 18, textAlign: 'center' },
+  mapPickerFallbackText: { color: colors.ink, fontSize: 13, fontWeight: '600', lineHeight: 18, textAlign: 'center' },
   mapPickerPinOverlay: { position: 'absolute', left: '50%', top: '50%', width: 44, height: 44, marginLeft: -22, marginTop: -40, alignItems: 'center', justifyContent: 'center' },
   mapPickerHint: { position: 'absolute', left: 16, right: 16, bottom: 14, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
-  mapPickerHintText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  mapPickerHintText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
   mapPickerRoad: { position: 'absolute', left: -40, right: -40, top: '48%', height: 26, borderRadius: 20, backgroundColor: '#CAD7E8', transform: [{ rotate: '-16deg' }] },
   mapPickerRoadTwo: { top: '24%', backgroundColor: '#D8E2F0', transform: [{ rotate: '24deg' }] },
   mapPickerRoadThree: { top: '72%', backgroundColor: '#D4E5D9', transform: [{ rotate: '8deg' }] },
@@ -6617,27 +6579,27 @@ const styles = StyleSheet.create({
   mapPickerCenterLineX: { position: 'absolute', left: '50%', top: '50%', width: 1, height: 28, marginTop: -14, backgroundColor: 'rgba(17,24,39,0.16)' },
   mapPickerCenterLineY: { position: 'absolute', left: '50%', top: '50%', height: 1, width: 28, marginLeft: -14, backgroundColor: 'rgba(17,24,39,0.16)' },
   mapPickerSelectedCard: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 13, marginBottom: 10 },
-  mapPickerSelectedTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  mapPickerCoords: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  mapPickerSelectedTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  mapPickerCoords: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   mapPickerControls: { alignItems: 'center', gap: 8, marginBottom: 12 },
   mapPickerControlMiddle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   mapPickerControlButton: { width: 42, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   mapPickerBottomPanel: { gap: 10, paddingTop: 2, paddingBottom: Platform.OS === 'android' ? 18 : 0 },
   mapPickerCurrentButton: { minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
-  mapPickerCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  mapPickerCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   mapPickerActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   savedAddressStrip: { marginTop: -4, marginBottom: 12 },
-  savedAddressStripTitle: { color: colors.muted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginBottom: 8 },
+  savedAddressStripTitle: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8 },
   savedAddressChips: { gap: 10, paddingRight: 16 },
   savedAddressChip: { width: 190, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
   savedAddressChipTextWrap: { flex: 1 },
-  savedAddressChipTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  savedAddressChipSubtitle: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 2 },
+  savedAddressChipTitle: { color: colors.ink, fontSize: 12, fontWeight: '600' },
+  savedAddressChipSubtitle: { color: colors.muted, fontSize: 10, fontWeight: '500', marginTop: 2 },
   stopFieldWrap: { marginBottom: 4 },
   addStopButton: { minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.customer, borderStyle: 'dashed', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14 },
-  addStopText: { color: colors.customer, fontSize: 13, fontWeight: '900' },
+  addStopText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   removeStopButton: { alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -7, marginBottom: 8 },
-  removeStopText: { color: colors.red, fontSize: 11, fontWeight: '900' },
+  removeStopText: { color: colors.red, fontSize: 11, fontWeight: '600' },
   routeEntryCard: {
     borderWidth: 1,
     borderColor: colors.line,
@@ -6661,12 +6623,12 @@ const styles = StyleSheet.create({
   contactDetailsCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   contactHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 },
   contactTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  contactTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  contactSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
+  contactTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  contactSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   contactSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
-  contactSummaryValue: { color: colors.ink, fontSize: 13, fontWeight: '900', marginBottom: 4 },
-  contactSummaryMissing: { color: colors.customer, fontSize: 13, fontWeight: '900', marginBottom: 4 },
-  contactSummaryLocation: { color: colors.muted, fontSize: 11, fontWeight: '800', marginBottom: 10 },
+  contactSummaryValue: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  contactSummaryMissing: { color: colors.customer, fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  contactSummaryLocation: { color: colors.muted, fontSize: 11, fontWeight: '600', marginBottom: 10 },
   contactPageShell: { flex: 1, backgroundColor: colors.white, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight : 0 },
   contactPageKeyboard: { flex: 1 },
   contactPageForm: { flex: 1, backgroundColor: colors.white },
@@ -6680,76 +6642,77 @@ const styles = StyleSheet.create({
   contactSheetScroll: { paddingBottom: 2 },
   contactSheetHandle: { width: 44, height: 4, borderRadius: 4, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 12 },
   contactSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
-  contactSheetTitle: { color: colors.ink, fontSize: 20, fontWeight: '900' },
-  contactSheetSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
+  contactSheetTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
+  contactSheetSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   contactPlaceBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.faint, borderRadius: 14, padding: 12, marginBottom: 12 },
-  contactPlaceText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  contactPlaceText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', lineHeight: 17 },
   contactExactHero: { backgroundColor: colors.white },
   contactExactCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 12, marginBottom: 12 },
   contactExactHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 10 },
   contactExactIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  contactExactTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  contactExactAddress: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  contactExactTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  contactExactAddress: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   contactMapSearchShell: { minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, marginBottom: 9 },
-  contactMapSearchInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '800', paddingVertical: 9 },
+  contactMapSearchInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '600', paddingVertical: 9 },
   contactMapSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 13, backgroundColor: colors.white, marginBottom: 9, overflow: 'hidden', maxHeight: 145 },
   contactMapCanvas: { height: 178, borderRadius: 15, backgroundColor: '#EAF5EF', overflow: 'hidden', marginBottom: 10 },
   contactMapHeroCanvas: { height: 410, backgroundColor: '#EAF5EF', overflow: 'hidden' },
+  contactMapHeroCanvasCompact: { height: 150 },
   contactMapRealMap: { flex: 1 },
   contactMapHint: { position: 'absolute', left: 12, right: 12, bottom: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 7, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHint: { position: 'absolute', left: 70, right: 70, top: 84, borderRadius: 8, backgroundColor: 'rgba(17,24,39,0.88)', paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
-  contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '900' },
+  contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '600' },
   contactMapBackButton: { position: 'absolute', left: 10, top: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   contactMapTitlePill: { position: 'absolute', alignSelf: 'center', top: 90, minHeight: 31, borderRadius: 5, backgroundColor: 'rgba(17,24,39,0.88)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
-  contactMapTitleText: { color: colors.white, fontSize: 11, fontWeight: '900' },
+  contactMapTitleText: { color: colors.white, fontSize: 11, fontWeight: '600' },
   contactLocationPanel: { borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: colors.white, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, marginTop: -18, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 4 },
   contactExactFooter: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   contactUseCurrentButton: { flex: 1, minHeight: 40, borderRadius: 12, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
-  contactUseCurrentText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  contactUseCurrentText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactPagePanel: { flex: 1, backgroundColor: colors.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, marginTop: 0, shadowColor: '#0F172A', shadowOpacity: 0.10, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 5 },
   contactPagePanelContent: { paddingHorizontal: 13, paddingTop: 7, paddingBottom: Platform.OS === 'android' ? 18 : 14 },
   contactAddressHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
-  contactAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  contactAddressSubtitle: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: '700', marginTop: 3 },
+  contactAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  contactAddressSubtitle: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: '500', marginTop: 3 },
   contactChangeButton: { minWidth: 64, minHeight: 34, borderRadius: 5, borderWidth: 1, borderColor: '#D8D3C6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.white },
-  contactChangeButtonText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  contactChangeButtonText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactFormField: { marginBottom: 8 },
-  contactFormLabel: { color: colors.muted, fontSize: 10, fontWeight: '800', marginBottom: 3 },
+  contactFormLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginBottom: 3 },
   contactFormInputShell: { minHeight: 39, borderWidth: 1, borderColor: '#DDE3EC', borderRadius: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10 },
-  contactFormInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700', paddingVertical: 8 },
+  contactFormInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 8 },
   contactMobileCheckRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
-  contactMobileCheckText: { flex: 1, color: colors.ink, fontSize: 11, fontWeight: '800' },
-  contactSaveAsLabel: { color: colors.muted, fontSize: 11, fontWeight: '800', marginBottom: 8 },
+  contactMobileCheckText: { flex: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
+  contactSaveAsLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginBottom: 8 },
   contactTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   contactTypeChip: { minHeight: 36, minWidth: 75, borderRadius: 6, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
   contactTypeChipActive: { borderColor: '#93C5FD', backgroundColor: colors.customerLight },
-  contactTypeChipText: { color: colors.ink, fontSize: 11, fontWeight: '900' },
+  contactTypeChipText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
   contactTypeChipTextActive: { color: colors.customer },
   contactConfirmButton: { minHeight: 48, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
-  contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '900' },
+  contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '600' },
   contactSheetActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 },
   sameAsUserPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.faint, padding: 12, marginBottom: 12 },
-  sameAsUserTitle: { color: colors.ink, fontSize: 13, fontWeight: '900', marginBottom: 9 },
+  sameAsUserTitle: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 9 },
   sameAsUserActions: { flexDirection: 'row', gap: 8 },
   sameAsUserButton: { flex: 1, minHeight: 38, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
   sameAsUserButtonAlt: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
-  sameAsUserButtonText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  sameAsUserButtonText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   sameAsUserButtonAltText: { color: colors.ink },
   useMyDetailsButton: { alignSelf: 'flex-start', borderRadius: 999, backgroundColor: colors.customerLight, paddingVertical: 7, paddingHorizontal: 10, marginBottom: 8 },
-  useMyDetailsText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  useMyDetailsText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactDivider: { height: 1, backgroundColor: colors.line, marginTop: 4, marginBottom: 14 },
-  contactError: { color: colors.red, fontSize: 12, fontWeight: '900', marginTop: -6, marginBottom: 12 },
-  addressHelperText: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: -6, marginBottom: 10 },
+  contactError: { color: colors.red, fontSize: 12, fontWeight: '600', marginTop: -6, marginBottom: 12 },
+  addressHelperText: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: -6, marginBottom: 10 },
   saveAddressInlineButton: { alignSelf: 'flex-start', minHeight: 34, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, marginBottom: 10 },
-  saveAddressInlineText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  saveAddressInlineText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   notice: { flexDirection: 'row', gap: 8, backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginBottom: 14 },
-  noticeText: { flex: 1, color: '#92400E', fontSize: 12, fontWeight: '700' },
+  noticeText: { flex: 1, color: '#92400E', fontSize: 12, fontWeight: '500' },
   noticeInfo: { flexDirection: 'row', gap: 8, backgroundColor: '#EFF6FF', borderRadius: 12, padding: 12, marginBottom: 14 },
-  noticeInfoText: { flex: 1, color: colors.blue, fontSize: 12, fontWeight: '800' },
+  noticeInfoText: { flex: 1, color: colors.blue, fontSize: 12, fontWeight: '600' },
   goodsChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   goodsChip: { borderWidth: 1, borderColor: colors.line, borderRadius: 999, backgroundColor: colors.white, paddingVertical: 9, paddingHorizontal: 12 },
   goodsChipActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  goodsChipText: { color: colors.muted, fontSize: 12, fontWeight: '900' },
+  goodsChipText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
   goodsChipTextActive: { color: colors.customer },
   goodsRulesSheet: { maxHeight: '82%' },
   goodsRulesScroll: { gap: 12, paddingBottom: 12 },
@@ -6757,40 +6720,40 @@ const styles = StyleSheet.create({
   goodsRulesAllowedPanel: { backgroundColor: colors.partnerLight, borderColor: '#BBF7D0' },
   goodsRulesRestrictedPanel: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
   goodsRulesPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 },
-  goodsRulesPanelTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  goodsRulesPanelTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   goodsRulesItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 4 },
   goodsRulesBullet: { width: 6, height: 6, borderRadius: 3, marginTop: 6 },
   goodsRulesBulletAllowed: { backgroundColor: colors.green },
   goodsRulesBulletRestricted: { backgroundColor: colors.red },
-  goodsRulesItemText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '700', lineHeight: 17 },
+  goodsRulesItemText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '500', lineHeight: 17 },
   routeReviewCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   routeReviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
   changeRouteButton: { minHeight: 34, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9 },
-  changeRouteText: { color: colors.customer, fontSize: 11, fontWeight: '900' },
+  changeRouteText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   routeReviewLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7 },
   routeReviewDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.customer },
   routeReviewDotDrop: { backgroundColor: colors.green },
-  routeReviewTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  routeReviewTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   vehicleFareCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 16, backgroundColor: colors.customerLight, padding: 14, marginBottom: 14 },
   vehicleFareIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  vehicleFareMeta: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2, marginBottom: 2 },
-  vehicleFarePrice: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  vehicleFareMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2, marginBottom: 2 },
+  vehicleFarePrice: { color: colors.ink, fontSize: 18, fontWeight: '700' },
   vehicleRoutePanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   vehicleRouteActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, marginTop: 9, paddingTop: 10 },
   vehicleRouteAction: { flex: 1, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
-  vehicleRouteActionText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  vehicleRouteActionText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   vehicleFareList: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', marginBottom: 14 },
   vehicleFareOption: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
   vehicleFareOptionSelected: { minHeight: 104, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderRadius: 16, margin: 8 },
   vehicleFareOptionDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   vehicleFareOptionIcon: { width: 52, height: 44, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   vehicleFareOptionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
-  vehicleFareOptionTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
-  vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 3 },
+  vehicleFareOptionTitle: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 3 },
   vehicleFareOptionPriceWrap: { alignItems: 'flex-end', gap: 4 },
-  vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   vehicleNewBadge: { borderRadius: 7, backgroundColor: '#F97316', paddingHorizontal: 6, paddingVertical: 2 },
-  vehicleNewBadgeText: { color: colors.white, fontSize: 9, fontWeight: '900' },
+  vehicleNewBadgeText: { color: colors.white, fontSize: 9, fontWeight: '600' },
   vehicleMiniArt: { width: 50, height: 40, alignItems: 'center', justifyContent: 'center' },
   vehicleMiniShadow: { position: 'absolute', bottom: 2, width: 34, height: 4, borderRadius: 4, opacity: 0.14 },
   vehicleMiniImage: { width: 48, height: 38 },
@@ -6798,14 +6761,14 @@ const styles = StyleSheet.create({
   vehicleMiniImageLoader: { width: 46, height: 34, borderRadius: 8 },
   vehicleMiniImageMuted: { opacity: 0.5 },
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
-  summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', marginBottom: 8 },
+  summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginBottom: 8 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },
-  summaryLabel: { color: colors.muted, fontSize: 12, fontWeight: '800' },
-  summaryValue: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '900', textAlign: 'right' },
+  summaryLabel: { color: colors.muted, fontSize: 12, fontWeight: '600' },
+  summaryValue: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'right' },
   payRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 14, marginBottom: 10 },
   payRowActive: { backgroundColor: colors.customerLight, borderColor: colors.customer },
   payRowDisabled: { opacity: 0.55, backgroundColor: colors.faint },
-  payText: { color: colors.ink, fontWeight: '800' },
+  payText: { color: colors.ink, fontWeight: '600' },
   payTextDisabled: { color: colors.muted },
   map: { height: 218, borderRadius: 16, backgroundColor: '#E5E7EB', overflow: 'hidden', marginBottom: 12 },
   mapNativeView: { flex: 1 },
@@ -6817,188 +6780,212 @@ const styles = StyleSheet.create({
   mapStopPin: { position: 'absolute', left: 128, top: 74, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.white },
   mapStopPinTwo: { left: 172, top: 86 },
   mapStopPinThree: { left: 208, top: 68 },
-  mapStopText: { color: colors.white, fontSize: 10, fontWeight: '900' },
+  mapStopText: { color: colors.white, fontSize: 10, fontWeight: '600' },
   vehiclePulse: { position: 'absolute', left: 144, top: 68, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(124,58,237,0.14)' },
   vehiclePulseLive: { backgroundColor: 'rgba(5,150,105,0.16)' },
   vehicleMarker: { position: 'absolute', left: 153, top: 77, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   vehicleMarkerLive: { backgroundColor: colors.green },
   etaChip: { position: 'absolute', right: 12, top: 12, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
-  etaValue: { color: colors.customer, fontSize: 20, fontWeight: '800' },
-  etaLabel: { color: colors.muted, fontSize: 9, fontWeight: '800' },
+  etaValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
+  etaLabel: { color: colors.muted, fontSize: 9, fontWeight: '600' },
   liveChip: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },
   liveDotOn: { backgroundColor: colors.green },
-  liveText: { color: colors.ink, fontSize: 11, fontWeight: '800' },
+  liveText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
   mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '800', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },
+  mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '600', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },
   card: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
-  cardTitle: { color: colors.ink, fontWeight: '800', fontSize: 15 },
+  cardTitle: { color: colors.ink, fontWeight: '600', fontSize: 15 },
   driverCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, padding: 14, backgroundColor: colors.faint, marginBottom: 12 },
   driverAvatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
-  driverAvatarText: { color: colors.white, fontWeight: '800' },
-  rating: { color: '#92400E', fontWeight: '800', backgroundColor: '#FEF3C7', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10 },
+  driverAvatarText: { color: colors.white, fontWeight: '600' },
+  rating: { color: '#92400E', fontWeight: '600', backgroundColor: '#FEF3C7', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10 },
   flex: { flex: 1 },
   timelineItem: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
   timelineDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   timelineDone: { backgroundColor: colors.green },
   timelineActive: { backgroundColor: colors.customer },
-  timelineTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' },
+  timelineTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   fareCard: { backgroundColor: colors.customerLight, borderRadius: 16, padding: 14, marginBottom: 14 },
   otpCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   otpBox: { flex: 1, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, alignItems: 'center' },
-  otpText: { color: colors.customer, fontSize: 22, fontWeight: '900', marginTop: 4 },
+  otpText: { color: colors.customer, fontSize: 22, fontWeight: '700', marginTop: 4 },
   fareLabel: { color: colors.customer, fontSize: 13 },
-  fareValue: { color: colors.customer, fontSize: 13, fontWeight: '700' },
-  farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2, marginBottom: 8 },
+  fareValue: { color: colors.customer, fontSize: 13, fontWeight: '500' },
+  farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2, marginBottom: 8 },
   orderMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
-  orderMetaText: { color: colors.muted, fontSize: 10, fontWeight: '900', backgroundColor: colors.faint, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8 },
+  orderMetaText: { color: colors.muted, fontSize: 10, fontWeight: '600', backgroundColor: colors.faint, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8 },
   orderCardActionButton: { minHeight: 38, borderRadius: 13, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
-  orderCardActionText: { color: colors.white, fontSize: 12, fontWeight: '900' },
-  bold: { fontWeight: '900', fontSize: 15 },
+  orderCardActionText: { color: colors.white, fontSize: 12, fontWeight: '600' },
+  bold: { fontWeight: '600', fontSize: 15 },
   divider: { height: 1, backgroundColor: '#C4B5FD', marginVertical: 8 },
   walletCard: { borderRadius: 18, padding: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', gap: 10 },
   walletSurface: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14, gap: 13 },
   walletHero: { borderRadius: 14, padding: 15, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  walletHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '800', marginTop: 4, lineHeight: 17 },
+  walletHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', marginTop: 4, lineHeight: 17 },
   walletHeroIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
   walletBalanceBlock: { marginLeft: 'auto', alignItems: 'flex-end' },
-  walletBalance: { color: colors.white, fontSize: 26, fontWeight: '900' },
-  walletBalanceLabel: { color: '#EDE9FE', fontSize: 12, fontWeight: '900', marginTop: 2 },
+  walletBalance: { color: colors.white, fontSize: 26, fontWeight: '700' },
+  walletBalanceLabel: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', marginTop: 2 },
   walletPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14, gap: 10 },
   walletTopupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   walletSecureBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.partnerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 8 },
-  walletSecureText: { color: colors.green, fontSize: 10, fontWeight: '900' },
+  walletSecureText: { color: colors.green, fontSize: 10, fontWeight: '600' },
   walletAmountRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
   walletAmountChip: { flex: 1, minHeight: 40, borderWidth: 1, borderColor: colors.line, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
   walletAmountChipActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  walletAmountChipText: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  walletAmountChipText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   walletAmountChipTextActive: { color: colors.customer },
   walletMethodRow: { minHeight: 42, borderWidth: 1, borderColor: colors.line, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   walletMethodRowActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  walletMethodText: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  walletMethodText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   walletCoinsRow: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  walletCouponButton: { minHeight: 40, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  walletCouponText: { color: colors.customer, fontSize: 13, fontWeight: '900' },
+  walletCoinsCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14 },
+  walletCoinsHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  walletCoinsIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  walletCoinsEyebrow: { color: colors.ink, fontSize: 15, fontWeight: '600', textTransform: 'uppercase' },
+  walletCoinsCaption: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 2 },
+  walletCoinsBalanceRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  walletCoinsValue: { color: colors.customer, fontSize: 36, fontWeight: '700', lineHeight: 40 },
+  walletCoinsAvailable: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  walletCoinsDiscountBox: { flex: 1, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
+  walletCoinsDiscountValue: { color: colors.green, fontSize: 14, fontWeight: '600' },
+  walletCoinsDiscount: { color: colors.green, fontSize: 10, fontWeight: '600', lineHeight: 14, marginTop: 1 },
+  walletCouponButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
+  walletCouponButtonBusy: { opacity: 0.65 },
+  walletCouponText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
+  coinActivityCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 14 },
+  coinActivityRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  coinActivityRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.line },
+  coinActivityIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  coinActivityIconCredit: { backgroundColor: colors.partnerLight },
+  coinActivityIconDebit: { backgroundColor: '#FEF2F2' },
+  coinActivityTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  coinActivityDate: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
+  coinActivityAmount: { fontSize: 14, fontWeight: '600' },
+  coinActivityAmountCredit: { color: colors.green },
+  coinActivityAmountDebit: { color: colors.red },
+  coinActivityBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center' },
   coinPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FEF3C7', borderRadius: 999, paddingVertical: 7, paddingHorizontal: 10 },
-  coinPillText: { color: '#92400E', fontSize: 13, fontWeight: '900' },
+  coinPillText: { color: '#92400E', fontSize: 13, fontWeight: '600' },
   walletTxnRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, marginBottom: 10 },
   walletTxnIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   walletTxnCredit: { backgroundColor: colors.partnerLight },
   walletTxnDebit: { backgroundColor: '#FEF2F2' },
-  walletTxnTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  walletTxnMeta: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 3 },
-  walletTxnAmount: { fontSize: 13, fontWeight: '900' },
+  walletTxnTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  walletTxnMeta: { color: colors.muted, fontSize: 10, fontWeight: '500', marginTop: 3 },
+  walletTxnAmount: { fontSize: 13, fontWeight: '600' },
   walletTxnAmountCredit: { color: colors.green },
   walletTxnAmountDebit: { color: colors.red },
-  coinValue: { color: colors.customer, fontSize: 48, fontWeight: '900' },
+  coinValue: { color: colors.customer, fontSize: 48, fontWeight: '700' },
   listRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
-  listText: { color: colors.ink, fontWeight: '700' },
+  listText: { color: colors.ink, fontWeight: '500' },
   accountHero: { position: 'relative', borderRadius: 18, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
   accountHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
-  accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  accountHeroSubtitle: { color: colors.white, fontSize: 19, fontWeight: '900', marginTop: 4, lineHeight: 25 },
+  accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  accountHeroSubtitle: { color: colors.white, fontSize: 19, fontWeight: '700', marginTop: 4, lineHeight: 25 },
   accountIdentityCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.94)', padding: 12 },
   accountAvatar: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarSmall: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
-  accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '900' },
-  accountName: { color: colors.ink, fontSize: 18, fontWeight: '900' },
-  accountSubtext: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '600' },
+  accountName: { color: colors.ink, fontSize: 18, fontWeight: '600' },
+  accountSubtext: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   accountVerifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
-  accountVerifiedText: { color: colors.green, fontSize: 10, fontWeight: '900' },
+  accountVerifiedText: { color: colors.green, fontSize: 10, fontWeight: '600' },
   accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   accountStatsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   accountStatBox: { flex: 1, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
-  accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '900' },
-  accountStatLabel: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
+  accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
+  accountStatLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   enterpriseCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 15, marginTop: 14 },
   enterpriseIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
-  enterpriseTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
-  enterpriseText: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 3 },
+  enterpriseTitle: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  enterpriseText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 3 },
   enterprisePageHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  enterprisePageTitle: { color: colors.ink, fontSize: 24, fontWeight: '900', marginTop: 2 },
+  enterprisePageTitle: { color: colors.ink, fontSize: 24, fontWeight: '700', marginTop: 2 },
   enterpriseHeroPanel: { borderRadius: 18, backgroundColor: colors.customer, padding: 18, gap: 9 },
   enterpriseHeroIcon: { width: 54, height: 54, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
-  enterpriseHeroTitle: { color: colors.white, fontSize: 22, fontWeight: '900' },
-  enterpriseHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '800', lineHeight: 18 },
+  enterpriseHeroTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
+  enterpriseHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', lineHeight: 18 },
   enterpriseFeatureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   enterpriseFeatureCard: { width: '48%', minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
   enterpriseFeatureIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  enterpriseFeatureTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  enterpriseFeatureText: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 4 },
+  enterpriseFeatureTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  enterpriseFeatureText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 4 },
   enterpriseChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   enterpriseChip: { borderRadius: 999, backgroundColor: colors.customerLight, paddingVertical: 8, paddingHorizontal: 11 },
-  enterpriseChipText: { color: colors.customer, fontSize: 12, fontWeight: '900' },
+  enterpriseChipText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   enterpriseContactCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 15, gap: 10, marginTop: 18 },
   savedAddressList: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, overflow: 'hidden' },
   savedAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   savedAddressRowLast: { borderBottomWidth: 0 },
   savedAddressIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  savedAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  savedAddressSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
-  savedAddressMeta: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 3 },
+  savedAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  savedAddressSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  savedAddressMeta: { color: colors.muted, fontSize: 10, fontWeight: '500', marginTop: 3 },
   savedAddressDeleteButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
   savedAddressEmpty: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16, alignItems: 'center', gap: 5 },
-  savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   accountDetailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  accountDetailTitle: { color: colors.ink, fontSize: 21, fontWeight: '900', marginTop: 2 },
-  accountDetailSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
+  accountDetailTitle: { color: colors.ink, fontSize: 21, fontWeight: '700', marginTop: 2 },
+  accountDetailSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   accountDetailCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
   accountProfilePreview: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 12, marginBottom: 14 },
   accountInfoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginBottom: 12 },
-  accountInfoText: { flex: 1, color: colors.customer, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  accountInfoText: { flex: 1, color: colors.customer, fontSize: 12, fontWeight: '600', lineHeight: 17 },
   accountWalletHero: { alignItems: 'center', borderRadius: 22, backgroundColor: colors.customer, padding: 18, marginBottom: 14 },
-  accountWalletValue: { color: colors.white, fontSize: 42, fontWeight: '900', marginTop: 10 },
-  accountWalletLabel: { color: '#EDE9FE', fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  accountWalletText: { color: '#EDE9FE', fontSize: 12, fontWeight: '800', textAlign: 'center', lineHeight: 17, marginTop: 8 },
+  accountWalletValue: { color: colors.white, fontSize: 42, fontWeight: '700', marginTop: 10 },
+  accountWalletLabel: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
+  accountWalletText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 17, marginTop: 8 },
   accountBalanceCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
-  accountBalanceValue: { color: colors.ink, fontSize: 22, fontWeight: '900', marginTop: 2 },
+  accountBalanceValue: { color: colors.ink, fontSize: 22, fontWeight: '700', marginTop: 2 },
   accountMenu: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, overflow: 'hidden' },
   accountMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   accountMenuRowLast: { borderBottomWidth: 0 },
   accountMenuIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  accountMenuTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  accountMenuSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 2 },
+  accountMenuTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  accountMenuSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   accountPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 10, marginTop: 12 },
   languageOption: { minHeight: 54, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, marginBottom: 6 },
   languageOptionActive: { backgroundColor: colors.customerLight },
-  languageTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
-  languageSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '800', marginTop: 2 },
+  languageTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  languageSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   supportActionRow: { minHeight: 58, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
   accountEditCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginTop: 12 },
   accountEditActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 },
-  accountEditError: { color: colors.red, fontSize: 12, fontWeight: '800', marginBottom: 10 },
+  accountEditError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 10 },
   accountDangerZone: { marginTop: 6 },
   profileHero: { alignItems: 'center', paddingVertical: 18 },
   profileAvatar: { width: 70, height: 70, borderRadius: 22, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  profileAvatarText: { color: colors.white, fontSize: 24, fontWeight: '900' },
+  profileAvatarText: { color: colors.white, fontSize: 24, fontWeight: '600' },
   policyList: { marginTop: 4, marginBottom: 12 },
   policyCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginBottom: 10, overflow: 'hidden' },
   policyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   policyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  policySummary: { color: colors.ink, fontSize: 12, fontWeight: '700', marginTop: 5, lineHeight: 17 },
+  policySummary: { color: colors.ink, fontSize: 12, fontWeight: '500', marginTop: 5, lineHeight: 17 },
   policyBody: { borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 14, paddingBottom: 12, backgroundColor: '#FAFAFE' },
   policySection: { marginTop: 12 },
   policyDetailHero: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 15, marginBottom: 12, gap: 8 },
-  policyDetailSummary: { color: colors.ink, fontSize: 13, fontWeight: '800', lineHeight: 19 },
+  policyDetailSummary: { color: colors.ink, fontSize: 13, fontWeight: '600', lineHeight: 19 },
   policyDetailSection: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
-  policyHeading: { color: colors.customer, fontSize: 13, fontWeight: '900', marginBottom: 4 },
+  policyHeading: { color: colors.customer, fontSize: 13, fontWeight: '600', marginBottom: 4 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
   tabs: { height: 76, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white, paddingBottom: 8 },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  tabText: { color: colors.muted, fontSize: 11, fontWeight: '700' },
+  tabText: { color: colors.muted, fontSize: 11, fontWeight: '500' },
   tabTextActive: { color: colors.customer },
   tabDot: { position: 'absolute', right: -3, top: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
   primaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
-  primaryButtonText: { color: colors.white, fontWeight: '800' },
+  primaryButtonText: { color: colors.white, fontWeight: '600' },
   secondaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
-  secondaryButtonText: { color: colors.ink, fontWeight: '800' },
+  secondaryButtonText: { color: colors.ink, fontWeight: '600' },
   deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 10 },
-  deleteAccountButtonText: { color: colors.red, fontWeight: '900' },
+  deleteAccountButtonText: { color: colors.red, fontWeight: '600' },
   logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
-  logoutButtonText: { color: colors.ink, fontWeight: '900' },
+  logoutButtonText: { color: colors.ink, fontWeight: '600' },
   toast: { position: 'absolute', left: 16, right: 16, bottom: 88, backgroundColor: colors.ink, borderRadius: 14, padding: 14 },
-  toastText: { color: colors.white, fontWeight: '800' },
+  toastText: { color: colors.white, fontWeight: '600' },
   empty: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  emptyTitle: { color: colors.ink, fontSize: 18, fontWeight: '800' },
-  errorTitle: { color: colors.red, fontSize: 18, fontWeight: '800', marginBottom: 6 }
+  emptyTitle: { color: colors.ink, fontSize: 18, fontWeight: '600' },
+  errorTitle: { color: colors.red, fontSize: 18, fontWeight: '600', marginBottom: 6 }
 });

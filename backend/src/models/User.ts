@@ -8,6 +8,8 @@ const PartnerProfileSchema = new Schema(
     online: { type: Boolean, default: false },
     walletBalance: { type: Number, default: 0 },
     weeklyOrders: { type: Number, default: 0 },
+    cancellationDay: { type: String },
+    cancellationsToday: { type: Number, default: 0 },
     kycStatus: {
       type: String,
       enum: ['not_started', 'pending', 'verified', 'rejected'],

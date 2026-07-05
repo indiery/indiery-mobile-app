@@ -12,19 +12,72 @@ import { compareOtp } from '../services/otp.service';
 import { requestPartnerPayout } from '../services/payout.service';
 import { calculateDeliverySettlement } from '../services/settlement.service';
 import { applyWaitingChargeToFare } from '../services/fare.service';
-import { sendPush } from '../services/notification.service';
+import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } from '../services/notification.service';
 import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { initialsFromName } from '../services/profile.service';
 import {
   advanceExpiredOrderOffers,
   MIN_PARTNER_WALLET_BALANCE,
+  offerOrderToNextDrivers,
   rejectDriverOffer
 } from '../services/order-offers.service';
 
 export const partnerRouter = Router();
 
 partnerRouter.use(requireAuth(['partner']));
+
+const MAX_DAILY_PARTNER_CANCELLATIONS = 2;
+const INDIA_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+function indiaDayKey(now = new Date()) {
+  const indiaTime = new Date(now.getTime() + INDIA_OFFSET_MS);
+  const year = indiaTime.getUTCFullYear();
+  const month = String(indiaTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(indiaTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+async function claimPartnerCancellation(partnerId: string) {
+  const dayKey = indiaDayKey();
+  const partner = await User.findOneAndUpdate(
+    {
+      _id: partnerId,
+      role: 'partner',
+      $or: [
+        { 'partnerProfile.cancellationDay': { $ne: dayKey } },
+        { 'partnerProfile.cancellationsToday': { $lt: MAX_DAILY_PARTNER_CANCELLATIONS } }
+      ]
+    },
+    [
+      {
+        $set: {
+          'partnerProfile.cancellationDay': dayKey,
+          'partnerProfile.cancellationsToday': {
+            $cond: [
+              { $eq: ['$partnerProfile.cancellationDay', dayKey] },
+              { $add: [{ $ifNull: ['$partnerProfile.cancellationsToday', 0] }, 1] },
+              1
+            ]
+          }
+        }
+      }
+    ],
+    { new: true }
+  );
+  return { partner, dayKey };
+}
+
+async function releasePartnerCancellation(partnerId: string, dayKey: string) {
+  await User.updateOne(
+    {
+      _id: partnerId,
+      'partnerProfile.cancellationDay': dayKey,
+      'partnerProfile.cancellationsToday': { $gt: 0 }
+    },
+    { $inc: { 'partnerProfile.cancellationsToday': -1 } }
+  );
+}
 
 const baseAvailableOrderQuery = {
   status: 'offered',
@@ -96,21 +149,27 @@ function assertMinimumPartnerWallet(partner: Awaited<ReturnType<typeof loadPartn
 async function getPartnerStats(userId: string, availableQuery?: ReturnType<typeof availableOrderQueryForVehicle>) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const [availableCount, activeCount, completedCount, ledger, completedToday] = await Promise.all([
+  const [availableCount, activeCount, completedCount, ledger, completedToday, partner] = await Promise.all([
     availableQuery ? Order.countDocuments(availableQuery) : Promise.resolve(0),
     Order.countDocuments({ partner: userId, status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } }),
     Order.countDocuments({ partner: userId, status: 'delivered' }),
     WalletLedger.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
-    Order.find({ partner: userId, status: 'delivered', updatedAt: { $gte: todayStart } }).select('fare settlement')
+    Order.find({ partner: userId, status: 'delivered', updatedAt: { $gte: todayStart } }).select('fare settlement'),
+    User.findById(userId).select('partnerProfile.cancellationDay partnerProfile.cancellationsToday')
   ]);
 
   const todayEarn = completedToday.reduce((sum, item) => sum + (item.settlement?.partnerCredit ?? item.fare?.partnerNet ?? 0), 0);
+  const cancellationsToday = partner?.partnerProfile?.cancellationDay === indiaDayKey()
+    ? Math.min(partner.partnerProfile.cancellationsToday ?? 0, MAX_DAILY_PARTNER_CANCELLATIONS)
+    : 0;
 
   return {
     availableCount,
     activeCount,
     completedCount,
     todayEarn,
+    cancellationsToday,
+    cancellationsRemaining: Math.max(0, MAX_DAILY_PARTNER_CANCELLATIONS - cancellationsToday),
     ledger: ledger.map((item) => ({
       id: String(item._id),
       amount: item.amount,
@@ -220,14 +279,20 @@ partnerRouter.post(
 partnerRouter.post(
   '/push-token',
   asyncRoute(async (req: AuthRequest, res) => {
-    const body = z.object({ token: z.string().min(8) }).parse(req.body);
-    const partner = await User.findByIdAndUpdate(
-      req.auth!.userId,
-      { $addToSet: { expoPushTokens: body.token } },
-      { new: true }
-    );
+    const body = z.object({ token: z.string().refine(isExpoPushToken, 'Invalid Expo push token') }).parse(req.body);
+    const partner = await registerPushToken(req.auth!.userId, body.token);
     if (!partner) throw new ApiError(404, 'Partner not found');
     res.json({ user: serializeUser(partner) });
+  })
+);
+
+partnerRouter.delete(
+  '/push-token',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const body = z.object({ token: z.string().refine(isExpoPushToken, 'Invalid Expo push token') }).parse(req.body);
+    const partner = await unregisterPushToken(req.auth!.userId, body.token);
+    if (!partner) throw new ApiError(404, 'Partner not found');
+    res.json({ ok: true });
   })
 );
 
@@ -351,9 +416,13 @@ partnerRouter.post(
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
     const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
     await sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${acceptedOrder.orderNo}`, {
+      event: 'driver_assigned',
+      role: 'customer',
+      screen: 'orders',
       orderId: String(acceptedOrder._id),
-      orderNo: acceptedOrder.orderNo
-    }).catch(() => undefined);
+      orderNo: acceptedOrder.orderNo,
+      status: 'accepted'
+    }, { ttl: 3600, collapseId: `order-${String(acceptedOrder._id)}` });
     emitOrderChanged(payload, String(acceptedOrder.customer), String(partner._id));
     emitPartnerQueueChanged();
     res.json({ order: payload });
@@ -372,6 +441,96 @@ partnerRouter.post(
     await rejectDriverOffer(String(order._id), req.auth!.userId);
     const latest = await loadOrderForPartner(String(order._id));
     res.json({ order: latest ? serializeOrder(latest) : serializeOrder(order), rejected: true });
+  })
+);
+
+partnerRouter.post(
+  '/orders/:orderId/cancel',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const body = z
+      .object({ reason: z.string().trim().min(2).max(200).default('Cancelled by driver') })
+      .parse(req.body ?? {});
+    const order = await Order.findOne({ _id: String(req.params.orderId), partner: req.auth!.userId });
+    if (!order) throw new ApiError(404, 'Active order not found');
+    if (!['accepted', 'arrived_pickup'].includes(order.status)) {
+      throw new ApiError(400, 'Order cannot be cancelled after pickup');
+    }
+
+    const claim = await claimPartnerCancellation(req.auth!.userId);
+    if (!claim.partner) {
+      throw new ApiError(400, 'Daily cancellation limit reached. You can cancel up to 2 orders per day.');
+    }
+
+    const cancelledAt = new Date();
+    let transitionedOrder;
+    try {
+      transitionedOrder = await Order.findOneAndUpdate(
+        {
+          _id: order._id,
+          partner: req.auth!.userId,
+          status: { $in: ['accepted', 'arrived_pickup'] }
+        },
+        {
+          $set: {
+            status: 'searching',
+            timeline: createTimeline('searching', order.timeline ?? []),
+            offeredPartnerIds: []
+          },
+          $unset: {
+            partner: 1,
+            partnerLocation: 1,
+            offerBatchStartedAt: 1,
+            offerExpiresAt: 1
+          },
+          $addToSet: { rejectedPartnerIds: req.auth!.userId },
+          $push: {
+            partnerCancellationHistory: {
+              partner: req.auth!.userId,
+              reason: body.reason,
+              at: cancelledAt
+            }
+          }
+        },
+        { new: true }
+      );
+    } catch (error) {
+      await releasePartnerCancellation(req.auth!.userId, claim.dayKey);
+      throw error;
+    }
+
+    if (!transitionedOrder) {
+      await releasePartnerCancellation(req.auth!.userId, claim.dayKey);
+      throw new ApiError(409, 'Order is no longer cancellable');
+    }
+
+    const fullOrder = await loadOrderForPartner(String(transitionedOrder._id));
+    const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(transitionedOrder._id) };
+    const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
+    await sendPush(
+      customer?.expoPushTokens,
+      'Finding another driver',
+      `Your driver cancelled ${transitionedOrder.orderNo}. We are finding a replacement now.`,
+      {
+        event: 'driver_cancelled',
+        role: 'customer',
+        screen: 'orders',
+        orderId: String(transitionedOrder._id),
+        orderNo: transitionedOrder.orderNo,
+        status: 'searching'
+      },
+      { ttl: 3600, collapseId: `order-${String(transitionedOrder._id)}` }
+    );
+    emitOrderChanged(payload, String(transitionedOrder.customer), req.auth!.userId);
+    emitPartnerQueueChanged();
+    await offerOrderToNextDrivers(transitionedOrder._id, { force: true, reason: 'driver_cancel' }).catch((error) => {
+      console.error('Unable to immediately reassign driver-cancelled order', error);
+    });
+
+    const cancellationsUsed = claim.partner.partnerProfile?.cancellationsToday ?? MAX_DAILY_PARTNER_CANCELLATIONS;
+    res.json({
+      ok: true,
+      cancellationsRemaining: Math.max(0, MAX_DAILY_PARTNER_CANCELLATIONS - cancellationsUsed)
+    });
   })
 );
 
@@ -486,6 +645,40 @@ partnerRouter.post(
 
     const fullOrder = await loadOrderForPartner(String(order._id));
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
+    const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
+    const customerNotification: Record<string, { title: string; body: string }> = {
+      arrived_pickup: {
+        title: 'Driver arrived at pickup',
+        body: `Your driver has reached the pickup for ${order.orderNo}`
+      },
+      picked_up: {
+        title: 'Goods picked up',
+        body: `${order.orderNo} has been picked up safely`
+      },
+      in_transit: {
+        title: 'Delivery in transit',
+        body: `${order.orderNo} is on the way to the drop location`
+      },
+      delivered: {
+        title: 'Delivered successfully',
+        body: `${order.orderNo} has been delivered`
+      }
+    };
+    const notification = customerNotification[body.status];
+    await sendPush(
+      customer?.expoPushTokens,
+      notification.title,
+      notification.body,
+      {
+        event: 'order_status',
+        role: 'customer',
+        screen: 'orders',
+        orderId: String(order._id),
+        orderNo: order.orderNo,
+        status: body.status
+      },
+      { ttl: 3600, collapseId: `order-${String(order._id)}` }
+    );
     emitOrderChanged(payload, String(order.customer), req.auth!.userId);
     emitPartnerQueueChanged();
     res.json({ order: payload });

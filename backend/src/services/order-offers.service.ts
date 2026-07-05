@@ -120,12 +120,21 @@ function scheduleOfferAdvance(orderId: string) {
 
 async function sendPartnerBatchPush(order: OrderDocument, partners: UserDocument[]) {
   await Promise.all(
-    partners.map((partner) =>
-      sendPush(partner.expoPushTokens, 'New Indiery order nearby', `${order.pickup.label} to ${order.drop.label}`, {
+    partners.map((partner) => {
+      const pickupDistance = distanceKm(partner.partnerProfile?.currentLocation, order.pickup);
+      const distanceLabel = Number.isFinite(pickupDistance) && pickupDistance < Number.MAX_SAFE_INTEGER
+        ? `${pickupDistance < 10 ? pickupDistance.toFixed(1) : Math.round(pickupDistance)} km to pickup - `
+        : '';
+      return sendPush(partner.expoPushTokens, 'New Indiery order nearby', `${distanceLabel}${order.pickup.label} to ${order.drop.label}`, {
+        event: 'order_offer',
+        role: 'partner',
+        screen: 'dashboard',
         orderId: String(order._id),
-        orderNo: order.orderNo
-      })
-    )
+        orderNo: order.orderNo,
+        status: order.status,
+        ...(distanceLabel ? { pickupDistanceKm: Number(pickupDistance.toFixed(2)) } : {})
+      }, { ttl: Math.ceil((DRIVER_OFFER_TIMEOUT_MS + 15_000) / 1000), collapseId: `offer-${String(order._id)}` });
+    })
   );
 }
 
@@ -136,9 +145,13 @@ async function sendCustomerSearchPush(order: OrderDocument, partnerCount: number
     ? `Sent to ${partnerCount} nearby driver${partnerCount === 1 ? '' : 's'}`
     : 'Searching for nearby online drivers';
   await sendPush(customer?.expoPushTokens, 'Finding nearby driver', body, {
+    event: 'order_search',
+    role: 'customer',
+    screen: 'orders',
     orderId: String(order._id),
-    orderNo: order.orderNo
-  }).catch(() => undefined);
+    orderNo: order.orderNo,
+    status: order.status
+  }, { ttl: 300, collapseId: `search-${String(order._id)}` });
 }
 
 async function emitOfferUpdates(orderId: string, partnerIds: string[] = []) {
@@ -152,7 +165,7 @@ async function emitOfferUpdates(orderId: string, partnerIds: string[] = []) {
 
 export async function offerOrderToNextDrivers(
   orderId: string | Types.ObjectId,
-  options: { force?: boolean; reason?: 'new' | 'payment' | 'timeout' | 'reject' | 'refresh' } = {}
+  options: { force?: boolean; reason?: 'new' | 'payment' | 'timeout' | 'reject' | 'refresh' | 'driver_cancel' } = {}
 ) {
   const order = await Order.findById(orderId);
   if (!order || !canDispatchOrder(order)) return undefined;
@@ -186,7 +199,9 @@ export async function offerOrderToNextDrivers(
   await order.save();
   await Promise.all([
     nextPartners.length ? sendPartnerBatchPush(order, nextPartners) : Promise.resolve(),
-    sendCustomerSearchPush(order, nextPartners.length),
+    options.reason === 'new' || options.reason === 'payment'
+      ? sendCustomerSearchPush(order, nextPartners.length)
+      : Promise.resolve(),
     emitOfferUpdates(String(order._id), nextPartnerIds)
   ]);
   scheduleOfferAdvance(String(order._id));

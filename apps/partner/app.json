@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "Indiery Partner",
+    "owner": "amit96287",
     "slug": "indiery-partner",
     "scheme": "indierypartner",
     "version": "1.0.0",
@@ -18,13 +19,22 @@
     "plugins": [
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "color": "#059669",
+          "defaultChannel": "orders"
+        }
+      ]
     ],
     "extra": {
       "apiBaseUrl": "https://indiery-mobile-app-bp9h.onrender.com/api",
       "allowInsecureApiBaseUrl": false,
       "privacyPolicyUrl": "https://indiery-mobile-app-bp9h.onrender.com/privacy",
-      "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion"
+      "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
+      "eas": {
+        "projectId": "9926d7c7-a517-4fa5-848a-e48c274e9c51"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.indiery.partner",

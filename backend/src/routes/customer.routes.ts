@@ -17,6 +17,7 @@ import { serializeOrder, serializeUser, serializeVehicle } from '../services/ser
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { initialsFromName } from '../services/profile.service';
 import { offerOrderToNextDrivers } from '../services/order-offers.service';
+import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } from '../services/notification.service';
 
 export const customerRouter = Router();
 
@@ -552,6 +553,26 @@ customerRouter.post(
         reference: order.orderNo
       });
     }
+    const pushRecipientIds = order.partner
+      ? [String(order.partner)]
+      : ((order.offeredPartnerIds ?? []) as unknown[]).map(String);
+    if (pushRecipientIds.length) {
+      const recipients = await User.find({ _id: { $in: pushRecipientIds } }).select('expoPushTokens');
+      await sendPush(
+        recipients.flatMap((recipient) => recipient.expoPushTokens ?? []),
+        'Order cancelled',
+        `${order.orderNo} is no longer available`,
+        {
+          event: 'order_cancelled',
+          role: 'partner',
+          screen: 'dashboard',
+          orderId: String(order._id),
+          orderNo: order.orderNo,
+          status: 'cancelled'
+        },
+        { ttl: 3600, collapseId: `order-${String(order._id)}` }
+      );
+    }
     const fullOrder = await populatedOrder(order._id);
     emitOrderChanged(fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) }, req.auth!.userId);
     emitPartnerQueueChanged();
@@ -562,14 +583,20 @@ customerRouter.post(
 customerRouter.post(
   '/push-token',
   asyncRoute(async (req: AuthRequest, res) => {
-    const body = z.object({ token: z.string().min(8) }).parse(req.body);
-    const user = await User.findByIdAndUpdate(
-      req.auth!.userId,
-      { $addToSet: { expoPushTokens: body.token } },
-      { new: true }
-    );
+    const body = z.object({ token: z.string().refine(isExpoPushToken, 'Invalid Expo push token') }).parse(req.body);
+    const user = await registerPushToken(req.auth!.userId, body.token);
     if (!user) throw new ApiError(404, 'Customer not found');
     res.json({ user: serializeUser(user) });
+  })
+);
+
+customerRouter.delete(
+  '/push-token',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const body = z.object({ token: z.string().refine(isExpoPushToken, 'Invalid Expo push token') }).parse(req.body);
+    const user = await unregisterPushToken(req.auth!.userId, body.token);
+    if (!user) throw new ApiError(404, 'Customer not found');
+    res.json({ ok: true });
   })
 );
 

@@ -73,6 +73,19 @@ The customer Android native project is already checked in. If you build it direc
 
 React Native Firebase requires an Expo development build or native build; it will not run inside plain Expo Go.
 
+## Production Push Notifications
+
+Both apps use Expo Push Notifications with separate EAS projects:
+
+- Customer: `@amit96287/indiery-customer`
+- Partner: `@amit96287/indiery-partner`
+
+The apps register their Expo push token after login, remove it on logout, and open the relevant order when a notification is tapped. The backend validates token ownership, sends high-priority order alerts, retries transient Expo failures, stores delivery receipt IDs, checks receipts in the background, and removes expired device tokens.
+
+Before the first store build, configure the Firebase `indiery-bebb4` service-account key as the FCM V1 push credential for **both** Android applications in EAS. Configure an APNs key for each EAS project before iOS builds. `EXPO_ACCESS_TOKEN` must also be present in the deployed backend environment. Push notifications must be tested with a development/preview/production build on a physical device; Android push is not available in Expo Go.
+
+Order notifications currently cover driver search/assignment, nearby partner offers, arrival at pickup, pickup, in-transit, delivery, and customer cancellation.
+
 ## Included Flows
 
 - Customer Firebase OTP login, booking, fare estimate, Razorpay payment intent and verification API, pickup/drop OTP, live tracking, wallet coins, order history, profile, and in-app legal policies

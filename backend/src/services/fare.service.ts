@@ -62,7 +62,7 @@ export function normalizeFareBreakup(fareInput: unknown, distanceKmInput: unknow
     waitingPerMinute: fare.waitingPerMinute,
     gst,
     coins,
-    total: fare.total ?? orderValue + waitingCharge + gst - coins,
+    total: fare.total ?? Math.max(0, orderValue + waitingCharge + gst - coins),
     driverCommission,
     reserveAmount,
     partnerNet: fare.partnerNet ?? onTimePartnerPayout,
@@ -115,7 +115,7 @@ export function applyWaitingChargeToFare(input: {
       billableWaitingMinutes,
       waitingFreeMinutes: waitingPolicy.waitingFreeMinutes,
       waitingPerMinute: waitingPolicy.waitingPerMinute,
-      total: roundMoney(normalized.orderValue + waitingCharge + normalized.gst - normalized.coins),
+      total: roundMoney(Math.max(0, normalized.orderValue + waitingCharge + normalized.gst - normalized.coins)),
       partnerNet: payoutWithWaiting,
       onTimePartnerPayout: payoutWithWaiting,
       latePartnerPayout: latePayoutWithWaiting
@@ -134,11 +134,13 @@ export function estimateFare(input: EstimateInput) {
   const orderValue = base + distance;
   const subtotal = orderValue;
   const gst = Math.round(subtotal * 0.18);
+  const waitingPolicy = waitingPolicyForVehicle(input.vehicle);
+  const waitingCharge = waitingPolicy.waitingCharge ?? 0;
+  const payableBeforeCoins = subtotal + waitingCharge + gst;
   const requestedCoins = Math.max(0, input.coins ?? 0);
   const walletCoins = Math.max(0, input.customerCoins ?? 0);
-  const coins = Math.min(walletCoins, requestedCoins, subtotal);
-  const waitingPolicy = waitingPolicyForVehicle(input.vehicle);
-  const total = subtotal + (waitingPolicy.waitingCharge ?? 0) + gst - coins;
+  const coins = Math.min(walletCoins, requestedCoins, payableBeforeCoins);
+  const total = Math.max(0, payableBeforeCoins - coins);
   const driverCommission = roundMoney(subtotal * DRIVER_COMMISSION_RATE);
   const platformCommission = roundMoney(subtotal * PLATFORM_COMMISSION_RATE);
   const reserveAmount = roundMoney(subtotal * RESERVE_RATE);

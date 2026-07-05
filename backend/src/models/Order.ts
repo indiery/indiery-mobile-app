@@ -71,6 +71,15 @@ const PartnerLocationSchema = new Schema(
   { _id: false }
 );
 
+const PartnerCancellationSchema = new Schema(
+  {
+    partner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    reason: { type: String, required: true },
+    at: { type: Date, required: true }
+  },
+  { _id: false }
+);
+
 const SettlementSchema = new Schema(
   {
     delayed: { type: Boolean, default: false },
@@ -139,6 +148,7 @@ const OrderSchema = new Schema(
       dropOtpHash: { type: String }
     },
     partnerLocation: { type: PartnerLocationSchema },
+    partnerCancellationHistory: { type: [PartnerCancellationSchema], default: [] },
     settlement: { type: SettlementSchema },
     cancellationReason: { type: String }
   },
@@ -146,6 +156,7 @@ const OrderSchema = new Schema(
 );
 
 export type OrderDocument = HydratedDocument<InferSchemaType<typeof OrderSchema>>;
+OrderSchema.index({ 'partnerCancellationHistory.partner': 1, 'partnerCancellationHistory.at': 1 });
 OrderSchema.pre('validate', function normalizeLegacyFare(next) {
   if (this.fare) {
     this.set('fare', normalizeFareBreakup(this.fare, this.distanceKm));

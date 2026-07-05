@@ -221,6 +221,13 @@ export class IndieryApi {
     });
   }
 
+  unregisterCustomerPushToken(token: string) {
+    return this.request<{ ok: boolean }>('/customer/push-token', {
+      method: 'DELETE',
+      body: JSON.stringify({ token })
+    });
+  }
+
   createCloudinarySignature(input: { purpose: UploadPurpose; orderId?: string; documentKey?: string }) {
     return this.request<{ upload: CloudinarySignature }>('/uploads/cloudinary-signature', {
       method: 'POST',
@@ -253,6 +260,13 @@ export class IndieryApi {
     });
   }
 
+  unregisterPartnerPushToken(token: string) {
+    return this.request<{ ok: boolean }>('/partner/push-token', {
+      method: 'DELETE',
+      body: JSON.stringify({ token })
+    });
+  }
+
   updatePartnerLocation(location: Required<Pick<PartnerLocation, 'lat' | 'lng'>> & Partial<PartnerLocation>) {
     return this.request<{ user: UserProfile; activeOrderCount: number }>('/partner/location', {
       method: 'POST',
@@ -271,6 +285,13 @@ export class IndieryApi {
     return this.request<{ order: Order; rejected: boolean }>(`/partner/orders/${orderId}/reject`, {
       method: 'POST',
       body: JSON.stringify({})
+    });
+  }
+
+  cancelPartnerOrder(orderId: string, reason: string) {
+    return this.request<{ ok: boolean; cancellationsRemaining: number }>(`/partner/orders/${orderId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
     });
   }
 

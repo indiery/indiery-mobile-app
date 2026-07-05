@@ -443,6 +443,23 @@ customerRouter.post(
     const payload = serializeOrder(fullOrder);
     const customerPayload = serializeOrder(fullOrder, { includeTripOtp: true });
     emitOrderChanged(payload, String(user._id));
+    await sendPush(
+      user.expoPushTokens,
+      paymentIntent.provider === 'razorpay' && paymentIntent.status === 'pending' ? 'Complete payment' : 'Order placed',
+      paymentIntent.provider === 'razorpay' && paymentIntent.status === 'pending'
+        ? `Finish payment for ${order.orderNo} to start driver search.`
+        : `${order.orderNo} is confirmed. We are finding a driver now.`,
+      {
+        event: paymentIntent.provider === 'razorpay' && paymentIntent.status === 'pending' ? 'payment_pending' : 'order_created',
+        role: 'customer',
+        screen: 'orders',
+        orderId: String(order._id),
+        orderNo: order.orderNo,
+        status: order.status,
+        paymentStatus: paymentIntent.status
+      },
+      { ttl: 1800, collapseId: `order-${String(order._id)}-created-${Date.now()}` }
+    );
     const dispatchPayload =
       paymentIntent.provider === 'cash' || paymentIntent.status === 'paid'
         ? await offerOrderToNextDrivers(order._id, { reason: 'new' })
@@ -513,6 +530,22 @@ customerRouter.post(
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
     const customerPayload = fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : { id: String(order._id), tripOtp: undefined };
     emitOrderChanged(payload, req.auth!.userId, order.partner ? String(order.partner) : undefined);
+    const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
+    await sendPush(
+      customer?.expoPushTokens,
+      'Payment received',
+      `${order.orderNo} is paid. We are finding a driver now.`,
+      {
+        event: 'payment_received',
+        role: 'customer',
+        screen: 'orders',
+        orderId: String(order._id),
+        orderNo: order.orderNo,
+        status: order.status,
+        paymentStatus: 'paid'
+      },
+      { ttl: 1800, collapseId: `order-${String(order._id)}-payment-${Date.now()}` }
+    );
     const dispatchPayload = await offerOrderToNextDrivers(order._id, { reason: 'payment' });
     res.json({ order: dispatchPayload ? { ...dispatchPayload, tripOtp: customerPayload.tripOtp } : customerPayload });
   })
@@ -570,9 +603,30 @@ customerRouter.post(
           orderNo: order.orderNo,
           status: 'cancelled'
         },
-        { ttl: 3600, collapseId: `order-${String(order._id)}` }
+        { ttl: 3600, collapseId: `order-${String(order._id)}-customer-cancel-${Date.now()}` }
       );
     }
+    const customerForPush = await User.findById(req.auth!.userId).select('expoPushTokens');
+    const refundText = walletRefundAmount > 0
+      ? ` Refund of INR ${walletRefundAmount} has been added to your wallet.`
+      : shouldRefundCoins
+        ? ' Coins used on this order were returned.'
+        : '';
+    await sendPush(
+      customerForPush?.expoPushTokens,
+      'Order cancelled',
+      `${order.orderNo} has been cancelled.${refundText}`,
+      {
+        event: 'customer_order_cancelled',
+        role: 'customer',
+        screen: 'orders',
+        orderId: String(order._id),
+        orderNo: order.orderNo,
+        status: 'cancelled',
+        paymentStatus: order.paymentStatus
+      },
+      { ttl: 3600, collapseId: `order-${String(order._id)}-cancel-confirm-${Date.now()}` }
+    );
     const fullOrder = await populatedOrder(order._id);
     emitOrderChanged(fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) }, req.auth!.userId);
     emitPartnerQueueChanged();

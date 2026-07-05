@@ -415,14 +415,22 @@ partnerRouter.post(
     const fullOrder = await loadOrderForPartner(String(acceptedOrder._id));
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
     const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
-    await sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${acceptedOrder.orderNo}`, {
+    const assignedPushResult = await sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${acceptedOrder.orderNo}`, {
       event: 'driver_assigned',
       role: 'customer',
       screen: 'orders',
       orderId: String(acceptedOrder._id),
       orderNo: acceptedOrder.orderNo,
       status: 'accepted'
-    }, { ttl: 3600, collapseId: `order-${String(acceptedOrder._id)}` });
+    }, { ttl: 3600, collapseId: `order-${String(acceptedOrder._id)}-driver-assigned-${Date.now()}` });
+    if (!assignedPushResult.accepted) {
+      console.warn('Customer driver-assigned push was not accepted by Expo', {
+        orderId: String(acceptedOrder._id),
+        attempted: assignedPushResult.attempted,
+        rejected: assignedPushResult.rejected,
+        removedTokens: assignedPushResult.removedTokens
+      });
+    }
     emitOrderChanged(payload, String(acceptedOrder.customer), String(partner._id));
     emitPartnerQueueChanged();
     res.json({ order: payload });
@@ -676,7 +684,7 @@ partnerRouter.post(
       }
     };
     const notification = customerNotification[body.status];
-    await sendPush(
+    const statusPushResult = await sendPush(
       customer?.expoPushTokens,
       notification.title,
       notification.body,
@@ -688,8 +696,17 @@ partnerRouter.post(
         orderNo: order.orderNo,
         status: body.status
       },
-      { ttl: 3600, collapseId: `order-${String(order._id)}` }
+      { ttl: 3600, collapseId: `order-${String(order._id)}-${body.status}-${Date.now()}` }
     );
+    if (!statusPushResult.accepted) {
+      console.warn('Customer order-status push was not accepted by Expo', {
+        orderId: String(order._id),
+        status: body.status,
+        attempted: statusPushResult.attempted,
+        rejected: statusPushResult.rejected,
+        removedTokens: statusPushResult.removedTokens
+      });
+    }
     emitOrderChanged(payload, String(order.customer), req.auth!.userId);
     emitPartnerQueueChanged();
     res.json({ order: payload });

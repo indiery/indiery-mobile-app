@@ -7,6 +7,7 @@ import { serializeOrder } from '../services/serialize.service';
 import { verifyRazorpayWebhookSignature } from '../services/payment.service';
 import { emitOrderChanged } from '../realtime/socket';
 import { offerOrderToNextDrivers } from '../services/order-offers.service';
+import { sendPush } from '../services/notification.service';
 
 export const paymentRouter = Router();
 
@@ -94,6 +95,24 @@ paymentRouter.post(
       if (fullOrder) {
         const payload = serializeOrder(fullOrder);
         emitOrderChanged(payload, String(order.customer), order.partner ? String(order.partner) : undefined);
+        if (!wasPaid) {
+          const customer = fullOrder.customer as unknown as { expoPushTokens?: string[] } | undefined;
+          await sendPush(
+            customer?.expoPushTokens,
+            'Payment received',
+            `${order.orderNo} is paid. We are finding a driver now.`,
+            {
+              event: 'payment_received',
+              role: 'customer',
+              screen: 'orders',
+              orderId: String(order._id),
+              orderNo: order.orderNo,
+              status: order.status,
+              paymentStatus: 'paid'
+            },
+            { ttl: 1800, collapseId: `order-${String(order._id)}-payment-${Date.now()}` }
+          );
+        }
       }
       if (!wasPaid) await offerOrderToNextDrivers(order._id, { reason: 'payment' });
       return res.json({ ok: true });

@@ -70,7 +70,7 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
-    priority: Notifications.AndroidNotificationPriority.HIGH
+    priority: Notifications.AndroidNotificationPriority.MAX
   })
 });
 
@@ -828,6 +828,19 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
         enableVibrate: true,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: colors.partner
+      });
+      await Notifications.setNotificationChannelAsync('driver-orders', {
+        name: 'Driver order beep',
+        description: 'Loud alerts for new delivery offers and urgent driver updates',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        enableVibrate: true,
+        vibrationPattern: [0, 700, 250, 700, 250, 900],
+        lightColor: colors.partner,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: false,
+        showBadge: true,
+        enableLights: true
       });
     }
 

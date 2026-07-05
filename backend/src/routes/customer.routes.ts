@@ -9,7 +9,7 @@ import { Order } from '../models/Order';
 import { Counter } from '../models/Counter';
 import { WalletLedger, type WalletLedgerDocument } from '../models/WalletLedger';
 import { estimateFare } from '../services/fare.service';
-import { resolveDistanceKm } from '../services/maps.service';
+import { resolveRouteMetrics } from '../services/maps.service';
 import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { hashOtp, makeTripOtp } from '../services/otp.service';
 import { createTimeline, setOrderStatusTimeline } from '../services/timeline.service';
@@ -314,7 +314,7 @@ customerRouter.post(
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
     const requiredVehicle = await customerVehicleForWeight(body.weightKg);
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
-    const distanceKm = await resolveDistanceKm(body);
+    const routeMetrics = await resolveRouteMetrics(body);
     const fare = estimateFare({
       pickup: body.pickup,
       drop: body.drop,
@@ -322,7 +322,8 @@ customerRouter.post(
       coins: body.coins,
       customerCoins: user.customerProfile?.coins ?? 0,
       weightKg: body.weightKg,
-      distanceKm
+      distanceKm: routeMetrics.distanceKm,
+      routeDurationMinutes: routeMetrics.durationMinutes
     });
     res.json({ fare, vehicle: serializeVehicle(vehicle) });
   })
@@ -338,7 +339,7 @@ customerRouter.post(
     const requiredVehicle = await customerVehicleForWeight(body.weightKg);
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
 
-    const distanceKm = await resolveDistanceKm(body);
+    const routeMetrics = await resolveRouteMetrics(body);
     const fare = estimateFare({
       pickup: body.pickup,
       drop: body.drop,
@@ -346,7 +347,8 @@ customerRouter.post(
       coins: body.coins,
       customerCoins: user.customerProfile?.coins ?? 0,
       weightKg: body.weightKg,
-      distanceKm
+      distanceKm: routeMetrics.distanceKm,
+      routeDurationMinutes: routeMetrics.durationMinutes
     });
     if (body.paymentMode === 'wallet' && (user.customerProfile?.walletBalance ?? 0) < fare.total) {
       throw new ApiError(400, 'Insufficient wallet balance');
@@ -603,7 +605,12 @@ customerRouter.post(
           orderNo: order.orderNo,
           status: 'cancelled'
         },
-        { ttl: 3600, collapseId: `order-${String(order._id)}-customer-cancel-${Date.now()}` }
+        {
+          ttl: 3600,
+          collapseId: `order-${String(order._id)}-customer-cancel-${Date.now()}`,
+          channelId: 'driver-orders',
+          priority: 'high'
+        }
       );
     }
     const customerForPush = await User.findById(req.auth!.userId).select('expoPushTokens');

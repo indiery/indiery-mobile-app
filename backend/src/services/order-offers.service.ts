@@ -125,7 +125,7 @@ async function sendPartnerBatchPush(order: OrderDocument, partners: UserDocument
       const distanceLabel = Number.isFinite(pickupDistance) && pickupDistance < Number.MAX_SAFE_INTEGER
         ? `${pickupDistance < 10 ? pickupDistance.toFixed(1) : Math.round(pickupDistance)} km to pickup - `
         : '';
-      return sendPush(partner.expoPushTokens, 'New Indiery order nearby', `${distanceLabel}${order.pickup.label} to ${order.drop.label}`, {
+      return sendPush(partner.expoPushTokens, '🔔 New order nearby', `${distanceLabel}${order.pickup.label} → ${order.drop.label}. Open now to accept.`, {
         event: 'order_offer',
         role: 'partner',
         screen: 'dashboard',
@@ -133,7 +133,12 @@ async function sendPartnerBatchPush(order: OrderDocument, partners: UserDocument
         orderNo: order.orderNo,
         status: order.status,
         ...(distanceLabel ? { pickupDistanceKm: Number(pickupDistance.toFixed(2)) } : {})
-      }, { ttl: Math.ceil((DRIVER_OFFER_TIMEOUT_MS + 15_000) / 1000), collapseId: `offer-${String(order._id)}` });
+      }, {
+        ttl: Math.ceil((DRIVER_OFFER_TIMEOUT_MS + 15_000) / 1000),
+        collapseId: `offer-${String(order._id)}`,
+        channelId: 'driver-orders',
+        priority: 'high'
+      });
     })
   );
 }

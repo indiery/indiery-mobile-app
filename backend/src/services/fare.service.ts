@@ -15,6 +15,7 @@ export interface EstimateInput {
   coins?: number;
   customerCoins?: number;
   distanceKm?: number;
+  routeDurationMinutes?: number;
 }
 
 export function stableDistanceKm(pickup: string, drop: string) {
@@ -171,6 +172,8 @@ export function estimateFare(input: EstimateInput) {
       },
       distanceKm
     ),
-    etaMinutes: input.vehicle.etaMinutes + Math.round(distanceKm / 2)
+    etaMinutes: input.routeDurationMinutes
+      ? Math.max(1, Math.ceil(input.routeDurationMinutes))
+      : input.vehicle.etaMinutes + Math.round(distanceKm / 2)
   };
 }

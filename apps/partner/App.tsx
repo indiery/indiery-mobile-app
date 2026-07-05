@@ -1104,7 +1104,7 @@ export default function App() {
   async function refresh() {
     try {
       const bootstrap = await api.partnerBootstrap();
-      setData(bootstrap);
+      setData((current) => current ? bootstrap : current);
     } catch (err) {
       showToast(err instanceof Error ? err.message : copyFor(language, 'refreshFailed'));
     }
@@ -1378,11 +1378,20 @@ export default function App() {
   async function logout() {
     setBusy(true);
     setError('');
+    setData(null);
+    setTab('dashboard');
+    setSelectedActiveOrderId(undefined);
+    setProfileDetailOpen(false);
+    setNotificationIntent(null);
     try {
       if (data?.user.partnerProfile?.online) {
         await api.setAvailability(false).catch(() => undefined);
       }
       stopLocationStream();
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
       socketRef.current?.disconnect();
       socketRef.current = null;
       if (pushTokenRef.current) {
@@ -1391,9 +1400,6 @@ export default function App() {
       }
       api.setToken('');
       await auth().signOut();
-      setData(null);
-      setTab('dashboard');
-      setProfileDetailOpen(false);
     } catch (err) {
       showToast(err instanceof Error ? err.message : copyFor(language, 'logoutFailed'));
     } finally {

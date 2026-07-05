@@ -77,8 +77,7 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 }
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
-const androidStatusBarHeight =
-  Platform.OS === 'android' ? Math.max(StatusBar.currentHeight ?? 0, Constants.statusBarHeight ?? 0) : 0;
+const androidStatusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
 const expoProjectId =
   (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
   (Constants.easConfig as { projectId?: string } | null)?.projectId;
@@ -1351,7 +1350,7 @@ export default function App() {
   async function refresh() {
     try {
       const bootstrap = await api.customerBootstrap();
-      setData(bootstrap);
+      setData((current) => current ? bootstrap : current);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Refresh failed');
     }
@@ -1536,6 +1535,17 @@ export default function App() {
   async function logout() {
     setBusy(true);
     setError('');
+    setData(null);
+    setTab('home');
+    setStep(1);
+    setFare(null);
+    setBooking(initialBooking);
+    setTripOtpByOrder({});
+    setSelectedActiveOrderId(undefined);
+    setRequestedOrderDetailId(undefined);
+    setNotificationIntent(null);
+    setPickupSearchOpen(false);
+    setPickupDetailsMode(null);
     try {
       socketRef.current?.disconnect();
       socketRef.current = null;
@@ -1545,12 +1555,6 @@ export default function App() {
       }
       api.setToken('');
       await auth().signOut();
-      setData(null);
-      setTab('home');
-      setStep(1);
-      setFare(null);
-      setBooking(initialBooking);
-      setTripOtpByOrder({});
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Logout failed');
     } finally {
@@ -1909,7 +1913,7 @@ function LoginScreen({
 
   return (
     <SafeAreaView style={styles.loginShell}>
-      <AppStatusBar variant="light" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
           <LoginHero title="Indiery" caption="Delivering trust, every mile." />
@@ -6049,7 +6053,7 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
-  loginShell: { flex: 1, backgroundColor: colors.white },
+  loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
   authKeyboard: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },

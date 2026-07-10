@@ -4,6 +4,7 @@ import {
   Alert,
   BackHandler,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -28,6 +29,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
+import partnerLoginBackgroundImage from './assets/bg.png';
 import {
   colors,
   IndieryApi,
@@ -1461,7 +1463,7 @@ export default function App() {
     return (
       <LanguageContext.Provider value={language}>
       <SafeAreaView style={styles.shell}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.partner} translucent={false} />
+        <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
         <View style={styles.appHeader}>
           <View>
             <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
@@ -1504,7 +1506,7 @@ export default function App() {
   return (
     <LanguageContext.Provider value={language}>
     <SafeAreaView style={styles.shell}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.partner} translucent={false} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       {tab !== 'profile' ? (
         <View style={styles.appHeader}>
           <View>
@@ -1778,44 +1780,18 @@ function LoginScreen({
 
 function LoginHero({ title, caption }: { title: string; caption: string }) {
   return (
-    <View style={styles.loginHero}>
-      <View style={styles.loginSkyGlow} />
-      <View style={styles.loginBrandRow}>
+    <ImageBackground
+      source={partnerLoginBackgroundImage}
+      style={styles.loginHero}
+      imageStyle={styles.loginHeroImage}
+      resizeMode="cover"
+    >
+      <View style={styles.loginHeroWash} />
+      <View style={styles.loginBrandPanel}>
         <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
+        <Text style={styles.loginHeroCaption}>{caption}</Text>
       </View>
-      <Text style={styles.loginHeroCaption}>{caption}</Text>
-      <DeliveryIllustration />
-    </View>
-  );
-}
-
-function DeliveryIllustration() {
-  return (
-    <View style={styles.deliveryArt}>
-      <View style={[styles.skylineBlock, styles.skylineOne]} />
-      <View style={[styles.skylineBlock, styles.skylineTwo]} />
-      <View style={[styles.skylineBlock, styles.skylineThree]} />
-      <View style={styles.heroGround} />
-      <View style={styles.routeDashOne} />
-      <View style={styles.routeDashTwo} />
-      <Ionicons name="location" size={28} color={colors.partner} style={styles.routePinTop} />
-      <Ionicons name="location" size={18} color={colors.partner} style={styles.routePinMid} />
-      <View style={styles.boxStack}>
-        <View style={styles.boxBack} />
-        <View style={styles.boxFront} />
-        <View style={styles.boxSmall} />
-      </View>
-      <View style={styles.truckShadow} />
-      <View style={styles.truckTrailer}>
-        <View style={styles.trailerStripe} />
-      </View>
-      <View style={styles.truckCab}>
-        <View style={styles.truckWindshield} />
-        <View style={styles.truckGrill} />
-      </View>
-      <View style={[styles.truckWheel, styles.truckWheelOne]} />
-      <View style={[styles.truckWheel, styles.truckWheelTwo]} />
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -3624,81 +3600,35 @@ function Empty({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: colors.partner, paddingTop: androidStatusBarInset },
+  shell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
   loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
   authKeyboard: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
   loginHero: {
-    minHeight: 330,
-    backgroundColor: colors.partnerLight,
-    paddingHorizontal: 18,
-    paddingTop: 24,
+    minHeight: 360,
+    backgroundColor: '#F1EDFF',
+    justifyContent: 'flex-start',
     overflow: 'hidden'
   },
-  loginSkyGlow: {
+  loginHeroImage: { width: '100%', height: '100%' },
+  loginHeroWash: {
     position: 'absolute',
-    right: -48,
-    top: -58,
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.75
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(255,255,255,0.16)'
   },
-  loginBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  loginBrandPanel: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    maxWidth: 190
+  },
   loginBrandLogo: { width: 172, height: 54 },
-  loginBrandIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: colors.partner,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  loginBrandText: { color: colors.ink, fontSize: 25, fontWeight: '900' },
   loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '800', lineHeight: 19, marginTop: 10, maxWidth: 145 },
-  deliveryArt: { height: 220, marginTop: -2 },
-  skylineBlock: { position: 'absolute', bottom: 43, borderRadius: 12, backgroundColor: '#DDEAF8', opacity: 0.9 },
-  skylineOne: { left: -8, width: 26, height: 82 },
-  skylineTwo: { right: 64, width: 28, height: 112 },
-  skylineThree: { right: 18, width: 34, height: 72 },
-  routeDashOne: {
-    position: 'absolute',
-    right: 40,
-    top: 14,
-    width: 88,
-    borderTopWidth: 1.5,
-    borderTopColor: colors.partner,
-    borderStyle: 'dashed',
-    transform: [{ rotate: '-27deg' }]
-  },
-  routeDashTwo: {
-    position: 'absolute',
-    right: 104,
-    top: 56,
-    width: 58,
-    borderTopWidth: 1.5,
-    borderTopColor: colors.partner,
-    borderStyle: 'dashed',
-    transform: [{ rotate: '-37deg' }]
-  },
-  routePinTop: { position: 'absolute', right: 20, top: -2 },
-  routePinMid: { position: 'absolute', right: 96, top: 50 },
-  boxStack: { position: 'absolute', left: 8, bottom: 39, width: 88, height: 72 },
-  boxBack: { position: 'absolute', left: 26, bottom: 18, width: 44, height: 38, borderRadius: 4, backgroundColor: '#C98743' },
-  boxFront: { position: 'absolute', left: 0, bottom: 0, width: 48, height: 42, borderRadius: 4, backgroundColor: '#D99A50' },
-  boxSmall: { position: 'absolute', left: 44, bottom: 0, width: 34, height: 31, borderRadius: 4, backgroundColor: '#E8B06B' },
-  truckShadow: { position: 'absolute', left: 82, right: 14, bottom: 34, height: 12, borderRadius: 12, backgroundColor: '#B8C7D8', opacity: 0.6 },
-  truckTrailer: { position: 'absolute', right: 14, bottom: 66, width: 154, height: 62, borderRadius: 7, backgroundColor: '#EAF2FB', borderWidth: 1, borderColor: '#CAD7E8' },
-  trailerStripe: { position: 'absolute', left: 12, right: 12, top: 18, height: 3, borderRadius: 3, backgroundColor: '#D5E1F0' },
-  truckCab: { position: 'absolute', right: 156, bottom: 58, width: 72, height: 78, borderRadius: 10, backgroundColor: colors.partner },
-  truckWindshield: { position: 'absolute', right: 9, top: 9, width: 42, height: 26, borderRadius: 6, backgroundColor: '#0F2A55' },
-  truckGrill: { position: 'absolute', left: 8, bottom: 12, width: 52, height: 9, borderRadius: 5, backgroundColor: '#063D8F' },
-  truckWheel: { position: 'absolute', bottom: 50, width: 23, height: 23, borderRadius: 12, backgroundColor: colors.ink, borderWidth: 5, borderColor: '#7FA9D9' },
-  truckWheelOne: { right: 136 },
-  truckWheelTwo: { right: 34 },
-  heroGround: { position: 'absolute', left: -18, right: -18, bottom: 30, height: 15, backgroundColor: '#DFE9F5' },
   authHero: {
     minHeight: 350,
     backgroundColor: colors.partnerLight,
@@ -3746,7 +3676,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     backgroundColor: colors.white,
     paddingHorizontal: 22,
-    paddingTop: 30,
+    paddingTop: 26,
     paddingBottom: 26
   },
   authKicker: { color: colors.partner, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 8 },

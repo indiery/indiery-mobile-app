@@ -6,45 +6,59 @@ import { asyncRoute } from '../middleware/error';
 export const legalRouter = Router();
 
 const privacyPolicy = {
-  updatedAt: 'June 8, 2026',
-  summary: 'How Indiery collects, uses, stores, and shares customer and partner data.',
+  updatedAt: 'July 10, 2026',
+  summary: 'How Indiery and Indiery Partner collect, use, store, protect, and share customer and partner data.',
   sections: [
+    {
+      heading: 'Who we are and how to contact us',
+      body: [
+        'This Privacy Policy applies to the Indiery customer app and the Indiery Partner app.',
+        'For privacy, account deletion, correction, or grievance requests, contact Indiery at support@indiery.in or use the account deletion page linked in the app and on our website.',
+        'The developer or business name shown on our Google Play store listings should match this Privacy Policy and the public policy URL.'
+      ]
+    },
     {
       heading: 'Data we collect',
       body: [
-        'We collect account details such as name, phone number, email, city, role, and profile status.',
-        'For customer bookings we collect pickup and drop addresses, contact details, goods details, payment mode, order history, device push token, and location coordinates when provided.',
-        'For partners we collect vehicle details, KYC document status, uploaded proof images, live delivery location, wallet ledger, payout requests, and POD photos.'
+        'We collect account details such as name, phone number, email, city, role, profile status, language choice, and app support details.',
+        'For customer bookings we collect pickup, stop, and drop addresses, contact names and phone numbers, goods details, fare estimates, payment mode, wallet or coins activity, order history, cancellation and refund details, device push token, and location coordinates when provided.',
+        'For partners we collect vehicle details, vehicle number, KYC document status and uploaded proof images such as selfie, PAN, Aadhaar, driving licence, RC, proof of pickup or delivery photos, live delivery location during active use, wallet ledger, payout requests, and bank payout details.',
+        'We may collect technical data needed to run the service, such as authentication tokens, device push tokens, app errors, security events, and approximate network or device information.'
       ]
     },
     {
       heading: 'How we use data',
       body: [
         'We use data to create accounts, estimate fares, assign delivery partners, process orders, verify pickup and drop OTPs, handle payments, support disputes, prevent misuse, and meet legal or tax obligations.',
-        'Location data is used for fare estimates, partner assignment, live tracking, route support, and safety checks during active deliveries.'
+        'Customer location data is used for pickup and drop selection, fare estimates, route support, and delivery tracking.',
+        'Partner location data is used to show nearby orders, assign deliveries, update trip progress, support live tracking, and improve safety during active delivery work.',
+        'Camera and image uploads in the partner app are used for KYC verification, vehicle verification, pickup proof, delivery proof, safety, fraud prevention, and dispute handling.'
       ]
     },
     {
       heading: 'Sharing and processors',
       body: [
         'Customer and partner details are shared only as needed to complete a booking, for example customer drop details with the assigned partner and partner identity with the customer.',
-        'We may use service providers for cloud storage, maps, SMS OTP, push notifications, payments, analytics, support, and fraud prevention.',
-        'We may share information with public authorities when required by law or to protect users, partners, Indiery, or the public.'
+        'We use service providers for authentication and OTP, push notifications, maps and place search, payment processing, media storage, backend hosting, analytics or diagnostics, support, fraud prevention, and legal compliance. These may include Firebase, Expo push notifications, Google Maps, Razorpay, Cloudinary, and our hosting or database providers.',
+        'We may share information with public authorities, courts, payment partners, banks, insurers, or professional advisers when required by law or to protect users, partners, Indiery, or the public.',
+        'We do not sell personal or sensitive user data.'
       ]
     },
     {
       heading: 'Choices and rights',
       body: [
-        'Users may request access, correction, deletion, or grievance support in the app or from the account deletion page.',
+        'Users may request access, correction, deletion, or grievance support in the app, by email at support@indiery.in, or from the Indiery account deletion page.',
         'Some order, tax, payment, fraud prevention, and legal records may be retained where required by law or legitimate business need.',
-        'Users can disable app permissions such as notifications or location in device settings, but some app features may stop working.'
+        'Users can disable app permissions such as notifications, location, or camera in device settings, but some app features may stop working.',
+        'Users should keep OTPs and account access secure and tell us if they suspect unauthorized account use.'
       ]
     },
     {
       heading: 'Security and retention',
       body: [
-        'We use role-based access, authentication tokens, encrypted provider credentials, and signed upload flows for sensitive media.',
-        'KYC, POD, and order records are retained only as long as needed for operations, compliance, dispute handling, tax, accounting, and safety.'
+        'We use HTTPS, authentication tokens, role-based access, protected provider credentials, and controlled upload flows for sensitive media.',
+        'Account profile data is kept while the account is active. Order, payment, wallet, payout, tax, dispute, fraud prevention, KYC, proof of delivery, and safety records are retained only as long as needed for operations, compliance, dispute handling, tax, accounting, legal obligations, and safety.',
+        'When we approve an account deletion request, we delete or de-identify account data that is no longer required. Data that must be kept for legitimate business, safety, fraud prevention, tax, accounting, dispute, or legal reasons may be retained for the required period.'
       ]
     }
   ]
@@ -136,8 +150,10 @@ legalRouter.get('/account-deletion', (_req, res) => {
       </section>
       <section class="card">
         <h2>What happens next</h2>
-        <p>We review deletion requests and delete account data that is no longer required for operations, fraud prevention, disputes, tax, accounting, or legal compliance.</p>
-        <p>Some order, payment, KYC, safety, and legal records may be retained where required by law or legitimate business need.</p>
+        <p>We review deletion requests for Indiery customer and partner accounts. We may contact you to verify account ownership before processing the request.</p>
+        <p>After approval, we delete or de-identify account data that is no longer required for the service.</p>
+        <p>Some order, payment, wallet, payout, KYC, proof of delivery, safety, fraud prevention, tax, accounting, dispute, and legal records may be retained where required by law or legitimate business need.</p>
+        <p>For help with deletion, correction, or privacy questions, email support@indiery.in.</p>
       </section>`
     )
   );

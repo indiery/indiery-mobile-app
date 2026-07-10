@@ -4,6 +4,7 @@ import {
   Alert,
   BackHandler,
   Image,
+  ImageBackground,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -29,6 +30,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
+import customerLoginBackgroundImage from './assets/bg.png';
 import bikeVehicleImage from './assets/bike.png';
 import loaderVehicleImage from './assets/loader.png';
 import mini500VehicleImage from './assets/mini500.png';
@@ -327,7 +329,13 @@ const enCopy = {
   coinDiscountNextOrders: 'available for order payment',
   enterCoupon: 'Enter Coupon',
   applying: 'Applying',
-  applyFirst50: 'Apply FIRST50',
+  applyCoupon: 'Apply coupon',
+  couponCode: 'Coupon code',
+  couponSheetTitle: 'Apply coupon',
+  couponSheetText: 'New customers can use FIRST50 to claim 50 Indiery coins.',
+  invalidCoupon: 'Invalid coupon code',
+  couponAlreadyClaimed: 'FIRST50 already claimed',
+  couponApplied: 'FIRST50 applied. 50 coins added.',
   coinRules: 'Coin Rules',
   coinRuleEarn: 'Earn coins for successful deliveries',
   coinRuleUse: 'Use coins on payment up to the order amount',
@@ -565,7 +573,7 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   coinDiscountNextOrders: 'ऑर्डर पेमेंट के लिए उपलब्ध',
   enterCoupon: 'कूपन डालें',
   applying: 'अप्लाई हो रहा है',
-  applyFirst50: 'FIRST50 लगाएं',
+  applyCoupon: 'कूपन लगाएं',
   coinRules: 'कॉइन नियम',
   coinRuleEarn: 'सफल डिलीवरी पर कॉइन कमाएं',
   coinRuleUse: 'ऑर्डर राशि तक पेमेंट में कॉइन उपयोग करें',
@@ -1097,12 +1105,11 @@ function isCustomerCancellableOrder(order: Order) {
 }
 
 function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
-  const isBrand = variant === 'brand';
   return (
     <StatusBar
-      barStyle={isBrand ? 'light-content' : 'dark-content'}
-      backgroundColor={isBrand ? colors.customer : colors.white}
-      translucent={Platform.OS === 'android' && isBrand}
+      barStyle="dark-content"
+      backgroundColor={colors.white}
+      translucent={false}
     />
   );
 }
@@ -1786,14 +1793,14 @@ export default function App() {
               }
             }
             busy={busy}
-            onCoupon={async () => {
+            onCoupon={async (code) => {
               setBusy(true);
               try {
-                const result = await api.applyCoupon('FIRST50');
+                const result = await api.applyCoupon(code);
                 await refresh();
-                showToast(`Added ${result.addedCoins} coins`);
+                return result;
               } catch (err) {
-                showToast(err instanceof Error ? err.message : 'Coupon failed');
+                throw err;
               } finally {
                 setBusy(false);
               }
@@ -1952,44 +1959,18 @@ function LoginScreen({
 
 function LoginHero({ title, caption }: { title: string; caption: string }) {
   return (
-    <View style={styles.loginHero}>
-      <View style={styles.loginSkyGlow} />
-      <View style={styles.loginBrandRow}>
+    <ImageBackground
+      source={customerLoginBackgroundImage}
+      style={styles.loginHero}
+      imageStyle={styles.loginHeroImage}
+      resizeMode="cover"
+    >
+      <View style={styles.loginHeroWash} />
+      <View style={styles.loginBrandPanel}>
         <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
+        <Text style={styles.loginHeroCaption}>{caption}</Text>
       </View>
-      <Text style={styles.loginHeroCaption}>{caption}</Text>
-      <DeliveryIllustration />
-    </View>
-  );
-}
-
-function DeliveryIllustration() {
-  return (
-    <View style={styles.deliveryArt}>
-      <View style={[styles.skylineBlock, styles.skylineOne]} />
-      <View style={[styles.skylineBlock, styles.skylineTwo]} />
-      <View style={[styles.skylineBlock, styles.skylineThree]} />
-      <View style={styles.heroGround} />
-      <View style={styles.routeDashOne} />
-      <View style={styles.routeDashTwo} />
-      <Ionicons name="location" size={28} color={colors.customer} style={styles.routePinTop} />
-      <Ionicons name="location" size={18} color={colors.customer} style={styles.routePinMid} />
-      <View style={styles.boxStack}>
-        <View style={styles.boxBack} />
-        <View style={styles.boxFront} />
-        <View style={styles.boxSmall} />
-      </View>
-      <View style={styles.truckShadow} />
-      <View style={styles.truckTrailer}>
-        <View style={styles.trailerStripe} />
-      </View>
-      <View style={styles.truckCab}>
-        <View style={styles.truckWindshield} />
-        <View style={styles.truckGrill} />
-      </View>
-      <View style={[styles.truckWheel, styles.truckWheelOne]} />
-      <View style={[styles.truckWheel, styles.truckWheelTwo]} />
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -4885,67 +4866,190 @@ function WalletScreen({
 }: {
   wallet: CustomerWallet;
   busy: boolean;
-  onCoupon: () => Promise<void>;
+  onCoupon: (code: string) => Promise<{ addedCoins: number; alreadyApplied?: boolean }>;
 }) {
   const copy = useCopy();
+  const [couponOpen, setCouponOpen] = useState(false);
+  const [couponCode, setCouponCode] = useState('FIRST50');
+  const [couponMessage, setCouponMessage] = useState('');
+  const [couponMessageKind, setCouponMessageKind] = useState<'success' | 'error'>('success');
+  const [couponKeyboardHeight, setCouponKeyboardHeight] = useState(0);
   const recentCoinLedger = wallet.coinLedger.slice(0, 7);
   const nextOrderDiscount = automaticCoinDiscount(undefined, wallet);
+  const couponSheetLift = Platform.OS === 'android' ? couponKeyboardHeight : 0;
+
+  useEffect(() => {
+    if (!couponOpen) {
+      setCouponKeyboardHeight(0);
+      return undefined;
+    }
+
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event) => setCouponKeyboardHeight(event.endCoordinates.height)
+    );
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setCouponKeyboardHeight(0)
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, [couponOpen]);
+
+  function openCouponSheet() {
+    setCouponCode('FIRST50');
+    setCouponMessage('');
+    setCouponMessageKind('success');
+    setCouponOpen(true);
+  }
+
+  async function applyCouponCode() {
+    const nextCode = couponCode.trim().toUpperCase();
+    setCouponCode(nextCode);
+    if (nextCode !== 'FIRST50') {
+      setCouponMessage(copy.invalidCoupon);
+      setCouponMessageKind('error');
+      return;
+    }
+    try {
+      const result = await onCoupon(nextCode);
+      if (result.alreadyApplied || result.addedCoins <= 0) {
+        setCouponMessage(copy.couponAlreadyClaimed);
+        setCouponMessageKind('error');
+        return;
+      }
+      setCouponMessage(copy.couponApplied);
+      setCouponMessageKind('success');
+    } catch (err) {
+      setCouponMessage(err instanceof Error ? err.message : copy.invalidCoupon);
+      setCouponMessageKind('error');
+    }
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.walletCoinsCard}>
-        <View style={styles.walletCoinsHeader}>
-          <View style={styles.walletCoinsIcon}>
-            <Ionicons name="wallet-outline" size={21} color={colors.customer} />
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.walletCoinsEyebrow}>{copy.indieryCoins}</Text>
-            <Text style={styles.walletCoinsCaption}>{copy.useCoinsDiscount}</Text>
-          </View>
-        </View>
-
-        <View style={styles.walletCoinsBalanceRow}>
-          <View>
-            <Text style={styles.walletCoinsValue}>{wallet.coins}</Text>
-            <Text style={styles.walletCoinsAvailable}>{copy.coinsAvailable}</Text>
-          </View>
-          <View style={styles.walletCoinsDiscountBox}>
-            <Ionicons name="sparkles" size={16} color={colors.green} />
+    <>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.walletCoinsCard}>
+          <View style={styles.walletCoinsHeader}>
+            <View style={styles.walletCoinsIcon}>
+              <Ionicons name="wallet-outline" size={21} color={colors.customer} />
+            </View>
             <View style={styles.flex}>
-              <Text style={styles.walletCoinsDiscountValue}>{money(nextOrderDiscount)}</Text>
-              <Text style={styles.walletCoinsDiscount}>{copy.coinDiscountNextOrders}</Text>
+              <Text style={styles.walletCoinsEyebrow}>{copy.indieryCoins}</Text>
+              <Text style={styles.walletCoinsCaption}>{copy.useCoinsDiscount}</Text>
             </View>
           </View>
+
+          <View style={styles.walletCoinsBalanceRow}>
+            <View>
+              <Text style={styles.walletCoinsValue}>{wallet.coins}</Text>
+              <Text style={styles.walletCoinsAvailable}>{copy.coinsAvailable}</Text>
+            </View>
+            <View style={styles.walletCoinsDiscountBox}>
+              <Ionicons name="sparkles" size={16} color={colors.green} />
+              <View style={styles.flex}>
+                <Text style={styles.walletCoinsDiscountValue}>{money(nextOrderDiscount)}</Text>
+                <Text style={styles.walletCoinsDiscount}>{copy.coinDiscountNextOrders}</Text>
+              </View>
+            </View>
+          </View>
+
+          <Pressable
+            style={[styles.walletCouponButton, busy && styles.walletCouponButtonBusy]}
+            onPress={openCouponSheet}
+            disabled={busy}
+          >
+            <Ionicons name="ticket-outline" size={17} color={colors.customer} />
+            <Text style={styles.walletCouponText}>{busy ? copy.applying : copy.enterCoupon}</Text>
+          </Pressable>
         </View>
 
-        <Pressable
-          style={[styles.walletCouponButton, busy && styles.walletCouponButtonBusy]}
-          onPress={onCoupon}
-          disabled={busy}
+        <SectionTitle title={copy.coinActivity} />
+        {recentCoinLedger.length ? (
+          <View style={styles.coinActivityCard}>
+            {recentCoinLedger.map((item, index) => (
+              <CoinActivityRow
+                key={item.id}
+                item={item}
+                showDivider={index < recentCoinLedger.length - 1}
+              />
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyHistoryCard}>
+            <Ionicons name="gift-outline" size={24} color={colors.muted} />
+            <Text style={styles.cardTitle}>{copy.noCoinActivity}</Text>
+          </View>
+        )}
+      </ScrollView>
+
+      <Modal visible={couponOpen} animationType="slide" transparent onRequestClose={() => setCouponOpen(false)}>
+        <KeyboardAvoidingView
+          style={styles.walletCouponOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <Ionicons name="ticket-outline" size={17} color={colors.customer} />
-          <Text style={styles.walletCouponText}>{busy ? copy.applying : copy.enterCoupon}</Text>
-        </Pressable>
-      </View>
+          <Pressable style={styles.walletCouponBackdrop} onPress={() => setCouponOpen(false)} />
+          <Pressable
+            style={[styles.walletCouponSheet, couponSheetLift ? { marginBottom: couponSheetLift } : null]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.walletCouponSheetContent}
+            >
+              <View style={styles.contactSheetHandle} />
+              <View style={styles.walletCouponSheetHeader}>
+                <View style={styles.walletCoinsIcon}>
+                  <Ionicons name="ticket-outline" size={21} color={colors.customer} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.walletCouponSheetTitle}>{copy.couponSheetTitle}</Text>
+                  <Text style={styles.walletCouponSheetText}>{copy.couponSheetText}</Text>
+                </View>
+              </View>
 
-      <SectionTitle title={copy.coinActivity} />
-      {recentCoinLedger.length ? (
-        <View style={styles.coinActivityCard}>
-          {recentCoinLedger.map((item, index) => (
-            <CoinActivityRow
-              key={item.id}
-              item={item}
-              showDivider={index < recentCoinLedger.length - 1}
-            />
-          ))}
-        </View>
-      ) : (
-        <View style={styles.emptyHistoryCard}>
-          <Ionicons name="gift-outline" size={24} color={colors.muted} />
-          <Text style={styles.cardTitle}>{copy.noCoinActivity}</Text>
-        </View>
-      )}
-    </ScrollView>
+              <Text style={styles.fieldLabel}>{copy.couponCode}</Text>
+              <View style={styles.walletCouponInputShell}>
+                <TextInput
+                  value={couponCode}
+                  onChangeText={(value) => {
+                    setCouponCode(value.toUpperCase());
+                    setCouponMessage('');
+                  }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  editable={!busy}
+                  placeholder="FIRST50"
+                  placeholderTextColor={colors.muted}
+                  returnKeyType="done"
+                  onSubmitEditing={applyCouponCode}
+                  style={styles.walletCouponInput}
+                />
+              </View>
+              {couponMessage ? (
+                <Text style={couponMessageKind === 'success' ? styles.walletCouponSuccess : styles.walletCouponError}>
+                  {couponMessage}
+                </Text>
+              ) : null}
+
+              <View style={styles.walletCouponActions}>
+                <Pressable style={styles.walletCouponCancelButton} onPress={() => setCouponOpen(false)} disabled={busy}>
+                  <Text style={styles.walletCouponCancelText}>{copy.cancel}</Text>
+                </Pressable>
+                <Pressable style={[styles.walletCouponApplyButton, busy && styles.walletCouponButtonBusy]} onPress={applyCouponCode} disabled={busy}>
+                  {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="checkmark" size={17} color={colors.white} />}
+                  <Text style={styles.walletCouponApplyText}>{busy ? copy.applying : copy.applyCoupon}</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 }
 
@@ -6052,81 +6156,35 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: colors.white },
+  shell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
   loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
   authKeyboard: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
   loginHero: {
-    minHeight: 330,
-    backgroundColor: colors.customerLight,
-    paddingHorizontal: 18,
-    paddingTop: 24,
+    minHeight: 360,
+    backgroundColor: '#F1EDFF',
+    justifyContent: 'flex-start',
     overflow: 'hidden'
   },
-  loginSkyGlow: {
+  loginHeroImage: { width: '100%', height: '100%' },
+  loginHeroWash: {
     position: 'absolute',
-    right: -48,
-    top: -58,
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.75
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(255,255,255,0.16)'
   },
-  loginBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  loginBrandPanel: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    maxWidth: 190
+  },
   loginBrandLogo: { width: 172, height: 54 },
-  loginBrandIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: colors.customer,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  loginBrandText: { color: colors.ink, fontSize: 25, fontWeight: '700' },
   loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '600', lineHeight: 19, marginTop: 10, maxWidth: 145 },
-  deliveryArt: { height: 220, marginTop: -2 },
-  skylineBlock: { position: 'absolute', bottom: 43, borderRadius: 12, backgroundColor: '#DDEAF8', opacity: 0.9 },
-  skylineOne: { left: -8, width: 26, height: 82 },
-  skylineTwo: { right: 64, width: 28, height: 112 },
-  skylineThree: { right: 18, width: 34, height: 72 },
-  routeDashOne: {
-    position: 'absolute',
-    right: 40,
-    top: 14,
-    width: 88,
-    borderTopWidth: 1.5,
-    borderTopColor: colors.customer,
-    borderStyle: 'dashed',
-    transform: [{ rotate: '-27deg' }]
-  },
-  routeDashTwo: {
-    position: 'absolute',
-    right: 104,
-    top: 56,
-    width: 58,
-    borderTopWidth: 1.5,
-    borderTopColor: colors.customer,
-    borderStyle: 'dashed',
-    transform: [{ rotate: '-37deg' }]
-  },
-  routePinTop: { position: 'absolute', right: 20, top: -2 },
-  routePinMid: { position: 'absolute', right: 96, top: 50 },
-  boxStack: { position: 'absolute', left: 8, bottom: 39, width: 88, height: 72 },
-  boxBack: { position: 'absolute', left: 26, bottom: 18, width: 44, height: 38, borderRadius: 4, backgroundColor: '#C98743' },
-  boxFront: { position: 'absolute', left: 0, bottom: 0, width: 48, height: 42, borderRadius: 4, backgroundColor: '#D99A50' },
-  boxSmall: { position: 'absolute', left: 44, bottom: 0, width: 34, height: 31, borderRadius: 4, backgroundColor: '#E8B06B' },
-  truckShadow: { position: 'absolute', left: 82, right: 14, bottom: 34, height: 12, borderRadius: 12, backgroundColor: '#B8C7D8', opacity: 0.6 },
-  truckTrailer: { position: 'absolute', right: 14, bottom: 66, width: 154, height: 62, borderRadius: 7, backgroundColor: '#EAF2FB', borderWidth: 1, borderColor: '#CAD7E8' },
-  trailerStripe: { position: 'absolute', left: 12, right: 12, top: 18, height: 3, borderRadius: 3, backgroundColor: '#D5E1F0' },
-  truckCab: { position: 'absolute', right: 156, bottom: 58, width: 72, height: 78, borderRadius: 10, backgroundColor: colors.customer },
-  truckWindshield: { position: 'absolute', right: 9, top: 9, width: 42, height: 26, borderRadius: 6, backgroundColor: '#0F2A55' },
-  truckGrill: { position: 'absolute', left: 8, bottom: 12, width: 52, height: 9, borderRadius: 5, backgroundColor: '#063D8F' },
-  truckWheel: { position: 'absolute', bottom: 50, width: 23, height: 23, borderRadius: 12, backgroundColor: colors.ink, borderWidth: 5, borderColor: '#7FA9D9' },
-  truckWheelOne: { right: 136 },
-  truckWheelTwo: { right: 34 },
-  heroGround: { position: 'absolute', left: -18, right: -18, bottom: 30, height: 15, backgroundColor: '#DFE9F5' },
   authHero: {
     minHeight: 350,
     backgroundColor: colors.customerLight,
@@ -6250,7 +6308,7 @@ const styles = StyleSheet.create({
   appHeader: {
     backgroundColor: colors.customer,
     paddingHorizontal: 20,
-    paddingTop: 16 + androidStatusBarHeight,
+    paddingTop: 16,
     paddingBottom: 22,
     flexDirection: 'row',
     alignItems: 'center',
@@ -6894,6 +6952,38 @@ const styles = StyleSheet.create({
   walletCouponButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
   walletCouponButtonBusy: { opacity: 0.65 },
   walletCouponText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
+  walletCouponOverlay: { flex: 1, justifyContent: 'flex-end' },
+  walletCouponBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
+  walletCouponSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: colors.white,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'android' ? 22 : 28
+  },
+  walletCouponSheetContent: { paddingBottom: Platform.OS === 'android' ? 12 : 0 },
+  walletCouponSheetHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 16 },
+  walletCouponSheetTitle: { color: colors.ink, fontSize: 18, fontWeight: '700' },
+  walletCouponSheetText: { color: colors.muted, fontSize: 12, fontWeight: '500', lineHeight: 17, marginTop: 3 },
+  walletCouponInputShell: {
+    minHeight: 50,
+    borderWidth: 1.5,
+    borderColor: colors.customer,
+    borderRadius: 13,
+    backgroundColor: colors.white,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    marginBottom: 10
+  },
+  walletCouponInput: { color: colors.ink, fontSize: 16, fontWeight: '700', letterSpacing: 1, paddingVertical: 11 },
+  walletCouponSuccess: { color: colors.green, fontSize: 12, fontWeight: '600', marginBottom: 12 },
+  walletCouponError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 12 },
+  walletCouponActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 2 },
+  walletCouponCancelButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  walletCouponCancelText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  walletCouponApplyButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  walletCouponApplyText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   coinActivityCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 14 },
   coinActivityRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10 },
   coinActivityRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.line },

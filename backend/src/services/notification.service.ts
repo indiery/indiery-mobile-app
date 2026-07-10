@@ -172,7 +172,7 @@ export async function sendPush(
       });
       if (
         ticket?.status === 'error' &&
-        (ticket.details?.error === 'DeviceNotRegistered' || ticket.details?.error === 'InvalidCredentials')
+        ticket.details?.error === 'DeviceNotRegistered'
       ) {
         staleTokens.push(token);
       }
@@ -202,9 +202,7 @@ export async function sendPush(
             if (
               singleError instanceof Error &&
               (
-                singleError.message.includes('DeviceNotRegistered') ||
-                singleError.message.includes('InvalidCredentials') ||
-                singleError.message.includes('Unable to retrieve the FCM server key') ||
+              singleError.message.includes('DeviceNotRegistered') ||
                 singleError.message.includes('not a valid Expo push token')
               )
             ) {

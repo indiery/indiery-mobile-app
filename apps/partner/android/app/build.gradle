@@ -91,9 +91,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.indiery.partner'
+    namespace 'com.indeiry.driver'
     defaultConfig {
-        applicationId 'com.indiery.partner'
+        applicationId 'com.indeiry.driver'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

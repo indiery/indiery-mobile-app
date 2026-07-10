@@ -82,7 +82,7 @@ Both apps use Expo Push Notifications with separate EAS projects:
 
 The apps register their Expo push token after login, remove it on logout, and open the relevant order when a notification is tapped. The backend validates token ownership, sends high-priority order alerts, retries transient Expo failures, stores delivery receipt IDs, checks receipts in the background, and removes expired device tokens.
 
-Before the first store build, configure the Firebase `indiery-bebb4` service-account key as the FCM V1 push credential for **both** Android applications in EAS. Configure an APNs key for each EAS project before iOS builds. `EXPO_ACCESS_TOKEN` must also be present in the deployed backend environment. Push notifications must be tested with a development/preview/production build on a physical device; Android push is not available in Expo Go.
+Before the first store build, configure the Firebase `indiery-c8f7d` service-account key as the FCM V1 push credential for **both** Android applications in EAS. Configure an APNs key for each EAS project before iOS builds. `EXPO_ACCESS_TOKEN` must also be present in the deployed backend environment. Push notifications must be tested with a development/preview/production build on a physical device; Android push is not available in Expo Go.
 
 Order notifications currently cover driver search/assignment, nearby partner offers, arrival at pickup, pickup, in-transit, delivery, and customer cancellation.
 

@@ -17,7 +17,7 @@ services:
       - key: CORS_ORIGIN
         value: https://indiery-mobile-app-bp9h.onrender.com
       - key: FIREBASE_PROJECT_ID
-        value: indiery-bebb4
+        value: indiery-c8f7d
       - key: FIREBASE_SERVICE_ACCOUNT_BASE64
         sync: false
       - key: GOOGLE_MAPS_API_KEY

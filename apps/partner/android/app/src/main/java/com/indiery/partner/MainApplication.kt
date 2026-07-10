@@ -1,4 +1,4 @@
-package com.indiery.partner
+package com.indeiry.driver
 
 import android.app.Application
 import android.content.res.Configuration

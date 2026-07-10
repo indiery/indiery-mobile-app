@@ -1,4 +1,4 @@
-package com.indiery.customer
+package com.indeiry
 
 import android.os.Build
 import android.os.Bundle

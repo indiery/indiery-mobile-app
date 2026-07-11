@@ -97,6 +97,7 @@ export function serializeOrder(order: OrderDocument, options: { includeTripOtp?:
   const vehicle = order.vehicle as unknown as VehicleDocument;
   const partner = order.partner as unknown as UserDocument | undefined;
   const customer = order.customer as unknown as UserDocument;
+  const orderActive = !['delivered', 'cancelled'].includes(order.status);
 
   return {
     id: String(order._id),
@@ -122,7 +123,7 @@ export function serializeOrder(order: OrderDocument, options: { includeTripOtp?:
     timeline: order.timeline,
     pod: order.pod,
     tripOtp: options.includeTripOtp ? visibleTripOtp(order) : undefined,
-    partnerLocation: order.partnerLocation,
+    partnerLocation: orderActive ? order.partnerLocation : undefined,
     settlement: order.settlement,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt

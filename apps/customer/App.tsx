@@ -4690,7 +4690,8 @@ function OrderDetailsPanel({
           drop={order.drop}
           extraStops={order.extraStops}
           eta={order.etaMinutes}
-          partnerLocation={order.partnerLocation}
+          liveTracking={orderActive}
+          partnerLocation={orderActive ? order.partnerLocation : undefined}
         />
 
         <View style={styles.liveRouteCard}>
@@ -5957,16 +5958,18 @@ function MapPreview({
   drop,
   extraStops = [],
   eta,
+  liveTracking = true,
   partnerLocation
 }: {
   pickup: LocationPoint;
   drop: LocationPoint;
   extraStops?: LocationPoint[];
   eta: number;
+  liveTracking?: boolean;
   partnerLocation?: Order['partnerLocation'];
 }) {
   const copy = useCopy();
-  const hasLiveLocation = typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
+  const hasLiveLocation = liveTracking && typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
   const routePoints = [pickup, ...extraStops, drop]
     .map((point, index) => ({
@@ -5977,7 +5980,7 @@ function MapPreview({
         : undefined
     }))
     .filter((item): item is { point: LocationPoint; index: number; coordinate: { latitude: number; longitude: number } } => Boolean(item.coordinate));
-  const partnerCoordinate = hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng)
+  const partnerCoordinate = liveTracking && hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng)
     ? { latitude: partnerLocation?.lat as number, longitude: partnerLocation?.lng as number }
     : undefined;
   const fitCoordinates = partnerCoordinate ? [...routePoints.map((item) => item.coordinate), partnerCoordinate] : routePoints.map((item) => item.coordinate);
@@ -6041,7 +6044,7 @@ function MapPreview({
               />
             );
           })}
-          {partnerCoordinate ? (
+          {liveTracking && partnerCoordinate ? (
             <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
               <View style={styles.mapPartnerMarker}>
                 <Ionicons name="bicycle" size={15} color={colors.white} />
@@ -6061,20 +6064,28 @@ function MapPreview({
             </View>
           ))}
           <View style={styles.mapPinB} />
-          <View style={[styles.vehiclePulse, hasLiveLocation && styles.vehiclePulseLive]} />
-          <View style={[styles.vehicleMarker, hasLiveLocation && styles.vehicleMarkerLive]}>
-            <Ionicons name="bicycle" size={16} color={colors.white} />
-          </View>
+          {liveTracking ? (
+            <>
+              <View style={[styles.vehiclePulse, hasLiveLocation && styles.vehiclePulseLive]} />
+              <View style={[styles.vehicleMarker, hasLiveLocation && styles.vehicleMarkerLive]}>
+                <Ionicons name="bicycle" size={16} color={colors.white} />
+              </View>
+            </>
+          ) : null}
         </>
       )}
-      <View style={styles.etaChip}>
-        <Text style={styles.etaValue}>{eta}</Text>
-        <Text style={styles.etaLabel}>{copy.min}</Text>
-      </View>
-      <View style={styles.liveChip}>
-        <View style={[styles.liveDot, hasLiveLocation && styles.liveDotOn]} />
-        <Text style={styles.liveText}>{hasLiveLocation ? copy.liveGps : copy.waitingGps}</Text>
-      </View>
+      {liveTracking ? (
+        <>
+          <View style={styles.etaChip}>
+            <Text style={styles.etaValue}>{eta}</Text>
+            <Text style={styles.etaLabel}>{copy.min}</Text>
+          </View>
+          <View style={styles.liveChip}>
+            <View style={[styles.liveDot, hasLiveLocation && styles.liveDotOn]} />
+            <Text style={styles.liveText}>{hasLiveLocation ? copy.liveGps : copy.waitingGps}</Text>
+          </View>
+        </>
+      ) : null}
       <Text style={styles.mapText} numberOfLines={1}>{pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}</Text>
     </View>
   );

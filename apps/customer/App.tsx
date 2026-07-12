@@ -6624,7 +6624,7 @@ const styles = StyleSheet.create({
   loginConsent: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 4, rowGap: 2, marginTop: -3, marginBottom: 14, paddingHorizontal: 6 },
   loginConsentText: { color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15 },
   loginConsentLink: { color: colors.customer, fontSize: 10, fontWeight: '700', lineHeight: 15, textDecorationLine: 'underline' },
-  loginPolicyShell: { flex: 1, backgroundColor: colors.white },
+  loginPolicyShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
   authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
   authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },

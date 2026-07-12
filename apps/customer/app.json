@@ -2,6 +2,7 @@
   "expo": {
     "name": "Indiery",
     "slug": "indiery-customer",
+    "owner": "indiery0001",
     "scheme": "indierycustomer",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -33,7 +34,7 @@
       "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
       "googleMapsApiKey": "AIzaSyAY5D6K2WhkSGAzQnjuQPdnJ8lF0H6uszE",
       "eas": {
-        "projectId": "9089c164-0cc4-4500-887e-bd1732121872"
+        "projectId": "1667053f-7123-4fd3-8fe7-05b63805828c"
       }
     },
     "ios": {
@@ -44,6 +45,7 @@
     },
     "android": {
       "package": "com.indeiry",
+      "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_COARSE_LOCATION",

@@ -137,6 +137,16 @@ export interface OrderTimelineItem {
   at?: string;
 }
 
+export interface RoutePathCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+export interface PartnerRoutePath {
+  coordinates: RoutePathCoordinate[];
+  source: 'google_directions' | 'fallback';
+}
+
 export interface TripOtp {
   pickup?: string;
   drop?: string;

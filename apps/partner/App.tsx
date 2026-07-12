@@ -40,6 +40,7 @@ import {
   Order,
   PartnerBootstrap,
   PartnerLocation,
+  PartnerRoutePath,
   statusLabels,
   uploadFileToCloudinary,
   UserProfile,
@@ -91,7 +92,7 @@ type BankDetailsInput = { accountHolder: string; accountNumber: string; ifsc: st
 type PartnerProfileInput = { name: string; email: string; city: string; vehicleId: string; vehicleNumber: string };
 type OnboardingStepId = 1 | 2 | 3;
 type AppLanguage = 'en' | 'hi';
-type ProfilePage = 'overview' | 'personal' | 'vehicle' | 'documents' | 'bank' | 'language' | 'legal';
+type ProfilePage = 'overview' | 'personal' | 'training' | 'vehicle' | 'documents' | 'bank' | 'language' | 'legal';
 
 const enCopy = {
   appName: 'Indiery Partner',
@@ -223,6 +224,30 @@ const enCopy = {
   profileComplete: 'Profile complete',
   personalInformation: 'Personal Information',
   personalInformationSubtitle: 'Name, phone, email and city',
+  driverTraining: 'Driver Training',
+  driverTrainingSubtitle: 'Learn how to use the partner app',
+  trainingIntro: 'Complete every delivery correctly',
+  trainingIntroText: 'Follow these steps from going online until the customer receives the goods.',
+  trainingGoOnlineTitle: '1. Go online',
+  trainingGoOnlineText: 'Keep GPS and notifications enabled, maintain the required wallet balance, then switch your status to ONLINE.',
+  trainingAcceptTitle: '2. Review and accept an order',
+  trainingAcceptText: 'Check pickup distance, trip distance, goods, vehicle requirement and earnings. Accept only when you are ready to complete it.',
+  trainingPickupTitle: '3. Reach the pickup safely',
+  trainingPickupText: 'Use navigation, contact the sender only when needed, match the order details and inspect the packed goods.',
+  trainingPickupPhotoTitle: '4. Capture pickup proof',
+  trainingPickupPhotoText: 'Use Capture Pickup POD to take a clear photo of the packed goods at the pickup. Make sure the goods are visible and the photo is not blurred.',
+  trainingPickupOtpTitle: '5. Verify the pickup OTP',
+  trainingPickupOtpText: 'Ask the sender for the six-digit pickup OTP only after you reach the pickup. Enter it before moving the goods.',
+  trainingDeliverTitle: '6. Deliver with live tracking',
+  trainingDeliverText: 'Keep location enabled, follow traffic rules, protect the goods and avoid unnecessary stops or route changes.',
+  trainingDropPhotoTitle: '7. Capture delivery proof',
+  trainingDropPhotoText: 'After handing over the goods, use Capture Drop POD to take a clear delivery-proof photo. Avoid including unrelated people or private information.',
+  trainingDropOtpTitle: '8. Verify drop OTP and complete',
+  trainingDropOtpText: 'At the destination, hand over the goods to the receiver, enter the drop OTP and mark the delivery complete.',
+  trainingSafetyTitle: 'Safety rules',
+  trainingSafetyText: 'Wear a helmet or seat belt, never use the phone while moving, and never carry illegal, leaking or hazardous goods.',
+  trainingHelpTitle: 'Need help during a trip?',
+  trainingHelpText: 'Open the active order and use support. For an immediate safety risk, stop in a safe place before taking action.',
   keepDetailsUpdated: 'Keep your details up to date',
   mobileLinkedToAccount: 'Your mobile number is linked to your verified account.',
   saveChanges: 'Save Changes',
@@ -278,6 +303,11 @@ const enCopy = {
   stop: 'Stop',
   liveGps: 'Live GPS',
   waitingGps: 'Waiting for GPS',
+  maximizeMap: 'Maximize map',
+  minimizeMap: 'Minimize map',
+  exactRoadRoute: 'Exact road route',
+  loadingExactRoute: 'Loading exact route',
+  exactRouteUnavailable: 'Exact road route is unavailable. Showing direct route.',
   panic: 'SOS',
   emergencyHelp: 'Emergency help',
   emergencyHelpBody: 'Choose who you want to call. Your phone dialer will open with the number.',
@@ -497,6 +527,30 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   profileComplete: 'प्रोफाइल पूरी',
   personalInformation: 'व्यक्तिगत जानकारी',
   personalInformationSubtitle: 'नाम, फोन, ईमेल और शहर',
+  driverTraining: 'ड्राइवर ट्रेनिंग',
+  driverTrainingSubtitle: 'पार्टनर ऐप इस्तेमाल करना सीखें',
+  trainingIntro: 'हर डिलीवरी सही तरीके से पूरी करें',
+  trainingIntroText: 'ऑनलाइन होने से लेकर ग्राहक को सामान देने तक इन चरणों का पालन करें।',
+  trainingGoOnlineTitle: '1. ऑनलाइन हों',
+  trainingGoOnlineText: 'GPS और नोटिफिकेशन चालू रखें, जरूरी वॉलेट बैलेंस बनाए रखें और फिर अपना स्टेटस ONLINE करें।',
+  trainingAcceptTitle: '2. ऑर्डर जांचें और स्वीकार करें',
+  trainingAcceptText: 'पिकअप दूरी, ट्रिप दूरी, सामान, जरूरी वाहन और कमाई जांचें। तैयार होने पर ही ऑर्डर स्वीकार करें।',
+  trainingPickupTitle: '3. सुरक्षित रूप से पिकअप पर पहुंचें',
+  trainingPickupText: 'नेविगेशन इस्तेमाल करें, जरूरत पर ही सेंडर से संपर्क करें, ऑर्डर जानकारी मिलाएं और पैक सामान जांचें।',
+  trainingPickupPhotoTitle: '4. पिकअप प्रूफ फोटो लें',
+  trainingPickupPhotoText: 'Capture Pickup POD से पिकअप पर पैक सामान की साफ फोटो लें। सामान साफ दिखाई देना चाहिए और फोटो धुंधली नहीं होनी चाहिए।',
+  trainingPickupOtpTitle: '5. पिकअप OTP सत्यापित करें',
+  trainingPickupOtpText: 'पिकअप पर पहुंचने के बाद ही सेंडर से छह अंकों का OTP लें। सामान ले जाने से पहले इसे दर्ज करें।',
+  trainingDeliverTitle: '6. लाइव ट्रैकिंग के साथ डिलीवर करें',
+  trainingDeliverText: 'लोकेशन चालू रखें, ट्रैफिक नियम मानें, सामान सुरक्षित रखें और बिना जरूरत रुकने या रास्ता बदलने से बचें।',
+  trainingDropPhotoTitle: '7. डिलीवरी प्रूफ फोटो लें',
+  trainingDropPhotoText: 'सामान देने के बाद Capture Drop POD से साफ डिलीवरी प्रूफ फोटो लें। अनजान लोगों या निजी जानकारी को फोटो में शामिल न करें।',
+  trainingDropOtpTitle: '8. ड्रॉप OTP डालकर पूरा करें',
+  trainingDropOtpText: 'मंजिल पर रिसीवर को सामान दें, ड्रॉप OTP दर्ज करें और डिलीवरी पूरी मार्क करें।',
+  trainingSafetyTitle: 'सुरक्षा नियम',
+  trainingSafetyText: 'हेलमेट या सीट बेल्ट पहनें, चलते समय फोन न चलाएं और अवैध, रिसने वाला या खतरनाक सामान न ले जाएं।',
+  trainingHelpTitle: 'ट्रिप के दौरान मदद चाहिए?',
+  trainingHelpText: 'एक्टिव ऑर्डर खोलकर सपोर्ट इस्तेमाल करें। तुरंत सुरक्षा जोखिम होने पर पहले सुरक्षित जगह रुकें।',
   keepDetailsUpdated: 'अपनी जानकारी अपडेट रखें',
   mobileLinkedToAccount: 'आपका मोबाइल नंबर आपके सत्यापित अकाउंट से जुड़ा है.',
   saveChanges: 'बदलाव सेव करें',
@@ -549,6 +603,11 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   pickup: 'पिकअप',
   drop: 'ड्रॉप',
   min: 'मिनट',
+  maximizeMap: 'मैप बड़ा करें',
+  minimizeMap: 'मैप छोटा करें',
+  exactRoadRoute: 'सही सड़क मार्ग',
+  loadingExactRoute: 'सही मार्ग लोड हो रहा है',
+  exactRouteUnavailable: 'सही सड़क मार्ग उपलब्ध नहीं है। सीधा मार्ग दिखाया जा रहा है।',
   arrivedAtPickup: 'पिकअप पर पहुंचा',
   capturePickupPod: 'पिकअप POD कैप्चर करें',
   markPickedUp: 'पिकअप मार्क करें',
@@ -1565,6 +1624,7 @@ export default function App() {
         )}
         {tab === 'active' && (
           <ActiveScreen
+            api={api}
             orders={data.activeOrders}
             completedOrders={data.completedOrders}
             selectedOrderId={activeOrder?.id}
@@ -2419,6 +2479,7 @@ function AvailableOrdersList({
 }
 
 function ActiveScreen({
+  api,
   orders,
   completedOrders,
   selectedOrderId,
@@ -2431,6 +2492,7 @@ function ActiveScreen({
   onStatus,
   onCancel
 }: {
+  api: IndieryApi;
   orders: Order[];
   completedOrders: Order[];
   selectedOrderId?: string;
@@ -2482,6 +2544,8 @@ function ActiveScreen({
           </ScrollView>
       ) : null}
       <MapPreview
+        api={api}
+        orderId={order.id}
         pickup={order.pickup}
         drop={order.drop}
         extraStops={order.extraStops}
@@ -2803,10 +2867,10 @@ function ProfileScreen({
 
         <View style={styles.accountMenuCard}>
           <AccountMenuRow
-            icon="person-outline"
-            title={copy.personalInformation}
-            subtitle={copy.personalInformationSubtitle}
-            onPress={() => openPage('personal')}
+            icon="school-outline"
+            title={copy.driverTraining}
+            subtitle={copy.driverTrainingSubtitle}
+            onPress={() => openPage('training')}
           />
           <AccountMenuRow
             icon="car-outline"
@@ -2866,19 +2930,21 @@ function ProfileScreen({
         <AccountDetailHeader
           title={
             page === 'personal' ? copy.personalInformation
-              : page === 'vehicle' ? copy.vehicleDetails
-                : page === 'documents' ? copy.documentsKyc
-                  : page === 'bank' ? copy.bankAccount
-                    : page === 'language' ? copy.changeLanguage
-                      : copy.policiesLegal
+              : page === 'training' ? copy.driverTraining
+                : page === 'vehicle' ? copy.vehicleDetails
+                  : page === 'documents' ? copy.documentsKyc
+                    : page === 'bank' ? copy.bankAccount
+                      : page === 'language' ? copy.changeLanguage
+                        : copy.policiesLegal
           }
           subtitle={
             page === 'personal' ? copy.keepDetailsUpdated
-              : page === 'vehicle' ? copy.vehicleDetailsSubtitle
-                : page === 'documents' ? copy.uploadDetailsSubtitle
-                  : page === 'bank' ? copy.usedForPayouts
-                    : page === 'language' ? copy.languageSubtitle
-                      : copy.policiesLegalSubtitle
+              : page === 'training' ? copy.driverTrainingSubtitle
+                : page === 'vehicle' ? copy.vehicleDetailsSubtitle
+                  : page === 'documents' ? copy.uploadDetailsSubtitle
+                    : page === 'bank' ? copy.usedForPayouts
+                      : page === 'language' ? copy.languageSubtitle
+                        : copy.policiesLegalSubtitle
           }
           onBack={() => openPage('overview')}
         />
@@ -2895,6 +2961,59 @@ function ProfileScreen({
             </View>
             {profileError ? <Text style={styles.loginError}>{profileError}</Text> : null}
             <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitPersonalDetails} />
+          </View>
+        ) : null}
+
+        {page === 'training' ? (
+          <View style={styles.trainingPage}>
+            <View style={styles.trainingHeroCard}>
+              <View style={styles.trainingHeroIcon}>
+                <Ionicons name="school" size={26} color={colors.white} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.trainingHeroTitle}>{copy.trainingIntro}</Text>
+                <Text style={styles.trainingHeroText}>{copy.trainingIntroText}</Text>
+              </View>
+            </View>
+
+            {[
+              { icon: 'power-outline' as const, title: copy.trainingGoOnlineTitle, text: copy.trainingGoOnlineText },
+              { icon: 'reader-outline' as const, title: copy.trainingAcceptTitle, text: copy.trainingAcceptText },
+              { icon: 'navigate-outline' as const, title: copy.trainingPickupTitle, text: copy.trainingPickupText },
+              { icon: 'camera-outline' as const, title: copy.trainingPickupPhotoTitle, text: copy.trainingPickupPhotoText },
+              { icon: 'key-outline' as const, title: copy.trainingPickupOtpTitle, text: copy.trainingPickupOtpText },
+              { icon: 'location-outline' as const, title: copy.trainingDeliverTitle, text: copy.trainingDeliverText },
+              { icon: 'camera-outline' as const, title: copy.trainingDropPhotoTitle, text: copy.trainingDropPhotoText },
+              { icon: 'checkmark-done-outline' as const, title: copy.trainingDropOtpTitle, text: copy.trainingDropOtpText }
+            ].map((item, index) => (
+              <View key={item.title} style={styles.trainingStepCard}>
+                <View style={styles.trainingStepRail}>
+                  <View style={styles.trainingStepIcon}>
+                    <Ionicons name={item.icon} size={20} color={colors.partner} />
+                  </View>
+                  {index < 7 ? <View style={styles.trainingStepLine} /> : null}
+                </View>
+                <View style={styles.trainingStepContent}>
+                  <Text style={styles.trainingStepTitle}>{item.title}</Text>
+                  <Text style={styles.trainingStepText}>{item.text}</Text>
+                </View>
+              </View>
+            ))}
+
+            <View style={styles.trainingSafetyCard}>
+              <Ionicons name="shield-checkmark" size={22} color={colors.green} />
+              <View style={styles.flex}>
+                <Text style={styles.trainingSafetyTitle}>{copy.trainingSafetyTitle}</Text>
+                <Text style={styles.trainingSafetyText}>{copy.trainingSafetyText}</Text>
+              </View>
+            </View>
+            <View style={styles.trainingHelpCard}>
+              <Ionicons name="headset" size={22} color={colors.partner} />
+              <View style={styles.flex}>
+                <Text style={styles.trainingSafetyTitle}>{copy.trainingHelpTitle}</Text>
+                <Text style={styles.trainingSafetyText}>{copy.trainingHelpText}</Text>
+              </View>
+            </View>
           </View>
         ) : null}
 
@@ -3424,12 +3543,16 @@ function PanicSheet({
 }
 
 function MapPreview({
+  api,
+  orderId,
   pickup,
   drop,
   extraStops = [],
   eta,
   partnerLocation
 }: {
+  api: IndieryApi;
+  orderId: string;
   pickup: LocationPoint;
   drop: LocationPoint;
   extraStops?: LocationPoint[];
@@ -3437,6 +3560,10 @@ function MapPreview({
   partnerLocation?: Order['partnerLocation'];
 }) {
   const copy = useCopy();
+  const [expanded, setExpanded] = useState(false);
+  const [exactRoute, setExactRoute] = useState<PartnerRoutePath | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState('');
   const hasLiveLocation = hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng);
   const stopLabel = routeStopSummary(extraStops);
   const routePoints = [pickup, ...extraStops, drop]
@@ -3463,7 +3590,30 @@ function MapPreview({
     longitudeDelta: 0.05
   };
   const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const expandedMapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
   const fitKey = fitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|');
+  const exactRouteCoordinates = exactRoute?.coordinates.length ? exactRoute.coordinates : routePoints.map((item) => item.coordinate);
+  const expandedFitCoordinates = partnerCoordinate
+    ? [...exactRouteCoordinates, partnerCoordinate]
+    : exactRouteCoordinates;
+  const expandedFitKey = [
+    orderId,
+    exactRoute?.source ?? 'pending',
+    expandedFitCoordinates.length,
+    expandedFitCoordinates[0]?.latitude,
+    expandedFitCoordinates[0]?.longitude,
+    expandedFitCoordinates[expandedFitCoordinates.length - 1]?.latitude,
+    expandedFitCoordinates[expandedFitCoordinates.length - 1]?.longitude,
+    partnerCoordinate?.latitude,
+    partnerCoordinate?.longitude
+  ].join('|');
+
+  useEffect(() => {
+    setExpanded(false);
+    setExactRoute(null);
+    setRouteError('');
+    setRouteLoading(false);
+  }, [orderId]);
 
   useEffect(() => {
     if (!canRenderNativeMap || !mapRef.current || !fitCoordinates.length) return;
@@ -3480,7 +3630,68 @@ function MapPreview({
     return () => clearTimeout(timer);
   }, [canRenderNativeMap, fitKey]);
 
+  useEffect(() => {
+    if (!expanded || !canRenderNativeMap || !expandedMapRef.current || !expandedFitCoordinates.length) return;
+    const timer = setTimeout(() => {
+      if (expandedFitCoordinates.length === 1) {
+        expandedMapRef.current?.animateToRegion({ ...initialRegion, ...expandedFitCoordinates[0] }, 250);
+        return;
+      }
+      expandedMapRef.current?.fitToCoordinates(expandedFitCoordinates, {
+        edgePadding: { top: 90, right: 48, bottom: 150, left: 48 },
+        animated: true
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [canRenderNativeMap, expanded, expandedFitKey]);
+
+  async function openExpandedMap() {
+    setExpanded(true);
+    if (exactRoute || routeLoading) return;
+    setRouteLoading(true);
+    setRouteError('');
+    try {
+      const route = await api.partnerOrderRoute(orderId);
+      setExactRoute(route);
+      if (route.source !== 'google_directions') setRouteError(copy.exactRouteUnavailable);
+    } catch (err) {
+      setRouteError(err instanceof Error ? err.message : copy.exactRouteUnavailable);
+    } finally {
+      setRouteLoading(false);
+    }
+  }
+
+  function renderRouteMarkers() {
+    return (
+      <>
+        {routePoints.map((item) => {
+          const isPickup = item.index === 0;
+          const isDrop = item.index === extraStops.length + 1;
+          const pinColor = isPickup ? colors.green : isDrop ? colors.red : colors.amber;
+          const label = isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`;
+          return (
+            <Marker
+              key={`${label}-${item.coordinate.latitude}-${item.coordinate.longitude}`}
+              coordinate={item.coordinate}
+              title={label}
+              description={item.point.label}
+              pinColor={pinColor}
+            />
+          );
+        })}
+        {partnerCoordinate ? (
+          <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
+            <View style={styles.mapPartnerMarker}>
+              <Ionicons name="bicycle" size={15} color={colors.white} />
+            </View>
+          </Marker>
+        ) : null}
+      </>
+    );
+  }
+
   return (
+    <>
     <View style={styles.map}>
       {canRenderNativeMap ? (
         <MapView
@@ -3499,28 +3710,7 @@ function MapPreview({
               strokeWidth={4}
             />
           ) : null}
-          {routePoints.map((item) => {
-            const isPickup = item.index === 0;
-            const isDrop = item.index === extraStops.length + 1;
-            const pinColor = isPickup ? colors.green : isDrop ? colors.red : colors.amber;
-            const label = isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`;
-            return (
-              <Marker
-                key={`${label}-${item.coordinate.latitude}-${item.coordinate.longitude}`}
-                coordinate={item.coordinate}
-                title={label}
-                description={item.point.label}
-                pinColor={pinColor}
-              />
-            );
-          })}
-          {partnerCoordinate ? (
-            <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
-              <View style={styles.mapPartnerMarker}>
-                <Ionicons name="bicycle" size={15} color={colors.white} />
-              </View>
-            </Marker>
-          ) : null}
+          {renderRouteMarkers()}
         </MapView>
       ) : (
         <>
@@ -3548,10 +3738,86 @@ function MapPreview({
         <View style={[styles.liveDot, hasLiveLocation && styles.liveDotOn]} />
         <Text style={styles.liveText}>{hasLiveLocation ? copy.liveGps : copy.waitingGps}</Text>
       </View>
-      <Text style={styles.mapText} numberOfLines={1}>
+      <Pressable
+        style={styles.mapExpandButton}
+        onPress={openExpandedMap}
+        accessibilityRole="button"
+        accessibilityLabel={copy.maximizeMap}
+      >
+        <Ionicons name="expand-outline" size={20} color={colors.partner} />
+      </Pressable>
+      <Text style={[styles.mapText, styles.mapTextWithAction]} numberOfLines={1}>
         {pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}
       </Text>
     </View>
+    <Modal
+      visible={expanded}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={() => setExpanded(false)}
+    >
+      <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+      <SafeAreaView style={styles.expandedRouteShell}>
+        <View style={styles.expandedRouteMap}>
+          {canRenderNativeMap ? (
+            <MapView
+              ref={expandedMapRef}
+              provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+              style={styles.mapNativeView}
+              initialRegion={initialRegion}
+              rotateEnabled={false}
+              pitchEnabled={false}
+              toolbarEnabled={false}
+            >
+              {exactRouteCoordinates.length > 1 ? (
+                <Polyline
+                  coordinates={exactRouteCoordinates}
+                  strokeColor={colors.partner}
+                  strokeWidth={5}
+                  lineCap="round"
+                  lineJoin="round"
+                />
+              ) : null}
+              {renderRouteMarkers()}
+            </MapView>
+          ) : (
+            <View style={styles.expandedRouteFallback}>
+              <Ionicons name="map-outline" size={42} color={colors.partner} />
+              <Text style={styles.expandedRouteFallbackText}>{copy.exactRouteUnavailable}</Text>
+            </View>
+          )}
+
+          <View style={styles.expandedRouteHeaderCard}>
+            <View style={styles.expandedRouteHeaderIcon}>
+              {routeLoading ? (
+                <ActivityIndicator size="small" color={colors.partner} />
+              ) : (
+                <Ionicons name="navigate" size={19} color={colors.partner} />
+              )}
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.expandedRouteTitle}>
+                {routeLoading ? copy.loadingExactRoute : copy.exactRoadRoute}
+              </Text>
+              <Text style={styles.expandedRouteSubtitle} numberOfLines={2}>
+                {pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}
+              </Text>
+              {routeError ? <Text style={styles.expandedRouteError}>{routeError}</Text> : null}
+            </View>
+          </View>
+
+          <Pressable
+            style={styles.expandedRouteMinimizeButton}
+            onPress={() => setExpanded(false)}
+            accessibilityRole="button"
+            accessibilityLabel={copy.minimizeMap}
+          >
+            <Ionicons name="contract-outline" size={22} color={colors.partner} />
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    </Modal>
+    </>
   );
 }
 
@@ -3926,6 +4192,18 @@ const styles = StyleSheet.create({
   liveText: { color: colors.ink, fontSize: 11, fontWeight: '900' },
   mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '900' },
+  mapTextWithAction: { right: 58 },
+  mapExpandButton: { position: 'absolute', right: 10, bottom: 9, width: 40, height: 40, borderRadius: 20, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
+  expandedRouteShell: { flex: 1, backgroundColor: colors.white },
+  expandedRouteMap: { flex: 1, backgroundColor: '#ECFDF5' },
+  expandedRouteFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 28, backgroundColor: colors.partnerLight },
+  expandedRouteFallbackText: { color: colors.ink, fontSize: 13, fontWeight: '800', lineHeight: 19, textAlign: 'center' },
+  expandedRouteHeaderCard: { position: 'absolute', left: 16, right: 16, top: 16, minHeight: 72, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.96)', flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 13, shadowColor: '#0F172A', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  expandedRouteHeaderIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  expandedRouteTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  expandedRouteSubtitle: { color: colors.muted, fontSize: 10, fontWeight: '700', lineHeight: 14, marginTop: 2 },
+  expandedRouteError: { color: '#B45309', fontSize: 10, fontWeight: '800', lineHeight: 14, marginTop: 4 },
+  expandedRouteMinimizeButton: { position: 'absolute', right: 16, bottom: Platform.OS === 'android' ? 24 : 20, width: 50, height: 50, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   payoutCard: { backgroundColor: colors.partnerLight, borderRadius: 16, padding: 14, marginBottom: 14 },
   fareLabel: { color: colors.partner, fontSize: 13 },
   fareValue: { color: colors.partner, fontSize: 13, fontWeight: '800' },
@@ -3973,6 +4251,22 @@ const styles = StyleSheet.create({
   accountDetailCardComplete: { borderColor: colors.partner, backgroundColor: '#FAFFFD' },
   accountInfoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: colors.partnerLight, padding: 12, marginBottom: 14 },
   accountInfoText: { flex: 1, color: colors.partner, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  trainingPage: { gap: 10, paddingBottom: 8 },
+  trainingHeroCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: colors.partner, padding: 16 },
+  trainingHeroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  trainingHeroTitle: { color: colors.white, fontSize: 17, fontWeight: '900' },
+  trainingHeroText: { color: '#D1FAE5', fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 3 },
+  trainingStepCard: { flexDirection: 'row', alignItems: 'stretch', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 13 },
+  trainingStepRail: { width: 40, alignItems: 'center' },
+  trainingStepIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  trainingStepLine: { flex: 1, width: 2, minHeight: 18, borderRadius: 2, backgroundColor: '#A7F3D0', marginTop: 6, marginBottom: -24 },
+  trainingStepContent: { flex: 1, paddingVertical: 1 },
+  trainingStepTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  trainingStepText: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 17, marginTop: 4 },
+  trainingSafetyCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16, backgroundColor: '#F0FDF4', padding: 14 },
+  trainingHelpCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 16, backgroundColor: colors.partnerLight, padding: 14 },
+  trainingSafetyTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  trainingSafetyText: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 3 },
   accountBankStatus: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   kycHero: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.partner, borderRadius: 18, padding: 16, marginBottom: 14 },
   kycHeroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },

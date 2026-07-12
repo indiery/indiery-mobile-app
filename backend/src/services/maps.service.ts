@@ -22,6 +22,16 @@ export interface RouteMetrics {
   source: 'google_directions' | 'google_distance_matrix' | 'fallback';
 }
 
+export interface RoutePathCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+export interface RoutePathResult {
+  coordinates: RoutePathCoordinate[];
+  source: 'google_directions' | 'fallback';
+}
+
 export interface LocationSuggestionResult {
   placeId: string;
   description: string;
@@ -69,6 +79,93 @@ function routePointsFor(input: DistanceInput) {
     ...stops.map(routePointValue),
     coordinatePair(input.dropLat, input.dropLng) ?? input.drop
   ];
+}
+
+function coordinateRoutePointsFor(input: DistanceInput): RoutePathCoordinate[] {
+  const stops = (input.extraStops ?? []).filter((stop) => stop.label.trim().length > 1);
+  return [
+    { latitude: input.pickupLat, longitude: input.pickupLng },
+    ...stops.map((stop) => ({ latitude: stop.lat, longitude: stop.lng })),
+    { latitude: input.dropLat, longitude: input.dropLng }
+  ].filter(
+    (point): point is RoutePathCoordinate =>
+      typeof point.latitude === 'number' &&
+      typeof point.longitude === 'number' &&
+      Number.isFinite(point.latitude) &&
+      Number.isFinite(point.longitude)
+  );
+}
+
+function decodeGooglePolyline(encoded: string): RoutePathCoordinate[] {
+  const coordinates: RoutePathCoordinate[] = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    latitude += result & 1 ? ~(result >> 1) : result >> 1;
+
+    result = 0;
+    shift = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    longitude += result & 1 ? ~(result >> 1) : result >> 1;
+
+    coordinates.push({ latitude: latitude / 1e5, longitude: longitude / 1e5 });
+  }
+
+  return coordinates;
+}
+
+export async function resolveRoutePath(input: DistanceInput): Promise<RoutePathResult> {
+  const fallbackCoordinates = coordinateRoutePointsFor(input);
+  const routePoints = routePointsFor(input);
+  const origin = routePoints[0];
+  const destination = routePoints[routePoints.length - 1];
+  if (!env.GOOGLE_MAPS_API_KEY || !origin || !destination) {
+    return { coordinates: fallbackCoordinates, source: 'fallback' };
+  }
+
+  const waypoints = routePoints.slice(1, -1).filter(Boolean);
+  const params = new URLSearchParams({
+    origin,
+    destination,
+    mode: 'driving',
+    units: 'metric',
+    region: 'in',
+    key: env.GOOGLE_MAPS_API_KEY,
+    ...(waypoints.length ? { waypoints: waypoints.join('|') } : {})
+  });
+
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`);
+    if (!response.ok) return { coordinates: fallbackCoordinates, source: 'fallback' };
+    const payload = (await response.json()) as {
+      status?: string;
+      routes?: Array<{ overview_polyline?: { points?: string } }>;
+    };
+    const encodedPath = payload.routes?.[0]?.overview_polyline?.points;
+    if (payload.status !== 'OK' || !encodedPath) {
+      return { coordinates: fallbackCoordinates, source: 'fallback' };
+    }
+    const coordinates = decodeGooglePolyline(encodedPath);
+    return coordinates.length > 1
+      ? { coordinates, source: 'google_directions' }
+      : { coordinates: fallbackCoordinates, source: 'fallback' };
+  } catch {
+    return { coordinates: fallbackCoordinates, source: 'fallback' };
+  }
 }
 
 function googleMapsUrl(path: string, params: Record<string, string>) {

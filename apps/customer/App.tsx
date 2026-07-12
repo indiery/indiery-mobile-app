@@ -125,17 +125,41 @@ type MapPickerTarget = {
   openContact?: boolean;
 };
 
-const presetGoodsOptions = ['Documents', 'Groceries', 'Electronics', 'Furniture', 'Business stock', 'Household items'];
-const goodsOptions = [...presetGoodsOptions, 'Other'];
+const goodsOptions = [
+  'Documents',
+  'Stationery and toys',
+  'Groceries and food',
+  'FMCG products',
+  'Electronics and appliances',
+  'Furniture',
+  'Textiles and garments',
+  'Pharmacy and medicines',
+  'Computers and accessories',
+  'Timber and plywood',
+  'Construction materials',
+  'Hardware and tools',
+  'Catering and restaurant supplies',
+  'Machinery, equipment and spare parts',
+  'Household items',
+  'Business stock and parcels',
+  'General goods'
+];
 const allowedGoodsItems = [
   'Documents',
+  'Stationery, books, and toys',
   'Groceries and packed food',
-  'Electronics and accessories',
+  'Packed FMCG products',
+  'Electronics, appliances, computers, and accessories',
   'Furniture and household items',
-  'Business stock',
-  'Clothes and personal items',
-  'Books and stationery',
-  'Packed tools and hardware'
+  'Textiles and garments',
+  'Packed pharmacy items and medicines with a valid bill',
+  'Timber and plywood',
+  'Construction materials',
+  'Packed hardware and tools',
+  'Catering and restaurant supplies',
+  'Machinery, equipment, and spare parts',
+  'Business stock and packed parcels',
+  'Packed general goods that are not restricted'
 ];
 const restrictedGoodsItems = [
   'Illegal items',
@@ -246,10 +270,11 @@ const enCopy = {
   saveAddress: 'Save address',
   goodsDetails: 'Goods Details',
   goodsType: 'Goods type',
+  selectGoodsCategory: 'Select goods category',
+  tapToChooseGoods: 'Tap to choose what you are sending',
+  confirmGoodsCategory: 'Confirm category',
   weightKg: 'Weight kg',
   restrictedGoods: 'Restricted goods, hazardous items, and illegal materials are not allowed.',
-  other: 'Other',
-  describeGoods: 'Describe goods',
   enterGoodsType: 'Enter goods type',
   enterWeight: 'Enter weight',
   goodsRules: 'Goods rules',
@@ -436,11 +461,27 @@ const enCopy = {
   furniture: 'Furniture',
   businessStock: 'Business stock',
   householdItems: 'Household items',
+  groceriesAndFood: 'Groceries and food',
+  electronicsAndAppliances: 'Electronics and appliances',
+  textilesAndGarments: 'Textiles and garments',
+  pharmacyAndMedicines: 'Pharmacy and medicines',
+  computersAndAccessories: 'Computers and accessories',
+  timberAndPlywood: 'Timber and plywood',
+  constructionMaterials: 'Construction materials',
+  cateringAndRestaurantSupplies: 'Catering and restaurant supplies',
+  machineryEquipmentSpareParts: 'Machinery, equipment and spare parts',
+  businessStockAndParcels: 'Business stock and parcels',
+  hardwareAndTools: 'Hardware and tools',
+  fmcgProducts: 'FMCG products',
+  stationeryAndToys: 'Stationery and toys',
+  generalGoods: 'General goods',
   mapSearchPlaceholder: 'Search area, building, or landmark',
   searchPlacePin: 'Search or place the pin accurately',
   dragMapPin: 'Drag map or pin to adjust',
   useCurrentLocation: 'Use current location',
   confirmLocation: 'Confirm location',
+  confirmPickupLocation: 'Confirm pickup location',
+  confirmDropLocation: 'Confirm drop location',
   selected: 'Selected',
   selectOnMap: 'Select on map',
   useTypedLocation: 'Use typed location',
@@ -514,6 +555,9 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   saveAddress: 'पता सेव करें',
   goodsDetails: 'सामान की जानकारी',
   goodsType: 'सामान का प्रकार',
+  selectGoodsCategory: 'सामान की श्रेणी चुनें',
+  tapToChooseGoods: 'भेजे जाने वाले सामान का प्रकार चुनें',
+  confirmGoodsCategory: 'श्रेणी कन्फर्म करें',
   weightKg: 'वजन किलो',
   restrictedGoods: 'प्रतिबंधित, खतरनाक और अवैध सामान की अनुमति नहीं है.',
   routeSummary: 'रूट सारांश',
@@ -670,11 +714,27 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   furniture: 'फर्नीचर',
   businessStock: 'बिजनेस स्टॉक',
   householdItems: 'घरेलू सामान',
+  groceriesAndFood: 'किराना और खाद्य सामान',
+  electronicsAndAppliances: 'इलेक्ट्रॉनिक्स और उपकरण',
+  textilesAndGarments: 'कपड़ा और गारमेंट',
+  pharmacyAndMedicines: 'फार्मेसी और दवाइयां',
+  computersAndAccessories: 'कंप्यूटर और एक्सेसरीज़',
+  timberAndPlywood: 'लकड़ी और प्लाईवुड',
+  constructionMaterials: 'निर्माण सामग्री',
+  cateringAndRestaurantSupplies: 'कैटरिंग और रेस्टोरेंट सामान',
+  machineryEquipmentSpareParts: 'मशीनरी, उपकरण और स्पेयर पार्ट्स',
+  businessStockAndParcels: 'बिजनेस स्टॉक और पार्सल',
+  hardwareAndTools: 'हार्डवेयर और औजार',
+  fmcgProducts: 'एफएमसीजी उत्पाद',
+  stationeryAndToys: 'स्टेशनरी और खिलौने',
+  generalGoods: 'सामान्य सामान',
   mapSearchPlaceholder: 'एरिया, बिल्डिंग या लैंडमार्क खोजें',
   searchPlacePin: 'सर्च करें या पिन सही जगह रखें',
   dragMapPin: 'मैप या पिन खींचकर एडजस्ट करें',
   useCurrentLocation: 'करंट लोकेशन उपयोग करें',
   confirmLocation: 'लोकेशन कन्फर्म करें',
+  confirmPickupLocation: 'पिकअप लोकेशन कन्फर्म करें',
+  confirmDropLocation: 'ड्रॉप लोकेशन कन्फर्म करें',
   selected: 'चुना गया',
   selectOnMap: 'मैप पर चुनें',
   locationHint: 'सही किराया और ट्रैकिंग के लिए सुझाव चुनें, या लिखे हुए टेक्स्ट के साथ जारी रखें.'
@@ -739,19 +799,51 @@ function goodsLabel(language: AppLanguage, item: string) {
     Furniture: 'furniture',
     'Business stock': 'businessStock',
     'Household items': 'householdItems',
-    Other: 'other'
+    'Groceries and food': 'groceriesAndFood',
+    'Electronics and appliances': 'electronicsAndAppliances',
+    'Textiles and garments': 'textilesAndGarments',
+    'Pharmacy and medicines': 'pharmacyAndMedicines',
+    'Computers and accessories': 'computersAndAccessories',
+    'Timber and plywood': 'timberAndPlywood',
+    'Construction materials': 'constructionMaterials',
+    'Catering and restaurant supplies': 'cateringAndRestaurantSupplies',
+    'Machinery, equipment and spare parts': 'machineryEquipmentSpareParts',
+    'Business stock and parcels': 'businessStockAndParcels',
+    'Hardware and tools': 'hardwareAndTools',
+    'FMCG products': 'fmcgProducts',
+    'Stationery and toys': 'stationeryAndToys',
+    'General goods': 'generalGoods'
   };
   const key = labels[item];
   return key ? copyFor(language, key) : item;
 }
 
-function isPresetGoodsType(item: string) {
-  return presetGoodsOptions.includes(item);
+function goodsTypeIcon(item: string): keyof typeof Ionicons.glyphMap {
+  const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
+    Documents: 'document-text-outline',
+    'Stationery and toys': 'pencil-outline',
+    'Groceries and food': 'basket-outline',
+    'FMCG products': 'cart-outline',
+    'Electronics and appliances': 'hardware-chip-outline',
+    Furniture: 'bed-outline',
+    'Textiles and garments': 'shirt-outline',
+    'Pharmacy and medicines': 'medkit-outline',
+    'Computers and accessories': 'laptop-outline',
+    'Timber and plywood': 'layers-outline',
+    'Construction materials': 'construct-outline',
+    'Hardware and tools': 'hammer-outline',
+    'Catering and restaurant supplies': 'restaurant-outline',
+    'Machinery, equipment and spare parts': 'cog-outline',
+    'Household items': 'home-outline',
+    'Business stock and parcels': 'briefcase-outline',
+    'General goods': 'cube-outline'
+  };
+  return icons[item] ?? 'cube-outline';
 }
 
 function bookingGoodsLabel(language: AppLanguage, item: string) {
   const trimmed = item.trim();
-  if (!trimmed) return copyFor(language, 'other');
+  if (!trimmed) return copyFor(language, 'documents');
   return goodsLabel(language, trimmed);
 }
 
@@ -784,6 +876,20 @@ const initialBooking = {
   paymentMode: 'upi' as PaymentMode,
   vehicleId: ''
 };
+
+function bookingFareRouteKey(booking: typeof initialBooking) {
+  return JSON.stringify([
+    booking.pickup.trim(),
+    booking.pickupAddressLine.trim(),
+    booking.pickupLat,
+    booking.pickupLng,
+    booking.drop.trim(),
+    booking.dropAddressLine.trim(),
+    booking.dropLat,
+    booking.dropLng,
+    booking.weightKg.trim()
+  ]);
+}
 
 function needsCustomerProfile(user: UserProfile) {
   return !user.email || user.name === 'Indiery Customer';
@@ -861,11 +967,16 @@ function vehicleCanCarryWeight(vehicle: Vehicle, weightKg?: number) {
 }
 
 function porterVehicleQuote(vehicle: Vehicle, distanceKm?: number) {
-  const rule = vehicleRule(vehicle);
   const billableKm = Math.max(1, Math.ceil(distanceKm || 1));
+  return porterVehicleQuoteForBillableKm(vehicle, billableKm);
+}
+
+function porterVehicleQuoteForBillableKm(vehicle: Vehicle, billableKm: number) {
+  const rule = vehicleRule(vehicle);
+  const normalizedBillableKm = Math.max(1, Math.ceil(billableKm));
   const baseFare = rule?.baseFare ?? vehicle.baseFare;
   const perKmAfterFirst = rule?.perKmAfterFirst ?? vehicle.perKm;
-  return baseFare + Math.max(0, billableKm - 1) * perKmAfterFirst;
+  return baseFare + Math.max(0, normalizedBillableKm - 1) * perKmAfterFirst;
 }
 
 function vehicleIcon(vehicle: Vehicle): keyof typeof Ionicons.glyphMap {
@@ -1175,6 +1286,7 @@ async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (messag
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
+  const estimateRequestSeqRef = useRef(0);
   const pushTokenRef = useRef<string | undefined>(undefined);
   const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
   const exitBackPressedAtRef = useRef(0);
@@ -1187,6 +1299,8 @@ export default function App() {
   const [step, setStep] = useState(1);
   const [booking, setBooking] = useState(initialBooking);
   const [fare, setFare] = useState<FareBreakup | null>(null);
+  const [fareVehicleId, setFareVehicleId] = useState<string | undefined>();
+  const [fareRouteKey, setFareRouteKey] = useState<string | undefined>();
   const [language, setLanguage] = useState<AppLanguage>('en');
   const [tripOtpByOrder, setTripOtpByOrder] = useState<Record<string, TripOtp>>({});
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
@@ -1383,6 +1497,8 @@ export default function App() {
 
   async function estimateNow(nextStep = step, vehicleId = booking.vehicleId) {
     if (!vehicleId || !booking.pickup || !booking.drop) return;
+    const requestId = ++estimateRequestSeqRef.current;
+    const routeKey = bookingFareRouteKey(booking);
     setBusy(true);
     try {
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
@@ -1399,12 +1515,17 @@ export default function App() {
         dropLat: booking.dropLat,
         dropLng: booking.dropLng
       });
+      if (requestId !== estimateRequestSeqRef.current) return;
       setFare(result.fare);
+      setFareVehicleId(vehicleId);
+      setFareRouteKey(routeKey);
       setStep(nextStep);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Fare estimate failed');
+      if (requestId === estimateRequestSeqRef.current) {
+        showToast(err instanceof Error ? err.message : 'Fare estimate failed');
+      }
     } finally {
-      setBusy(false);
+      if (requestId === estimateRequestSeqRef.current) setBusy(false);
     }
   }
 
@@ -1418,7 +1539,7 @@ export default function App() {
         pickup,
         drop,
         vehicleId: booking.vehicleId,
-        goodsType: booking.goodsType.trim() || 'Other',
+        goodsType: booking.goodsType.trim() || 'Documents',
         weightKg: Number(booking.weightKg || 1),
         coins: automaticCoinDiscount(data?.user, data?.wallet),
         paymentMode: booking.paymentMode,
@@ -1475,7 +1596,10 @@ export default function App() {
       }
       await refresh();
       setStep(1);
+      estimateRequestSeqRef.current += 1;
       setFare(null);
+      setFareVehicleId(undefined);
+      setFareRouteKey(undefined);
       setBooking((current) => ({ ...initialBooking, vehicleId: current.vehicleId }));
       setTab('orders');
       showToast(`${confirmedOrder.orderNo} booked`);
@@ -1545,7 +1669,10 @@ export default function App() {
     setData(null);
     setTab('home');
     setStep(1);
+    estimateRequestSeqRef.current += 1;
     setFare(null);
+    setFareVehicleId(undefined);
+    setFareRouteKey(undefined);
     setBooking(initialBooking);
     setTripOtpByOrder({});
     setSelectedActiveOrderId(undefined);
@@ -1757,7 +1884,8 @@ export default function App() {
             setBooking={setBooking}
             step={step}
             setStep={setStep}
-            fare={fare}
+            fare={fareRouteKey === bookingFareRouteKey(booking) ? fare : null}
+            fareVehicleId={fareRouteKey === bookingFareRouteKey(booking) ? fareVehicleId : undefined}
             busy={busy}
             onSaveAddress={addSavedAddress}
             estimateNow={estimateNow}
@@ -1876,18 +2004,34 @@ function LoginScreen({
   const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
+  const [loginPolicy, setLoginPolicy] = useState<LegalPolicy | null>(null);
+  const loginScrollRef = useRef<ScrollView | null>(null);
 
   useEffect(() => {
     setError(initialError);
   }, [initialError]);
 
+  useEffect(() => {
+    if (!confirmation) return undefined;
+    const timer = setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 250);
+    return () => clearTimeout(timer);
+  }, [confirmation]);
+
   useAndroidBackHandler(() => {
+    if (loginPolicy) {
+      setLoginPolicy(null);
+      return true;
+    }
     if (!confirmation) return false;
     setConfirmation(null);
     setCode('');
     setError('');
     return true;
-  }, [confirmation]);
+  }, [confirmation, loginPolicy]);
+
+  function openLoginPolicy(policyId: LegalPolicy['id']) {
+    setLoginPolicy(legalPolicies.find((policy) => policy.id === policyId) ?? null);
+  }
 
   async function sendOtp() {
     setBusy(true);
@@ -1904,6 +2048,7 @@ function LoginScreen({
 
   async function verifyOtp() {
     if (!confirmation) return;
+    Keyboard.dismiss();
     setBusy(true);
     setError('');
     try {
@@ -1919,22 +2064,51 @@ function LoginScreen({
   }
 
   return (
+    <>
     <SafeAreaView style={styles.loginShell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
-          <LoginHero title="Indiery" caption="Delivering trust, every mile." />
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          ref={loginScrollRef}
+          contentContainerStyle={[styles.authScroll, confirmation && styles.authScrollOtp]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+        >
+          <LoginHero title="Indiery" caption="Delivering trust, every mile." compact={Boolean(confirmation)} />
           <View style={styles.authForm}>
             <Text style={styles.authTitle}>Welcome Back</Text>
             <Text style={styles.loginSubtitle}>Login to book and manage your shipments</Text>
             <PhoneLoginField value={phone} onChangeText={setPhone} />
+            {!confirmation ? (
+              <View style={styles.loginConsent}>
+                <Text style={styles.loginConsentText}>By continuing, you agree to the</Text>
+                <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('terms')}>
+                  <Text style={styles.loginConsentLink}>Terms & Conditions</Text>
+                </Pressable>
+                <Text style={styles.loginConsentText}>and</Text>
+                <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('privacy')}>
+                  <Text style={styles.loginConsentLink}>Privacy Policy</Text>
+                </Pressable>
+                <Text style={styles.loginConsentText}>.</Text>
+              </View>
+            ) : null}
             {confirmation ? (
               <>
                 <View style={styles.authNotice}>
                   <Ionicons name="checkmark-circle" size={16} color={colors.customer} />
                   <Text style={styles.authNoticeText}>OTP sent. Enter the code to verify.</Text>
                 </View>
-                <AuthField label="OTP code" value={code} onChangeText={setCode} keyboardType="numeric" icon="key" maxLength={6} />
+                <AuthField
+                  label="OTP code"
+                  value={code}
+                  onChangeText={setCode}
+                  keyboardType="numeric"
+                  icon="key"
+                  maxLength={6}
+                  autoFocus
+                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 120)}
+                />
               </>
             ) : null}
             {error ? <Text style={styles.loginError}>{error}</Text> : null}
@@ -1954,14 +2128,26 @@ function LoginScreen({
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+    <Modal
+      visible={Boolean(loginPolicy)}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={() => setLoginPolicy(null)}
+    >
+      <SafeAreaView style={styles.loginPolicyShell}>
+        <AppStatusBar variant="light" />
+        {loginPolicy ? <AccountPolicyDetail policy={loginPolicy} onBack={() => setLoginPolicy(null)} /> : null}
+      </SafeAreaView>
+    </Modal>
+    </>
   );
 }
 
-function LoginHero({ title, caption }: { title: string; caption: string }) {
+function LoginHero({ title, caption, compact = false }: { title: string; caption: string; compact?: boolean }) {
   return (
     <ImageBackground
       source={customerLoginBackgroundImage}
-      style={styles.loginHero}
+      style={[styles.loginHero, compact && styles.loginHeroOtp]}
       imageStyle={styles.loginHeroImage}
       resizeMode="cover"
     >
@@ -2108,7 +2294,9 @@ function AuthField({
   editable = true,
   autoCapitalize = 'words',
   icon,
-  maxLength
+  maxLength,
+  autoFocus = false,
+  onFocus
 }: {
   label: string;
   value: string;
@@ -2118,6 +2306,8 @@ function AuthField({
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   icon: keyof typeof Ionicons.glyphMap;
   maxLength?: number;
+  autoFocus?: boolean;
+  onFocus?: () => void;
 }) {
   return (
     <View style={styles.authFieldGroup}>
@@ -2131,6 +2321,8 @@ function AuthField({
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
+          autoFocus={autoFocus}
+          onFocus={onFocus}
           placeholderTextColor={colors.muted}
           style={styles.authInputText}
         />
@@ -2283,7 +2475,10 @@ function HomeScreen({
         <View style={[styles.homePatternRoad, styles.homePatternRoadTwo]} />
         <View style={[styles.homePatternRoad, styles.homePatternRoadThree]} />
       </View>
-      <ScrollView contentContainerStyle={styles.homeScroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.homeScroll}
+        showsVerticalScrollIndicator={false}
+      >
         <Pressable style={styles.homeLocationCard} onPress={onPickupPress}>
           <View style={[styles.homeLocationIcon, pickupSelected && styles.homeLocationIconSelected]}>
             {autoPickupLoading ? (
@@ -2366,7 +2561,10 @@ function HomeScreen({
             {homeAnnouncements.map((item) => (
               <Pressable
                 key={item.id}
-                style={[styles.homeAnnouncementCard, announcementWidth ? { width: announcementWidth } : null]}
+                style={[
+                  styles.homeAnnouncementCard,
+                  announcementWidth ? { width: announcementWidth } : null
+                ]}
                 onPress={() => onTrack()}
               >
                 <View style={styles.homeAnnouncementIcon}>
@@ -2863,7 +3061,7 @@ function VehicleFareOption({
   selected: boolean;
   suggested: boolean;
   disabled?: boolean;
-  price: number;
+  price?: number;
   onPress: () => void;
 }) {
   const copy = useCopy();
@@ -2894,7 +3092,9 @@ function VehicleFareOption({
         </Text>
       </View>
       <View style={styles.vehicleFareOptionPriceWrap}>
-        <Text style={[styles.vehicleFareOptionPrice, disabled && styles.vehicleNameDisabled]}>{money(price)}</Text>
+        <Text style={[styles.vehicleFareOptionPrice, disabled && styles.vehicleNameDisabled]}>
+          {typeof price === 'number' ? money(price) : copy.estimating}
+        </Text>
         {selected ? <Ionicons name="checkmark-circle" size={17} color={colors.customer} /> : null}
         {disabled ? <Text style={styles.vehicleUnavailableText}>{copy.unavailableForWeight}</Text> : null}
       </View>
@@ -2932,6 +3132,7 @@ function BookScreen({
   step,
   setStep,
   fare,
+  fareVehicleId,
   busy,
   onSaveAddress,
   estimateNow,
@@ -2947,6 +3148,7 @@ function BookScreen({
   step: number;
   setStep: (step: number) => void;
   fare: FareBreakup | null;
+  fareVehicleId?: string;
   busy: boolean;
   onSaveAddress: (input: Omit<SavedAddress, 'id'>) => Promise<void>;
   estimateNow: (nextStep?: number, vehicleId?: string) => Promise<void>;
@@ -2959,11 +3161,13 @@ function BookScreen({
   const vehicleChoices = customerVehicles(vehicles);
   const suggestedVehicle = suggestedCustomerVehicle(vehicles, bookingWeightKg);
   const selectedVehicle = vehicleChoices.find((vehicle) => vehicle.id === booking.vehicleId) ?? suggestedVehicle ?? vehicleChoices[0];
+  const selectedFare = selectedVehicle && fareVehicleId === selectedVehicle.id ? fare : null;
   const vehicleChoiceIds = vehicleChoices.map((vehicle) => vehicle.id).join('|');
-  const routeDistanceKm = fare?.distanceKm;
-  const selectedGoodsIsOther = !isPresetGoodsType(booking.goodsType);
+  const routeBillableKm = fare?.billableKm;
   const [mapPickerTarget, setMapPickerTarget] = useState<MapPickerTarget | null>(null);
   const [contactSheetTarget, setContactSheetTarget] = useState<'pickup' | 'drop' | null>(null);
+  const [goodsTypePickerOpen, setGoodsTypePickerOpen] = useState(false);
+  const [draftGoodsType, setDraftGoodsType] = useState(booking.goodsType);
   const [goodsRulesOpen, setGoodsRulesOpen] = useState(false);
   const [contactError, setContactError] = useState('');
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
@@ -2974,7 +3178,7 @@ function BookScreen({
     1: { title: copy.pickupAndDrop, subtitle: booking.pickup || copy.setPickupLocation },
     2: { title: copy.goodsDetails, subtitle: hasDropLocation ? `${booking.pickup} to ${booking.drop}` : copy.enterDropLocation },
     3: { title: copy.chooseVehicle, subtitle: fare ? `${fare.distanceKm} km - ${booking.weightKg || 0} kg` : copy.estimating },
-    4: { title: copy.payment, subtitle: selectedVehicle ? `${selectedVehicle.shortName} - ${fare ? money(fare.total) : copy.estimating}` : copy.selectVehicleValue }
+    4: { title: copy.payment, subtitle: selectedVehicle ? `${selectedVehicle.shortName} - ${selectedFare ? money(selectedFare.total) : copy.estimating}` : copy.selectVehicleValue }
   };
   const currentStepMeta = stepMeta[step] ?? stepMeta[1];
 
@@ -3040,6 +3244,10 @@ function BookScreen({
       setContactSheetTarget(null);
       return true;
     }
+    if (goodsTypePickerOpen) {
+      setGoodsTypePickerOpen(false);
+      return true;
+    }
     if (goodsRulesOpen) {
       setGoodsRulesOpen(false);
       return true;
@@ -3050,7 +3258,7 @@ function BookScreen({
     }
     onBackToHome();
     return true;
-  }, [mapPickerTarget, contactSheetTarget, goodsRulesOpen, step, onBackToHome]);
+  }, [mapPickerTarget, contactSheetTarget, goodsTypePickerOpen, goodsRulesOpen, step, onBackToHome]);
 
   function updateBookingWeight(weightKg: string) {
     const nextWeight = parseBookingWeight(weightKg);
@@ -3066,12 +3274,15 @@ function BookScreen({
     });
   }
 
-  function selectGoodsType(item: string) {
-    if (item === 'Other') {
-      setBooking((current) => ({ ...current, goodsType: isPresetGoodsType(current.goodsType) ? '' : current.goodsType }));
-      return;
-    }
-    setBooking((current) => ({ ...current, goodsType: item }));
+  function openGoodsTypePicker() {
+    setDraftGoodsType(goodsOptions.includes(booking.goodsType) ? booking.goodsType : goodsOptions[0]);
+    setGoodsTypePickerOpen(true);
+  }
+
+  function confirmGoodsType() {
+    setBooking((current) => ({ ...current, goodsType: draftGoodsType }));
+    setContactError('');
+    setGoodsTypePickerOpen(false);
   }
 
   function addStop() {
@@ -3207,6 +3418,10 @@ function BookScreen({
     setContactError('');
     if (booking.vehicleId !== selectedVehicle.id) {
       setBooking((current) => ({ ...current, vehicleId: selectedVehicle.id }));
+    }
+    if (selectedFare) {
+      setStep(4);
+      return;
     }
     estimateNow(4, selectedVehicle.id);
   }
@@ -3400,26 +3615,17 @@ function BookScreen({
               </View>
             </View>
           </View>
-          <View style={styles.goodsChipWrap}>
-            {goodsOptions.map((item) => {
-              const active = item === 'Other' ? selectedGoodsIsOther : booking.goodsType === item;
-              return (
-                <Pressable
-                  key={item}
-                  style={[styles.goodsChip, active && styles.goodsChipActive]}
-                  onPress={() => selectGoodsType(item)}
-                >
-                  <Text style={[styles.goodsChipText, active && styles.goodsChipTextActive]}>{goodsLabel(language, item)}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Field
-            label={selectedGoodsIsOther ? copy.describeGoods : copy.goodsType}
-            value={selectedGoodsIsOther ? booking.goodsType : goodsLabel(language, booking.goodsType)}
-            onChangeText={(goodsType) => setBooking((current) => ({ ...current, goodsType }))}
-            editable={selectedGoodsIsOther}
-          />
+          <Text style={styles.fieldLabel}>{copy.goodsType}</Text>
+          <Pressable style={styles.goodsTypeSelector} onPress={openGoodsTypePicker}>
+            <View style={styles.goodsTypeSelectorIcon}>
+              <Ionicons name={goodsTypeIcon(booking.goodsType)} size={21} color={colors.customer} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.goodsTypeSelectorValue}>{goodsLabel(language, booking.goodsType)}</Text>
+              <Text style={styles.goodsTypeSelectorHint}>{copy.tapToChooseGoods}</Text>
+            </View>
+            <Ionicons name="chevron-down" size={19} color={colors.customer} />
+          </Pressable>
           <Field
             label={copy.weightKg}
             keyboardType="numeric"
@@ -3480,7 +3686,9 @@ function BookScreen({
             {vehicleChoices.map((vehicle) => {
               const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
               const selected = booking.vehicleId === vehicle.id || (!booking.vehicleId && selectedVehicle?.id === vehicle.id);
-              const price = selected && fare ? fare.total : porterVehicleQuote(vehicle, routeDistanceKm);
+              const price = typeof routeBillableKm === 'number'
+                ? porterVehicleQuoteForBillableKm(vehicle, routeBillableKm)
+                : undefined;
               return (
                 <VehicleFareOption
                   key={vehicle.id}
@@ -3536,11 +3744,17 @@ function BookScreen({
               <View style={styles.flex}>
                 <Text style={styles.vehicleName}>{selectedVehicle.shortName}</Text>
                 <Text style={styles.vehicleFareMeta}>
-                  {vehicleCapacityText(selectedVehicle, copy.upTo)} - {fare?.etaMinutes || selectedVehicle.etaMinutes} min
+                  {vehicleCapacityText(selectedVehicle, copy.upTo)} - {selectedFare?.etaMinutes || selectedVehicle.etaMinutes} min
                 </Text>
                 <Text style={styles.mutedSmall}>{copy.pricedAfterRoute}</Text>
               </View>
-              <Text style={styles.vehicleFarePrice}>{fare ? money(fare.total) : money(porterVehicleQuote(selectedVehicle, routeDistanceKm))}</Text>
+              <Text style={styles.vehicleFarePrice}>
+                {selectedFare
+                  ? money(selectedFare.total)
+                  : typeof routeBillableKm === 'number'
+                    ? money(porterVehicleQuoteForBillableKm(selectedVehicle, routeBillableKm))
+                    : copy.estimating}
+              </Text>
             </View>
           ) : null}
 
@@ -3558,9 +3772,9 @@ function BookScreen({
             />
             <SummaryRow label={copy.vehicle} value={selectedVehicle?.shortName || copy.vehicle} />
             <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} kg`} />
-            <SummaryRow label={copy.eta} value={`${fare?.etaMinutes || selectedVehicle?.etaMinutes || 0} min`} />
+            <SummaryRow label={copy.eta} value={`${selectedFare?.etaMinutes || selectedVehicle?.etaMinutes || 0} min`} />
           </View>
-          {fare ? <FareCard fare={fare} /> : null}
+          {selectedFare ? <FareCard fare={selectedFare} /> : null}
           {(['upi', 'cash'] as PaymentMode[]).map((mode) => {
             const subtitle = mode === 'cash' ? copy.payPartnerAfterDelivery : copy.secureOnlinePayment;
             return (
@@ -3626,6 +3840,72 @@ function BookScreen({
         }}
       />
     ) : null}
+    <Modal
+      visible={goodsTypePickerOpen}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setGoodsTypePickerOpen(false)}
+    >
+      <View style={styles.contactSheetOverlay}>
+        <Pressable style={styles.contactSheetBackdrop} onPress={() => setGoodsTypePickerOpen(false)} />
+        <View style={[styles.contactSheet, styles.goodsTypePickerSheet]}>
+          <View style={styles.contactSheetHandle} />
+          <View style={styles.contactSheetHeader}>
+            <View style={styles.goodsTypePickerHeading}>
+              <View style={styles.goodsTypeSelectorIcon}>
+                <Ionicons name="cube-outline" size={21} color={colors.customer} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.contactSheetTitle}>{copy.selectGoodsCategory}</Text>
+                <Text style={styles.contactSheetSubtitle}>{copy.tapToChooseGoods}</Text>
+              </View>
+            </View>
+            <Pressable style={styles.mapPickerClose} onPress={() => setGoodsTypePickerOpen(false)}>
+              <Ionicons name="close" size={20} color={colors.ink} />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={styles.goodsTypePickerScroll}
+            contentContainerStyle={styles.goodsTypePickerContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {goodsOptions.map((item) => {
+              const active = draftGoodsType === item;
+              return (
+                <Pressable
+                  key={item}
+                  style={[styles.goodsTypeOption, active && styles.goodsTypeOptionActive]}
+                  onPress={() => setDraftGoodsType(item)}
+                >
+                  <View style={[styles.goodsTypeOptionIcon, active && styles.goodsTypeOptionIconActive]}>
+                    <Ionicons
+                      name={goodsTypeIcon(item)}
+                      size={20}
+                      color={active ? colors.white : colors.customer}
+                    />
+                  </View>
+                  <Text style={[styles.goodsTypeOptionText, active && styles.goodsTypeOptionTextActive]}>
+                    {goodsLabel(language, item)}
+                  </Text>
+                  <Ionicons
+                    name={active ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={20}
+                    color={active ? colors.customer : colors.line}
+                  />
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.goodsTypePickerFooter}>
+            <View style={styles.goodsTypePickerConfirmRow}>
+              <PrimaryButton title={copy.confirmGoodsCategory} icon="checkmark" onPress={confirmGoodsType} />
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
     {goodsRulesOpen ? <GoodsRulesSheet onClose={() => setGoodsRulesOpen(false)} /> : null}
     </>
   );
@@ -3742,7 +4022,9 @@ function InlineExactLocationPicker({
   lat,
   lng,
   compact,
+  expanded = false,
   onBack,
+  onToggleExpanded,
   onTypedLocationChange,
   onLocationChange
 }: {
@@ -3753,7 +4035,9 @@ function InlineExactLocationPicker({
   lat?: number;
   lng?: number;
   compact?: boolean;
+  expanded?: boolean;
   onBack: () => void;
+  onToggleExpanded: () => void;
   onTypedLocationChange: (value: string) => void;
   onLocationChange: (location: LocationDetails) => void;
 }) {
@@ -3926,8 +4210,12 @@ function InlineExactLocationPicker({
   }
 
   return (
-    <View style={styles.contactExactHero}>
-      <View style={[styles.contactMapHeroCanvas, compact && styles.contactMapHeroCanvasCompact]}>
+    <View style={[styles.contactExactHero, expanded && styles.contactExactHeroExpanded]}>
+      <View style={[
+        styles.contactMapHeroCanvas,
+        compact && !expanded && styles.contactMapHeroCanvasCompact,
+        expanded && styles.contactMapHeroCanvasExpanded
+      ]}>
         {canRenderNativeMap ? (
           <>
             <MapView
@@ -3954,7 +4242,7 @@ function InlineExactLocationPicker({
             <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
               <Ionicons name="location" size={42} color={pinColor} />
             </View>
-            <View pointerEvents="none" style={styles.mapPickerHint}>
+            <View pointerEvents="none" style={[styles.mapPickerHint, styles.contactMapPickerHint]}>
               <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
             </View>
           </>
@@ -3968,6 +4256,14 @@ function InlineExactLocationPicker({
         )}
         <Pressable style={styles.contactMapBackButton} onPress={onBack}>
           <Ionicons name="arrow-back" size={22} color={colors.ink} />
+        </Pressable>
+        <Pressable
+          style={styles.contactMapExpandButton}
+          onPress={onToggleExpanded}
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? 'Minimize map' : 'Maximize map'}
+        >
+          <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={21} color={colors.customer} />
         </Pressable>
         <View pointerEvents="none" style={styles.contactMapTitlePill}>
           <Text style={styles.contactMapTitleText}>{title}</Text>
@@ -4004,6 +4300,7 @@ function ContactDetailsModal({
   const [localError, setLocalError] = useState('');
   const [selectedAddressType, setSelectedAddressType] = useState<'home' | 'work' | 'other' | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
   const isPickup = target === 'pickup';
   const mapHint = isPickup ? 'Your goods will be picked up here' : 'Your goods will be dropped here';
   const name = isPickup ? booking.pickupContactName : booking.dropContactName;
@@ -4100,6 +4397,27 @@ function ContactDetailsModal({
         });
   }
 
+  function maximizeMap() {
+    Keyboard.dismiss();
+    setKeyboardVisible(false);
+    setLocalError('');
+    setMapExpanded(true);
+  }
+
+  function minimizeMap() {
+    Keyboard.dismiss();
+    setLocalError('');
+    setMapExpanded(false);
+  }
+
+  function confirmExpandedLocation() {
+    if (!hasValidCoordinates(placeLat, placeLng)) {
+      setLocalError(copy.selectLocationFirst);
+      return;
+    }
+    minimizeMap();
+  }
+
   async function saveDetails() {
     if (place.trim().length < 2) {
       setLocalError(copy.selectLocationFirst);
@@ -4135,7 +4453,12 @@ function ContactDetailsModal({
   }
 
   return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal
+      visible
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={mapExpanded ? minimizeMap : onClose}
+    >
       <AppStatusBar variant="light" />
       <SafeAreaView style={styles.contactPageShell}>
         <KeyboardAvoidingView style={styles.contactPageKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -4146,11 +4469,31 @@ function ContactDetailsModal({
             value={place}
             lat={placeLat}
             lng={placeLng}
-            compact={keyboardVisible}
-            onBack={onClose}
+            compact={keyboardVisible && !mapExpanded}
+            expanded={mapExpanded}
+            onBack={mapExpanded ? minimizeMap : onClose}
+            onToggleExpanded={mapExpanded ? minimizeMap : maximizeMap}
             onTypedLocationChange={updateTypedLocation}
             onLocationChange={updateExactLocation}
           />
+          {mapExpanded ? (
+            <View style={styles.contactExpandedMapFooter}>
+              <View style={styles.contactExpandedLocationRow}>
+                <Ionicons name="location" size={22} color={locationColor} />
+                <View style={styles.flex}>
+                  <Text style={styles.contactExpandedLocationTitle} numberOfLines={1}>{locationTitle}</Text>
+                  <Text style={styles.contactExpandedLocationSubtitle} numberOfLines={2}>{locationSubtitle}</Text>
+                </View>
+              </View>
+              {localError ? <Text style={styles.contactExpandedMapError}>{localError}</Text> : null}
+              <Pressable style={styles.contactExpandedConfirmButton} onPress={confirmExpandedLocation}>
+                <Ionicons name="checkmark" size={18} color={colors.white} />
+                <Text style={styles.contactExpandedConfirmText}>
+                  {isPickup ? copy.confirmPickupLocation : copy.confirmDropLocation}
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
           <ScrollView
             style={styles.contactPagePanel}
             showsVerticalScrollIndicator={false}
@@ -4219,6 +4562,7 @@ function ContactDetailsModal({
               <Text style={styles.contactConfirmButtonText}>{primaryTitle || 'Confirm and continue'}</Text>
             </Pressable>
           </ScrollView>
+          )}
         </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
@@ -6171,6 +6515,7 @@ const styles = StyleSheet.create({
   loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
   authKeyboard: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
+  authScrollOtp: { paddingBottom: 24 },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
   loginHero: {
     minHeight: 360,
@@ -6178,6 +6523,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     overflow: 'hidden'
   },
+  loginHeroOtp: { minHeight: 230 },
   loginHeroImage: { width: '100%', height: '100%' },
   loginHeroWash: {
     position: 'absolute',
@@ -6275,6 +6621,10 @@ const styles = StyleSheet.create({
   countryCode: { color: colors.ink, fontSize: 14, fontWeight: '600', marginLeft: 7 },
   phoneDivider: { width: 1, height: 24, backgroundColor: colors.line, marginHorizontal: 10 },
   phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 12 },
+  loginConsent: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 4, rowGap: 2, marginTop: -3, marginBottom: 14, paddingHorizontal: 6 },
+  loginConsentText: { color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15 },
+  loginConsentLink: { color: colors.customer, fontSize: 10, fontWeight: '700', lineHeight: 15, textDecorationLine: 'underline' },
+  loginPolicyShell: { flex: 1, backgroundColor: colors.white },
   authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
   authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
@@ -6756,6 +7106,7 @@ const styles = StyleSheet.create({
   contactPlaceBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.faint, borderRadius: 14, padding: 12, marginBottom: 12 },
   contactPlaceText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', lineHeight: 17 },
   contactExactHero: { backgroundColor: colors.white },
+  contactExactHeroExpanded: { flex: 1 },
   contactExactCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 12, marginBottom: 12 },
   contactExactHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 10 },
   contactExactIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
@@ -6767,11 +7118,14 @@ const styles = StyleSheet.create({
   contactMapCanvas: { height: 178, borderRadius: 15, backgroundColor: '#EAF5EF', overflow: 'hidden', marginBottom: 10 },
   contactMapHeroCanvas: { height: 410, backgroundColor: '#EAF5EF', overflow: 'hidden' },
   contactMapHeroCanvasCompact: { height: 150 },
+  contactMapHeroCanvasExpanded: { flex: 1, height: '100%', minHeight: 360 },
   contactMapRealMap: { flex: 1 },
   contactMapHint: { position: 'absolute', left: 12, right: 12, bottom: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 7, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHint: { position: 'absolute', left: 70, right: 70, top: 84, borderRadius: 8, backgroundColor: 'rgba(17,24,39,0.88)', paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '600' },
   contactMapBackButton: { position: 'absolute', left: 10, top: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapExpandButton: { position: 'absolute', right: 12, bottom: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapPickerHint: { left: 60, right: 60, bottom: 68 },
   contactMapTitlePill: { position: 'absolute', alignSelf: 'center', top: 90, minHeight: 31, borderRadius: 5, backgroundColor: 'rgba(17,24,39,0.88)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
   contactMapTitleText: { color: colors.white, fontSize: 11, fontWeight: '600' },
   contactLocationPanel: { borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: colors.white, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, marginTop: -18, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 4 },
@@ -6799,6 +7153,13 @@ const styles = StyleSheet.create({
   contactTypeChipTextActive: { color: colors.customer },
   contactConfirmButton: { minHeight: 48, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
   contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '600' },
+  contactExpandedMapFooter: { flexShrink: 0, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: Platform.OS === 'android' ? 28 : 16, gap: 10 },
+  contactExpandedLocationRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  contactExpandedLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  contactExpandedLocationSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 2 },
+  contactExpandedMapError: { color: colors.red, fontSize: 12, fontWeight: '600' },
+  contactExpandedConfirmButton: { minHeight: 50, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
+  contactExpandedConfirmText: { color: colors.white, fontSize: 14, fontWeight: '700' },
   contactSheetActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 },
   sameAsUserPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.faint, padding: 12, marginBottom: 12 },
   sameAsUserTitle: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 9 },
@@ -6818,11 +7179,26 @@ const styles = StyleSheet.create({
   noticeText: { flex: 1, color: '#92400E', fontSize: 12, fontWeight: '500' },
   noticeInfo: { flexDirection: 'row', gap: 8, backgroundColor: '#EFF6FF', borderRadius: 12, padding: 12, marginBottom: 14 },
   noticeInfoText: { flex: 1, color: colors.blue, fontSize: 12, fontWeight: '600' },
-  goodsChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  goodsChip: { borderWidth: 1, borderColor: colors.line, borderRadius: 999, backgroundColor: colors.white, paddingVertical: 9, paddingHorizontal: 12 },
-  goodsChipActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  goodsChipText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
-  goodsChipTextActive: { color: colors.customer },
+  goodsTypeSelector: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 15, backgroundColor: colors.white, paddingHorizontal: 13, paddingVertical: 10, marginBottom: 14 },
+  goodsTypeSelectorIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  goodsTypeSelectorValue: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  goodsTypeSelectorHint: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
+  goodsTypePickerSheet: {
+    height: '88%',
+    maxHeight: '88%',
+    paddingBottom: Platform.OS === 'android' ? 38 : 24
+  },
+  goodsTypePickerHeading: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  goodsTypePickerScroll: { flex: 1, marginHorizontal: -2 },
+  goodsTypePickerContent: { gap: 8, paddingHorizontal: 2, paddingBottom: 10 },
+  goodsTypeOption: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, paddingHorizontal: 12, paddingVertical: 8 },
+  goodsTypeOptionActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
+  goodsTypeOptionIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  goodsTypeOptionIconActive: { backgroundColor: colors.customer },
+  goodsTypeOptionText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '600' },
+  goodsTypeOptionTextActive: { color: colors.customer, fontWeight: '700' },
+  goodsTypePickerFooter: { flexShrink: 0, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12, marginTop: 2 },
+  goodsTypePickerConfirmRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center' },
   goodsRulesSheet: { maxHeight: '82%' },
   goodsRulesScroll: { gap: 12, paddingBottom: 12 },
   goodsRulesPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 12 },

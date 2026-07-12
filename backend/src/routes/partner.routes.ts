@@ -12,6 +12,7 @@ import { compareOtp } from '../services/otp.service';
 import { requestPartnerPayout } from '../services/payout.service';
 import { calculateDeliverySettlement } from '../services/settlement.service';
 import { applyWaitingChargeToFare } from '../services/fare.service';
+import { resolveRoutePath } from '../services/maps.service';
 import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } from '../services/notification.service';
 import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
@@ -230,6 +231,31 @@ partnerRouter.get(
       activeOrders: activeOrders.map((order) => serializeOrder(order)),
       completedOrders: completedOrders.map((order) => serializeOrder(order))
     });
+  })
+);
+
+partnerRouter.get(
+  '/orders/:orderId/route',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const order = await loadOrderForPartner(String(req.params.orderId));
+    if (!order) throw new ApiError(404, 'Order not found');
+    if (idOf(order.partner) !== req.auth!.userId) throw new ApiError(403, 'This order is not assigned to you');
+
+    const route = await resolveRoutePath({
+      pickup: order.pickup.address || order.pickup.label,
+      drop: order.drop.address || order.drop.label,
+      pickupLat: order.pickup.lat ?? undefined,
+      pickupLng: order.pickup.lng ?? undefined,
+      dropLat: order.drop.lat ?? undefined,
+      dropLng: order.drop.lng ?? undefined,
+      extraStops: order.extraStops.map((stop) => ({
+        label: stop.label,
+        address: stop.address,
+        lat: stop.lat ?? undefined,
+        lng: stop.lng ?? undefined
+      }))
+    });
+    res.json(route);
   })
 );
 

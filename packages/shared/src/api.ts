@@ -11,6 +11,7 @@ import type {
   PaymentIntent,
   PartnerBootstrap,
   PartnerLocation,
+  PartnerRoutePath,
   Role,
   SavedAddress,
   TripOtp,
@@ -279,6 +280,10 @@ export class IndieryApi {
       method: 'POST',
       body: JSON.stringify({})
     });
+  }
+
+  partnerOrderRoute(orderId: string) {
+    return this.request<PartnerRoutePath>(`/partner/orders/${orderId}/route`);
   }
 
   rejectOrder(orderId: string) {

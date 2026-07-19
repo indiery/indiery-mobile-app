@@ -511,7 +511,7 @@ customerRouter.post(
 
     const token = createTrackingToken(String(order._id), order.orderNo);
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ trackingPath: `/track/share/${encodeURIComponent(token)}` });
+    res.json({ trackingPath: `/t/${encodeURIComponent(token)}` });
   })
 );
 

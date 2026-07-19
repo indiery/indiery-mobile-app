@@ -38,7 +38,7 @@ function rateLimit(windowMs = 60_000, maxRequests = 180) {
 }
 
 function skipSensitiveTrackingLogs(req: express.Request) {
-  return req.path.startsWith('/track/share/');
+  return req.path.startsWith('/track/share/') || req.path.startsWith('/t/');
 }
 
 export function createApp() {

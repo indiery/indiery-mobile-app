@@ -107,7 +107,13 @@ function publicTrackingState(order: OrderDocument, routePath?: PublicTrackingSta
 async function loadSharedTrackingOrder(token: string) {
   const claims = verifyTrackingToken(token);
   if (!claims) return undefined;
-  const order = await Order.findOne({ _id: claims.orderId, orderNo: claims.orderNo })
+  const orderQuery =
+    claims.orderId && claims.orderNo
+      ? { _id: claims.orderId, orderNo: claims.orderNo }
+      : claims.orderId
+        ? { _id: claims.orderId }
+        : { orderNo: claims.orderNo };
+  const order = await Order.findOne(orderQuery)
     .select(
       'orderNo status pickup extraStops drop vehicle partner partnerLocation etaMinutes timeline goodsType weightKg distanceKm updatedAt'
     )
@@ -127,7 +133,7 @@ function routePathFor(order: OrderDocument): PublicTrackingState['routePath'] {
 }
 
 trackingRouter.get(
-  '/track/share/:token/data',
+  ['/t/:token/data', '/track/share/:token/data'],
   asyncRoute(async (req, res) => {
     const order = await loadSharedTrackingOrder(String(req.params.token));
     res.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -139,7 +145,7 @@ trackingRouter.get(
 );
 
 trackingRouter.get(
-  '/track/share/:token',
+  ['/t/:token', '/track/share/:token'],
   asyncRoute(async (req, res) => {
     const order = await loadSharedTrackingOrder(String(req.params.token));
     res.setHeader('Cache-Control', 'no-store, max-age=0');

@@ -764,14 +764,14 @@ function useResponsiveLayout() {
   const { width, height, fontScale } = useWindowDimensions();
   const effectiveWidth = width / Math.min(Math.max(fontScale, 1), 1.5);
   const isLandscape = width > height;
-  const isNarrow = effectiveWidth < 340;
+  const isNarrow = width < 320;
   const isShort = height < 640;
   const isTablet = width >= 600;
   const hasLargeText = fontScale >= 1.25;
-  const stackActions = isNarrow || fontScale >= 1.35;
+  const stackActions = isNarrow || fontScale >= 1.4;
   const horizontalPadding = isNarrow ? 12 : isTablet ? 24 : 16;
   const contentMaxWidth = isTablet ? 1040 : 680;
-  const tabBarHeight = 68 + Math.min(28, Math.max(0, (fontScale - 1) * 24));
+  const tabBarHeight = 68 + Math.min(12, Math.max(0, (fontScale - 1) * 12));
 
   return {
     width,
@@ -1175,6 +1175,16 @@ function formatLedgerDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
+function formatOrderCardDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const day = date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const time = date
+    .toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+    .toLowerCase();
+  return `${day} · ${time}`;
 }
 
 function formatCoinActivityDate(value: string) {
@@ -2200,7 +2210,7 @@ function LoginHero({ title, caption, compact = false }: { title: string; caption
     ? Math.max(180, Math.min(230, responsive.height * 0.32))
     : Math.max(
         responsive.isShort ? 220 : 280,
-        Math.min(responsive.isTablet ? 420 : 360, responsive.height * (responsive.isLandscape ? 0.7 : 0.45))
+        Math.min(360, responsive.height * (responsive.isLandscape ? 0.7 : 0.45))
       );
 
   return (
@@ -2343,7 +2353,7 @@ function ProfileSetupScreen({
                 {
                   minHeight: Math.max(
                     responsive.isShort ? 220 : 280,
-                    Math.min(responsive.isTablet ? 420 : 350, responsive.height * (responsive.isLandscape ? 0.7 : 0.44))
+                    Math.min(350, responsive.height * (responsive.isLandscape ? 0.7 : 0.44))
                   )
                 }
               ]}
@@ -2448,7 +2458,8 @@ function HomeScreen({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
-  const singleColumnCards = responsive.hasLargeText && responsive.effectiveWidth < 520;
+  const singleColumnCards =
+    responsive.width < 320 || (responsive.hasLargeText && responsive.effectiveWidth < 520);
   const lastOrder = data.orders[0];
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
@@ -2760,6 +2771,7 @@ function PickupSearchModal({
             <Pressable
               style={styles.pickupSearchBackButton}
               onPress={onClose}
+              hitSlop={4}
               accessibilityRole="button"
               accessibilityLabel="Close pickup search"
             >
@@ -3095,7 +3107,8 @@ function VehicleChoiceCard({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
-  const singleColumnCard = responsive.hasLargeText && responsive.effectiveWidth < 520;
+  const singleColumnCard =
+    responsive.width < 320 || (responsive.hasLargeText && responsive.effectiveWidth < 520);
 
   return (
     <Pressable
@@ -3594,6 +3607,7 @@ function BookScreen({
             }
             onBackToHome();
           }}
+          hitSlop={5}
           accessibilityRole="button"
           accessibilityLabel={step > 1 ? 'Previous booking step' : 'Back to home'}
         >
@@ -3971,6 +3985,7 @@ function BookScreen({
             <Pressable
               style={styles.mapPickerClose}
               onPress={() => setGoodsTypePickerOpen(false)}
+              hitSlop={3}
               accessibilityRole="button"
               accessibilityLabel="Close goods category"
             >
@@ -4104,6 +4119,7 @@ function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
             <Pressable
               style={styles.mapPickerClose}
               onPress={onClose}
+              hitSlop={3}
               accessibilityRole="button"
               accessibilityLabel="Close goods rules"
             >
@@ -4199,12 +4215,12 @@ function InlineExactLocationPicker({
   const mapHeroHeight = compact && !expanded
     ? responsive.isLandscape && responsive.isShort
       ? 64
-      : Math.max(110, Math.min(165, responsive.height * 0.24))
+      : Math.max(110, Math.min(150, responsive.height * 0.24))
     : responsive.isLandscape && responsive.isShort
       ? Math.max(160, Math.min(240, responsive.height * 0.45))
     : Math.max(
         responsive.isShort ? 230 : 300,
-        Math.min(responsive.isTablet ? 480 : 410, responsive.height * (responsive.isLandscape ? 0.62 : 0.46))
+        Math.min(410, responsive.height * (responsive.isLandscape ? 0.62 : 0.46))
       );
 
   useEffect(() => {
@@ -4401,6 +4417,7 @@ function InlineExactLocationPicker({
         <Pressable
           style={styles.contactMapBackButton}
           onPress={onBack}
+          hitSlop={5}
           accessibilityRole="button"
           accessibilityLabel={expanded ? 'Close expanded map' : 'Close location details'}
         >
@@ -4409,6 +4426,7 @@ function InlineExactLocationPicker({
         <Pressable
           style={styles.contactMapExpandButton}
           onPress={onToggleExpanded}
+          hitSlop={3}
           accessibilityRole="button"
           accessibilityLabel={expanded ? 'Minimize map' : 'Maximize map'}
         >
@@ -4457,6 +4475,7 @@ function ContactDetailsModal({
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
   const contactScrollRef = useRef<ScrollView | null>(null);
+  const contactScrollResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isPickup = target === 'pickup';
   const mapHint = isPickup ? 'Your goods will be picked up here' : 'Your goods will be dropped here';
   const name = isPickup ? booking.pickupContactName : booking.dropContactName;
@@ -4479,15 +4498,24 @@ function ContactDetailsModal({
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const showSubscription = Keyboard.addListener(showEvent, () => {
+      if (contactScrollResetTimerRef.current) {
+        clearTimeout(contactScrollResetTimerRef.current);
+        contactScrollResetTimerRef.current = null;
+      }
+      setKeyboardVisible(true);
+    });
     const hideSubscription = Keyboard.addListener(hideEvent, () => {
       setKeyboardVisible(false);
-      requestAnimationFrame(() => {
+      if (contactScrollResetTimerRef.current) clearTimeout(contactScrollResetTimerRef.current);
+      contactScrollResetTimerRef.current = setTimeout(() => {
         requestAnimationFrame(() => contactScrollRef.current?.scrollTo({ y: 0, animated: false }));
-      });
+        contactScrollResetTimerRef.current = null;
+      }, Platform.OS === 'ios' ? 320 : 50);
     });
 
     return () => {
+      if (contactScrollResetTimerRef.current) clearTimeout(contactScrollResetTimerRef.current);
       showSubscription.remove();
       hideSubscription.remove();
     };
@@ -4690,6 +4718,7 @@ function ContactDetailsModal({
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              scrollEnabled={keyboardVisible}
               bounces={false}
               overScrollMode="never"
               contentContainerStyle={[
@@ -4712,6 +4741,7 @@ function ContactDetailsModal({
               <Pressable
                 style={styles.contactChangeButton}
                 onPress={onChangeLocation || onClose}
+                hitSlop={7}
                 accessibilityRole="button"
                 accessibilityLabel="Change location"
               >
@@ -4738,6 +4768,7 @@ function ContactDetailsModal({
             <Pressable
               style={styles.contactMobileCheckRow}
               onPress={usingMine ? enterManually : useMine}
+              hitSlop={8}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: usingMine }}
               accessibilityLabel={`Use my mobile number ${user.phone}`}
@@ -4758,6 +4789,7 @@ function ContactDetailsModal({
                     key={option.type}
                     style={[styles.contactTypeChip, active && styles.contactTypeChipActive]}
                     onPress={() => setSelectedAddressType(active ? null : option.type)}
+                    hitSlop={6}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: active }}
                     accessibilityLabel={`Save address as ${option.label}`}
@@ -4848,7 +4880,7 @@ function MapLocationPicker({
   const lat = region.latitude;
   const lng = region.longitude;
   const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
-  const mapCanvasMinHeight = responsive.isShort ? 120 : responsive.isTablet ? 360 : 220;
+  const mapCanvasMinHeight = responsive.isShort ? 120 : responsive.isTablet ? 300 : 220;
 
   useEffect(() => {
     const search = query.trim();
@@ -4982,6 +5014,7 @@ function MapLocationPicker({
           <Pressable
             style={styles.mapPickerClose}
             onPress={onClose}
+            hitSlop={3}
             accessibilityRole="button"
             accessibilityLabel="Close location map"
           >
@@ -5255,6 +5288,7 @@ function OrderDetailsPanel({
               <Pressable
                 style={styles.orderDetailClose}
                 onPress={onClose}
+                hitSlop={9}
                 accessibilityRole="button"
                 accessibilityLabel="Close order details"
               >
@@ -5778,6 +5812,7 @@ function AccountScreen({
           <Pressable
             style={styles.accountEditButton}
             onPress={() => openPage('personal')}
+            hitSlop={5}
             accessibilityRole="button"
             accessibilityLabel="Edit personal details"
           >
@@ -5861,6 +5896,7 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
       <Pressable
         style={styles.mapPickerClose}
         onPress={onBack}
+        hitSlop={3}
         accessibilityRole="button"
         accessibilityLabel="Go back"
       >
@@ -5877,7 +5913,8 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
 function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
-  const singleColumnCards = responsive.hasLargeText && responsive.effectiveWidth < 520;
+  const singleColumnCards =
+    responsive.width < 320 || (responsive.hasLargeText && responsive.effectiveWidth < 520);
   const businessFeatures: Array<{
     icon: keyof typeof Ionicons.glyphMap;
     title: string;
@@ -5912,6 +5949,7 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
         <Pressable
           style={styles.mapPickerClose}
           onPress={onBack}
+          hitSlop={3}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
@@ -5999,6 +6037,7 @@ function SavedAddressesSection({
                 style={styles.savedAddressDeleteButton}
                 disabled={busy}
                 onPress={() => onDeleteAddress(address.id)}
+                hitSlop={6}
                 accessibilityRole="button"
                 accessibilityLabel={`Delete ${address.label}`}
                 accessibilityState={{ disabled: busy }}
@@ -6356,7 +6395,7 @@ function OrderCard({
       <View style={styles.orderCardHeader}>
         <View>
           <Text style={styles.orderNo}>{order.orderNo}</Text>
-          <Text style={styles.orderCardDate}>{new Date(order.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</Text>
+          <Text style={styles.orderCardDate}>{formatOrderCardDateTime(order.createdAt)}</Text>
         </View>
         <Badge label={statusLabel(language, order.status)} />
       </View>
@@ -6401,10 +6440,11 @@ function OrderCard({
         <Pressable
           style={styles.orderCardActionButton}
           onPress={onActionPress}
+          hitSlop={4}
           accessibilityRole="button"
           accessibilityLabel={actionTitle}
         >
-          <Ionicons name={actionIcon} size={15} color={colors.white} />
+          <Ionicons name={actionIcon} size={13} color={colors.white} />
           <Text style={styles.orderCardActionText}>{actionTitle}</Text>
         </Pressable>
       ) : null}
@@ -6492,8 +6532,8 @@ function MapPreview({
   const copy = useCopy();
   const responsive = useResponsiveLayout();
   const mapHeight = Math.max(
-    responsive.isShort ? 170 : 200,
-    Math.min(responsive.isTablet ? 320 : 260, responsive.height * (responsive.isLandscape ? 0.46 : 0.28))
+    responsive.isShort ? 160 : 190,
+    Math.min(responsive.isTablet ? 260 : 218, responsive.height * (responsive.isLandscape ? 0.46 : 0.28))
   );
   const hasLiveLocation = liveTracking && typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
@@ -6939,7 +6979,7 @@ const styles = StyleSheet.create({
   pickupSearchKeyboard: { flex: 1 },
   pickupSearchContent: { flex: 1, width: '100%', alignSelf: 'center' },
   pickupSearchTopBar: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, paddingTop: 6 },
-  pickupSearchBackButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  pickupSearchBackButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   pickupSearchCard: {
     marginHorizontal: 8,
     borderRadius: 12,
@@ -6971,8 +7011,8 @@ const styles = StyleSheet.create({
   homeServiceCard: {
     flexGrow: 1,
     flexShrink: 1,
-    flexBasis: 160,
-    minWidth: 150,
+    flexBasis: 150,
+    minWidth: 132,
     minHeight: 142,
     borderRadius: 16,
     backgroundColor: colors.white,
@@ -7044,7 +7084,7 @@ const styles = StyleSheet.create({
   searchText: { flex: 1, color: colors.muted, fontSize: 14 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
   serviceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  serviceCard: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 150, minHeight: 112, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, gap: 6 },
+  serviceCard: { flexGrow: 1, flexShrink: 1, flexBasis: 150, minWidth: 132, minHeight: 112, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, gap: 6 },
   serviceIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   serviceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   serviceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15 },
@@ -7096,7 +7136,7 @@ const styles = StyleSheet.create({
   liveOrderTitle: { color: colors.ink, fontSize: 16, fontWeight: '600' },
   liveOrderNo: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   orderDetailHeaderActions: { maxWidth: '100%', marginLeft: 'auto', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
-  orderDetailClose: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  orderDetailClose: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   liveRouteCard: { borderRadius: 15, backgroundColor: '#F8FAFC', padding: 12, marginBottom: 12 },
   liveRouteLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
   liveRouteDot: { width: 10, height: 10, borderRadius: 5 },
@@ -7126,7 +7166,7 @@ const styles = StyleSheet.create({
   ordersOtpTitle: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   ordersOtpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   orderActionBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  orderActionButton: { flexGrow: 1, flexShrink: 1, flexBasis: 96, minWidth: 92, minHeight: 44, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  orderActionButton: { flexGrow: 1, flexShrink: 1, flexBasis: 96, minWidth: 92, minHeight: 40, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
   orderActionButtonPrimary: { backgroundColor: colors.customer },
   orderActionButtonDanger: { backgroundColor: '#FEF2F2' },
   orderActionButtonText: { flexShrink: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center' },
@@ -7166,7 +7206,7 @@ const styles = StyleSheet.create({
   emptyHistoryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 18, alignItems: 'center', marginBottom: 12 },
   priceText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   bookingStepHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 10 },
-  bookingStepBack: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  bookingStepBack: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   bookingStepTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
   bookingStepSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   bookingStepCount: { color: colors.customer, fontSize: 12, fontWeight: '600', backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 9 },
@@ -7182,7 +7222,7 @@ const styles = StyleSheet.create({
   serviceOptionCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   serviceOptionTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   vehicleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  vehicleCard: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 150, borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
+  vehicleCard: { flexGrow: 1, flexShrink: 1, flexBasis: 150, minWidth: 132, borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
   vehicleCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   vehicleCardSuggested: { borderColor: colors.green, backgroundColor: colors.partnerLight },
   vehicleCardDisabled: { opacity: 0.55, backgroundColor: colors.faint },
@@ -7224,7 +7264,7 @@ const styles = StyleSheet.create({
   mapPickerResponsiveScroll: { flex: 1 },
   mapPickerResponsiveContent: { flexGrow: 1, width: '100%', alignSelf: 'center' },
   mapPickerHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  mapPickerClose: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  mapPickerClose: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   mapPickerTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
   mapPickerSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   mapPickerSearchShell: { minHeight: 52, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
@@ -7334,8 +7374,8 @@ const styles = StyleSheet.create({
   contactMapHint: { position: 'absolute', left: 12, right: 12, bottom: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 7, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHint: { position: 'absolute', left: 70, right: 70, top: 84, borderRadius: 8, backgroundColor: 'rgba(17,24,39,0.88)', paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '600' },
-  contactMapBackButton: { position: 'absolute', left: 10, top: 8, width: 48, height: 48, borderRadius: 24, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
-  contactMapExpandButton: { position: 'absolute', right: 10, bottom: 8, width: 48, height: 48, borderRadius: 24, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapBackButton: { position: 'absolute', left: 10, top: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapExpandButton: { position: 'absolute', right: 12, bottom: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   contactMapPickerHint: { left: 60, right: 60, bottom: 68 },
   contactMapTitlePill: { position: 'absolute', left: 60, right: 60, top: 90, minHeight: 31, borderRadius: 5, backgroundColor: 'rgba(17,24,39,0.88)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
   contactMapTitlePillShort: { top: 12, left: 68, right: 68 },
@@ -7350,17 +7390,17 @@ const styles = StyleSheet.create({
   contactAddressHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
   contactAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   contactAddressSubtitle: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: '500', marginTop: 3 },
-  contactChangeButton: { minWidth: 64, minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: '#D8D3C6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.white },
+  contactChangeButton: { minWidth: 64, minHeight: 34, borderRadius: 5, borderWidth: 1, borderColor: '#D8D3C6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.white },
   contactChangeButtonText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactFormField: { marginBottom: 8 },
   contactFormLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginBottom: 3 },
   contactFormInputShell: { minHeight: 39, borderWidth: 1, borderColor: '#DDE3EC', borderRadius: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10 },
   contactFormInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 8 },
-  contactMobileCheckRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
+  contactMobileCheckRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
   contactMobileCheckText: { flex: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
   contactSaveAsLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginBottom: 8 },
   contactTypeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 12 },
-  contactTypeChip: { flexGrow: 1, flexShrink: 1, flexBasis: 82, minHeight: 48, minWidth: 75, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
+  contactTypeChip: { flexGrow: 1, flexShrink: 1, flexBasis: 82, minHeight: 36, minWidth: 75, borderRadius: 6, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
   contactTypeChipActive: { borderColor: '#93C5FD', backgroundColor: colors.customerLight },
   contactTypeChipText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
   contactTypeChipTextActive: { color: colors.customer },
@@ -7444,8 +7484,8 @@ const styles = StyleSheet.create({
   vehicleRouteActionText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   vehicleFareList: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', marginBottom: 14 },
   vehicleFareOption: { minHeight: 78, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
-  vehicleFareOptionSuggested: { minHeight: 96, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderRadius: 16, margin: 8 },
-  vehicleFareOptionSelected: { minHeight: 104, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderRadius: 16, margin: 8 },
+  vehicleFareOptionSuggested: { minHeight: 96, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderBottomWidth: 1.5, borderBottomColor: colors.blue, borderRadius: 16, margin: 8 },
+  vehicleFareOptionSelected: { minHeight: 104, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderBottomWidth: 1.5, borderBottomColor: colors.blue, borderRadius: 16, margin: 8 },
   vehicleFareOptionDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   vehicleFareOptionIcon: { width: 52, height: 44, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   vehicleFareOptionCopy: { flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 130 },
@@ -7520,8 +7560,8 @@ const styles = StyleSheet.create({
   fareValue: { flexShrink: 0, color: colors.customer, fontSize: 13, fontWeight: '500', textAlign: 'right' },
   fareValueStacked: { width: '100%', textAlign: 'left' },
   farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2, marginBottom: 8 },
-  orderCardActionButton: { minHeight: 48, borderRadius: 13, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6, paddingHorizontal: 12 },
-  orderCardActionText: { color: colors.white, fontSize: 12, fontWeight: '600' },
+  orderCardActionButton: { minHeight: 32, borderRadius: 8, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 5, paddingHorizontal: 12, paddingVertical: 6 },
+  orderCardActionText: { color: colors.white, fontSize: 11, fontWeight: '600' },
   bold: { fontWeight: '600', fontSize: 15 },
   divider: { height: 1, backgroundColor: '#C4B5FD', marginVertical: 8 },
   walletCard: { borderRadius: 18, padding: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', gap: 10 },
@@ -7631,7 +7671,7 @@ const styles = StyleSheet.create({
   accountSubtext: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   accountVerifiedBadge: { maxWidth: '100%', flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
   accountVerifiedText: { flexShrink: 1, color: colors.green, fontSize: 10, fontWeight: '600' },
-  accountEditButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   accountStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
   accountStatBox: { flexGrow: 1, flexShrink: 1, flexBasis: 92, minWidth: 84, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
   accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
@@ -7647,7 +7687,7 @@ const styles = StyleSheet.create({
   enterpriseHeroTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
   enterpriseHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', lineHeight: 18 },
   enterpriseFeatureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  enterpriseFeatureCard: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 150, minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
+  enterpriseFeatureCard: { flexGrow: 1, flexShrink: 1, flexBasis: 150, minWidth: 132, minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
   enterpriseFeatureIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   enterpriseFeatureTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   enterpriseFeatureText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 4 },
@@ -7662,7 +7702,7 @@ const styles = StyleSheet.create({
   savedAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   savedAddressSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   savedAddressMeta: { color: colors.muted, fontSize: 10, fontWeight: '500', marginTop: 3 },
-  savedAddressDeleteButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
+  savedAddressDeleteButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
   savedAddressEmpty: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16, alignItems: 'center', gap: 5 },
   savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   accountDetailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
@@ -7715,9 +7755,9 @@ const styles = StyleSheet.create({
   tabText: { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center' },
   tabTextActive: { color: colors.customer },
   tabDot: { position: 'absolute', right: -3, top: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
-  primaryButton: { flex: 1, minWidth: 120, minHeight: 48, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  primaryButton: { flex: 1, minWidth: 110, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
   primaryButtonText: { flexShrink: 1, color: colors.white, fontWeight: '600', textAlign: 'center' },
-  secondaryButton: { flex: 1, minWidth: 120, minHeight: 48, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  secondaryButton: { flex: 1, minWidth: 110, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
   secondaryButtonText: { flexShrink: 1, color: colors.ink, fontWeight: '600', textAlign: 'center' },
   buttonStacked: { flex: 0, width: '100%', maxWidth: '100%', minWidth: 0, alignSelf: 'stretch' },
   deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 10 },

@@ -46,6 +46,7 @@
     },
     "android": {
       "package": "com.indeiry.driver",
+      "edgeToEdgeEnabled": true,
       "googleServicesFile": "./google-services.json",
       "usesCleartextTraffic": false,
       "adaptiveIcon": {

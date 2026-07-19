@@ -11,7 +11,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   Share,
   StyleSheet,
@@ -21,6 +20,7 @@ import {
   View
 } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
+import { SafeAreaView, type Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -80,6 +80,10 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 const androidStatusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
+const appSafeAreaEdges: Edge[] = Platform.OS === 'android'
+  ? ['left', 'right', 'bottom']
+  : ['top', 'right', 'bottom', 'left'];
+const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'bottom');
 const expoProjectId =
   (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
   (Constants.easConfig as { projectId?: string } | null)?.projectId;
@@ -395,7 +399,6 @@ const enCopy = {
   noSavedAddresses: 'No saved addresses',
   savePickupDropAddresses: 'Save pickup or drop addresses while booking.',
   account: 'Account',
-  accountSubtitle: 'Profile, saved addresses, wallet, and support',
   mobileLinkedText: 'Your mobile number is verified and linked to this customer account.',
   savedPlace: 'saved place',
   savedPlacesCount: 'saved places',
@@ -1461,7 +1464,6 @@ export default function App() {
     });
     socket.on('order:changed', (order: Order) => {
       mergeRealtimeOrder(order);
-      if (!['delivered', 'cancelled'].includes(order.status)) setTab('orders');
     });
     socket.on('connect_error', () => {
       refresh();
@@ -1760,7 +1762,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.center}>
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.center}>
         <AppStatusBar variant="light" />
         <ActivityIndicator color={colors.customer} size="large" />
         <Text style={styles.muted}>{copyFor(language, 'loading')}</Text>
@@ -1849,7 +1851,7 @@ export default function App() {
 
   return (
     <LanguageContext.Provider value={language}>
-    <SafeAreaView style={styles.shell}>
+    <SafeAreaView edges={tabScreenSafeAreaEdges} style={styles.shell}>
       <AppStatusBar variant="brand" />
       <View style={styles.appHeader}>
         <View>
@@ -1921,14 +1923,12 @@ export default function App() {
               }
             }
             busy={busy}
-            onCoupon={async (code) => {
+            onCoupon={async () => {
               setBusy(true);
               try {
-                const result = await api.applyCoupon(code);
+                const result = await api.applyCoupon('FIRST50');
                 await refresh();
                 return result;
-              } catch (err) {
-                throw err;
               } finally {
                 setBusy(false);
               }
@@ -2065,7 +2065,7 @@ function LoginScreen({
 
   return (
     <>
-    <SafeAreaView style={styles.loginShell}>
+    <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
@@ -2134,7 +2134,7 @@ function LoginScreen({
       presentationStyle="fullScreen"
       onRequestClose={() => setLoginPolicy(null)}
     >
-      <SafeAreaView style={styles.loginPolicyShell}>
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.loginPolicyShell}>
         <AppStatusBar variant="light" />
         {loginPolicy ? <AccountPolicyDetail policy={loginPolicy} onBack={() => setLoginPolicy(null)} /> : null}
       </SafeAreaView>
@@ -2259,7 +2259,7 @@ function ProfileSetupScreen({
   }
 
   return (
-    <SafeAreaView style={styles.loginShell}>
+    <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <AppStatusBar variant="light" />
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.profileSetupScroll} keyboardShouldPersistTaps="handled">
@@ -2681,7 +2681,7 @@ function PickupSearchModal({
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <AppStatusBar variant="light" />
-      <SafeAreaView style={styles.pickupSearchShell}>
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.pickupSearchShell}>
         <KeyboardAvoidingView style={styles.pickupSearchKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.pickupSearchTopBar}>
             <Pressable style={styles.pickupSearchBackButton} onPress={onClose}>
@@ -3157,6 +3157,7 @@ function BookScreen({
 }) {
   const copy = useCopy();
   const language = useLanguage();
+  const { bottom: bottomInset } = useSafeAreaInsets();
   const bookingWeightKg = parseBookingWeight(booking.weightKg);
   const vehicleChoices = customerVehicles(vehicles);
   const suggestedVehicle = suggestedCustomerVehicle(vehicles, bookingWeightKg);
@@ -3501,10 +3502,14 @@ function BookScreen({
         <Pressable
           style={styles.bookingStepBack}
           onPress={() => {
-            if (step > 1) setStep(step - 1);
+            if (step > 1) {
+              setStep(step - 1);
+              return;
+            }
+            onBackToHome();
           }}
         >
-          <Ionicons name={step > 1 ? 'arrow-back' : 'chevron-down'} size={20} color={colors.ink} />
+          <Ionicons name="arrow-back" size={20} color={colors.ink} />
         </Pressable>
         <View style={styles.flex}>
           <Text style={styles.bookingStepTitle}>{currentStepMeta.title}</Text>
@@ -3848,7 +3853,13 @@ function BookScreen({
     >
       <View style={styles.contactSheetOverlay}>
         <Pressable style={styles.contactSheetBackdrop} onPress={() => setGoodsTypePickerOpen(false)} />
-        <View style={[styles.contactSheet, styles.goodsTypePickerSheet]}>
+        <View
+          style={[
+            styles.contactSheet,
+            styles.goodsTypePickerSheet,
+            { paddingBottom: Math.max(24, bottomInset + 12) }
+          ]}
+        >
           <View style={styles.contactSheetHandle} />
           <View style={styles.contactSheetHeader}>
             <View style={styles.goodsTypePickerHeading}>
@@ -3966,11 +3977,18 @@ function ContactSummaryCard({
 
 function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
   const copy = useCopy();
+  const { bottom: bottomInset } = useSafeAreaInsets();
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.contactSheetOverlay}>
         <Pressable style={styles.contactSheetBackdrop} onPress={onClose} />
-        <View style={[styles.contactSheet, styles.goodsRulesSheet]}>
+        <View
+          style={[
+            styles.contactSheet,
+            styles.goodsRulesSheet,
+            { paddingBottom: Math.max(18, bottomInset + 12) }
+          ]}
+        >
           <View style={styles.contactSheetHandle} />
           <View style={styles.contactSheetHeader}>
             <View>
@@ -4301,6 +4319,7 @@ function ContactDetailsModal({
   const [selectedAddressType, setSelectedAddressType] = useState<'home' | 'work' | 'other' | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
+  const contactScrollRef = useRef<ScrollView | null>(null);
   const isPickup = target === 'pickup';
   const mapHint = isPickup ? 'Your goods will be picked up here' : 'Your goods will be dropped here';
   const name = isPickup ? booking.pickupContactName : booking.dropContactName;
@@ -4324,7 +4343,12 @@ function ContactDetailsModal({
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => contactScrollRef.current?.scrollTo({ y: 0, animated: false }));
+      });
+    });
 
     return () => {
       showSubscription.remove();
@@ -4460,8 +4484,11 @@ function ContactDetailsModal({
       onRequestClose={mapExpanded ? minimizeMap : onClose}
     >
       <AppStatusBar variant="light" />
-      <SafeAreaView style={styles.contactPageShell}>
-        <KeyboardAvoidingView style={styles.contactPageKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.contactPageShell}>
+        <KeyboardAvoidingView
+          style={styles.contactPageKeyboard}
+          behavior={keyboardVisible ? (Platform.OS === 'ios' ? 'padding' : 'height') : undefined}
+        >
           <InlineExactLocationPicker
             api={api}
             target={target}
@@ -4494,15 +4521,17 @@ function ContactDetailsModal({
               </Pressable>
             </View>
           ) : (
-          <ScrollView
-            style={styles.contactPagePanel}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            bounces={false}
-            overScrollMode="never"
-            contentContainerStyle={styles.contactPagePanelContent}
-          >
+          <>
+            <ScrollView
+              ref={contactScrollRef}
+              style={styles.contactPagePanel}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              bounces={false}
+              overScrollMode="never"
+              contentContainerStyle={styles.contactPagePanelContent}
+            >
             <View style={styles.contactSheetHandle} />
             <View style={styles.contactAddressHeader}>
               <Ionicons name="location" size={24} color={locationColor} />
@@ -4557,11 +4586,14 @@ function ContactDetailsModal({
                 );
               })}
             </View>
-            {localError ? <Text style={styles.contactError}>{localError}</Text> : null}
-            <Pressable style={styles.contactConfirmButton} onPress={saveDetails}>
-              <Text style={styles.contactConfirmButtonText}>{primaryTitle || 'Confirm and continue'}</Text>
-            </Pressable>
-          </ScrollView>
+            </ScrollView>
+            <View style={styles.contactPageFooter}>
+              {localError ? <Text style={styles.contactFooterError}>{localError}</Text> : null}
+              <Pressable style={styles.contactConfirmButton} onPress={saveDetails}>
+                <Text style={styles.contactConfirmButtonText}>{primaryTitle || 'Confirm and continue'}</Text>
+              </Pressable>
+            </View>
+          </>
           )}
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -4753,7 +4785,7 @@ function MapLocationPicker({
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <AppStatusBar variant="light" />
-      <SafeAreaView style={styles.mapPickerShell}>
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.mapPickerShell}>
         <View style={styles.mapPickerHeader}>
           <Pressable style={styles.mapPickerClose} onPress={onClose}>
             <Ionicons name="close" size={22} color={colors.ink} />
@@ -5211,56 +5243,18 @@ function WalletScreen({
 }: {
   wallet: CustomerWallet;
   busy: boolean;
-  onCoupon: (code: string) => Promise<{ addedCoins: number; alreadyApplied?: boolean }>;
+  onCoupon: () => Promise<{ addedCoins: number; alreadyApplied?: boolean }>;
 }) {
   const copy = useCopy();
-  const [couponOpen, setCouponOpen] = useState(false);
-  const [couponCode, setCouponCode] = useState('FIRST50');
   const [couponMessage, setCouponMessage] = useState('');
   const [couponMessageKind, setCouponMessageKind] = useState<'success' | 'error'>('success');
-  const [couponKeyboardHeight, setCouponKeyboardHeight] = useState(0);
   const recentCoinLedger = wallet.coinLedger.slice(0, 7);
   const nextOrderDiscount = automaticCoinDiscount(undefined, wallet);
-  const couponSheetLift = Platform.OS === 'android' ? couponKeyboardHeight : 0;
 
-  useEffect(() => {
-    if (!couponOpen) {
-      setCouponKeyboardHeight(0);
-      return undefined;
-    }
-
-    const showSubscription = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (event) => setCouponKeyboardHeight(event.endCoordinates.height)
-    );
-    const hideSubscription = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setCouponKeyboardHeight(0)
-    );
-
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, [couponOpen]);
-
-  function openCouponSheet() {
-    setCouponCode('FIRST50');
+  async function applyFirst50() {
     setCouponMessage('');
-    setCouponMessageKind('success');
-    setCouponOpen(true);
-  }
-
-  async function applyCouponCode() {
-    const nextCode = couponCode.trim().toUpperCase();
-    setCouponCode(nextCode);
-    if (nextCode !== 'FIRST50') {
-      setCouponMessage(copy.invalidCoupon);
-      setCouponMessageKind('error');
-      return;
-    }
     try {
-      const result = await onCoupon(nextCode);
+      const result = await onCoupon();
       if (result.alreadyApplied || result.addedCoins <= 0) {
         setCouponMessage(copy.couponAlreadyClaimed);
         setCouponMessageKind('error');
@@ -5275,8 +5269,7 @@ function WalletScreen({
   }
 
   return (
-    <>
-      <ScrollView contentContainerStyle={styles.scroll}>
+    <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.walletCoinsCard}>
           <View style={styles.walletCoinsHeader}>
             <View style={styles.walletCoinsIcon}>
@@ -5304,12 +5297,18 @@ function WalletScreen({
 
           <Pressable
             style={[styles.walletCouponButton, busy && styles.walletCouponButtonBusy]}
-            onPress={openCouponSheet}
+            onPress={applyFirst50}
             disabled={busy}
           >
-            <Ionicons name="ticket-outline" size={17} color={colors.customer} />
-            <Text style={styles.walletCouponText}>{busy ? copy.applying : copy.enterCoupon}</Text>
+            {busy ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="gift-outline" size={17} color={colors.customer} />}
+            <Text style={styles.walletCouponText}>{busy ? copy.applying : `${copy.applyCoupon} FIRST50`}</Text>
           </Pressable>
+          {couponMessage ? (
+            <Text style={couponMessageKind === 'success' ? styles.walletCouponSuccess : styles.walletCouponError}>
+              {couponMessage}
+            </Text>
+          ) : null}
+
         </View>
 
         <SectionTitle title={copy.coinActivity} />
@@ -5329,72 +5328,7 @@ function WalletScreen({
             <Text style={styles.cardTitle}>{copy.noCoinActivity}</Text>
           </View>
         )}
-      </ScrollView>
-
-      <Modal visible={couponOpen} animationType="slide" transparent onRequestClose={() => setCouponOpen(false)}>
-        <KeyboardAvoidingView
-          style={styles.walletCouponOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable style={styles.walletCouponBackdrop} onPress={() => setCouponOpen(false)} />
-          <Pressable
-            style={[styles.walletCouponSheet, couponSheetLift ? { marginBottom: couponSheetLift } : null]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.walletCouponSheetContent}
-            >
-              <View style={styles.contactSheetHandle} />
-              <View style={styles.walletCouponSheetHeader}>
-                <View style={styles.walletCoinsIcon}>
-                  <Ionicons name="ticket-outline" size={21} color={colors.customer} />
-                </View>
-                <View style={styles.flex}>
-                  <Text style={styles.walletCouponSheetTitle}>{copy.couponSheetTitle}</Text>
-                  <Text style={styles.walletCouponSheetText}>{copy.couponSheetText}</Text>
-                </View>
-              </View>
-
-              <Text style={styles.fieldLabel}>{copy.couponCode}</Text>
-              <View style={styles.walletCouponInputShell}>
-                <TextInput
-                  value={couponCode}
-                  onChangeText={(value) => {
-                    setCouponCode(value.toUpperCase());
-                    setCouponMessage('');
-                  }}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  editable={!busy}
-                  placeholder="FIRST50"
-                  placeholderTextColor={colors.muted}
-                  returnKeyType="done"
-                  onSubmitEditing={applyCouponCode}
-                  style={styles.walletCouponInput}
-                />
-              </View>
-              {couponMessage ? (
-                <Text style={couponMessageKind === 'success' ? styles.walletCouponSuccess : styles.walletCouponError}>
-                  {couponMessage}
-                </Text>
-              ) : null}
-
-              <View style={styles.walletCouponActions}>
-                <Pressable style={styles.walletCouponCancelButton} onPress={() => setCouponOpen(false)} disabled={busy}>
-                  <Text style={styles.walletCouponCancelText}>{copy.cancel}</Text>
-                </Pressable>
-                <Pressable style={[styles.walletCouponApplyButton, busy && styles.walletCouponButtonBusy]} onPress={applyCouponCode} disabled={busy}>
-                  {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="checkmark" size={17} color={colors.white} />}
-                  <Text style={styles.walletCouponApplyText}>{busy ? copy.applying : copy.applyCoupon}</Text>
-                </Pressable>
-              </View>
-            </ScrollView>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
-    </>
+    </ScrollView>
   );
 }
 
@@ -5627,11 +5561,6 @@ function AccountScreen({
         <View style={styles.accountHeroTop}>
           <View>
             <Text style={styles.accountEyebrow}>{copy.account}</Text>
-            <Text style={styles.accountHeroSubtitle}>{copy.accountSubtitle}</Text>
-          </View>
-          <View style={styles.accountVerifiedBadge}>
-            <Ionicons name="checkmark-circle" size={14} color={colors.green} />
-            <Text style={styles.accountVerifiedText}>{copy.verified}</Text>
           </View>
         </View>
         <View style={styles.accountIdentityCard}>
@@ -6038,6 +5967,7 @@ function BottomTabs({
   activeOrder: boolean;
 }) {
   const copy = useCopy();
+  const { bottom: bottomInset } = useSafeAreaInsets();
   const tabs: Array<[Tab, keyof typeof Ionicons.glyphMap, string]> = [
     ['home', 'home', copy.homeTab],
     ['orders', 'reader', copy.ordersTab],
@@ -6045,7 +5975,7 @@ function BottomTabs({
     ['account', 'person', copy.accountTab]
   ];
   return (
-    <View style={styles.tabs}>
+    <View style={[styles.tabs, { height: 68 + bottomInset, paddingBottom: bottomInset }]}>
       {tabs.map(([key, icon, label]) => {
         const selected = active === key;
         return (
@@ -7043,7 +6973,7 @@ const styles = StyleSheet.create({
   mapPickerControls: { alignItems: 'center', gap: 8, marginBottom: 12 },
   mapPickerControlMiddle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   mapPickerControlButton: { width: 42, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
-  mapPickerBottomPanel: { gap: 10, paddingTop: 2, paddingBottom: Platform.OS === 'android' ? 18 : 0 },
+  mapPickerBottomPanel: { gap: 10, paddingTop: 2 },
   mapPickerCurrentButton: { minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
   mapPickerCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   mapPickerActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
@@ -7088,13 +7018,13 @@ const styles = StyleSheet.create({
   contactSummaryValue: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 4 },
   contactSummaryMissing: { color: colors.customer, fontSize: 13, fontWeight: '600', marginBottom: 4 },
   contactSummaryLocation: { color: colors.muted, fontSize: 11, fontWeight: '600', marginBottom: 10 },
-  contactPageShell: { flex: 1, backgroundColor: colors.white, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight : 0 },
+  contactPageShell: { flex: 1, backgroundColor: colors.white },
   contactPageKeyboard: { flex: 1 },
   contactPageForm: { flex: 1, backgroundColor: colors.white },
   contactPageFormContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 },
   contactPageHeader: { marginBottom: 12 },
   contactPageActions: { marginTop: 4 },
-  contactPageFooter: { backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: Platform.OS === 'android' ? 34 : 16 },
+  contactPageFooter: { backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   contactSheetOverlay: { flex: 1, justifyContent: 'flex-end' },
   contactSheetBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
   contactSheet: { maxHeight: '92%', backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, paddingBottom: Platform.OS === 'android' ? 20 : 18 },
@@ -7133,7 +7063,7 @@ const styles = StyleSheet.create({
   contactUseCurrentButton: { flex: 1, minHeight: 40, borderRadius: 12, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
   contactUseCurrentText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactPagePanel: { flex: 1, backgroundColor: colors.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, marginTop: 0, shadowColor: '#0F172A', shadowOpacity: 0.10, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 5 },
-  contactPagePanelContent: { paddingHorizontal: 13, paddingTop: 7, paddingBottom: Platform.OS === 'android' ? 18 : 14 },
+  contactPagePanelContent: { paddingHorizontal: 13, paddingTop: 7, paddingBottom: 14 },
   contactAddressHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
   contactAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   contactAddressSubtitle: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: '500', marginTop: 3 },
@@ -7153,7 +7083,7 @@ const styles = StyleSheet.create({
   contactTypeChipTextActive: { color: colors.customer },
   contactConfirmButton: { minHeight: 48, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
   contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '600' },
-  contactExpandedMapFooter: { flexShrink: 0, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: Platform.OS === 'android' ? 28 : 16, gap: 10 },
+  contactExpandedMapFooter: { flexShrink: 0, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, gap: 10 },
   contactExpandedLocationRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 10 },
   contactExpandedLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   contactExpandedLocationSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 2 },
@@ -7172,6 +7102,7 @@ const styles = StyleSheet.create({
   useMyDetailsText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactDivider: { height: 1, backgroundColor: colors.line, marginTop: 4, marginBottom: 14 },
   contactError: { color: colors.red, fontSize: 12, fontWeight: '600', marginTop: -6, marginBottom: 12 },
+  contactFooterError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 8 },
   addressHelperText: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: -6, marginBottom: 10 },
   saveAddressInlineButton: { alignSelf: 'flex-start', minHeight: 34, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, marginBottom: 10 },
   saveAddressInlineText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
@@ -7185,8 +7116,7 @@ const styles = StyleSheet.create({
   goodsTypeSelectorHint: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
   goodsTypePickerSheet: {
     height: '88%',
-    maxHeight: '88%',
-    paddingBottom: Platform.OS === 'android' ? 38 : 24
+    maxHeight: '88%'
   },
   goodsTypePickerHeading: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   goodsTypePickerScroll: { flex: 1, marginHorizontal: -2 },
@@ -7400,7 +7330,6 @@ const styles = StyleSheet.create({
   accountHero: { position: 'relative', borderRadius: 18, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
   accountHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
   accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  accountHeroSubtitle: { color: colors.white, fontSize: 19, fontWeight: '700', marginTop: 4, lineHeight: 25 },
   accountIdentityCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.94)', padding: 12 },
   accountAvatar: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarSmall: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
@@ -7487,7 +7416,7 @@ const styles = StyleSheet.create({
   policyDetailSection: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
   policyHeading: { color: colors.customer, fontSize: 13, fontWeight: '600', marginBottom: 4 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
-  tabs: { height: 76, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white, paddingBottom: 8 },
+  tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
   tabText: { color: colors.muted, fontSize: 11, fontWeight: '500' },
   tabTextActive: { color: colors.customer },

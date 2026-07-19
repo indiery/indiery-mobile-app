@@ -45,6 +45,7 @@
     },
     "android": {
       "package": "com.indeiry",
+      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "permissions": [

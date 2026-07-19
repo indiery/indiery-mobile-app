@@ -10,7 +10,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -18,6 +17,7 @@ import {
   TextInput,
   View
 } from 'react-native';
+import { SafeAreaView, type Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
@@ -74,6 +74,10 @@ const expoProjectId =
   (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
   (Constants.easConfig as { projectId?: string } | null)?.projectId;
 const androidStatusBarInset = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
+const appSafeAreaEdges: Edge[] = Platform.OS === 'android'
+  ? ['left', 'right', 'bottom']
+  : ['top', 'right', 'bottom', 'left'];
+const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'bottom');
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -1496,7 +1500,7 @@ export default function App() {
   if (loading) {
     return (
       <LanguageContext.Provider value={language}>
-        <SafeAreaView style={styles.center}>
+        <SafeAreaView edges={appSafeAreaEdges} style={styles.center}>
           <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
           <ActivityIndicator color={colors.partner} size="large" />
           <Text style={styles.muted}>{copyFor(language, 'loadingPartner')}</Text>
@@ -1521,7 +1525,7 @@ export default function App() {
   if (needsPartnerOnboarding(data.user)) {
     return (
       <LanguageContext.Provider value={language}>
-      <SafeAreaView style={styles.shell}>
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.shell}>
         <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
         <View style={styles.appHeader}>
           <View>
@@ -1564,7 +1568,7 @@ export default function App() {
 
   return (
     <LanguageContext.Provider value={language}>
-    <SafeAreaView style={styles.shell}>
+    <SafeAreaView edges={profileDetailOpen ? appSafeAreaEdges : tabScreenSafeAreaEdges} style={styles.shell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       {tab !== 'profile' ? (
         <View style={styles.appHeader}>
@@ -1799,7 +1803,7 @@ function LoginScreen({
   }
 
   return (
-    <SafeAreaView style={styles.loginShell}>
+    <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
@@ -2248,7 +2252,7 @@ function ProfileSetupScreen({
   }
 
   return (
-    <SafeAreaView style={styles.loginShell}>
+    <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.profileSetupScroll} keyboardShouldPersistTaps="handled">
           <View style={styles.authHero}>
@@ -3286,6 +3290,7 @@ function BottomTabs({
   activeCount: number;
 }) {
   const copy = useCopy();
+  const { bottom: bottomInset } = useSafeAreaInsets();
   const tabs: Array<[Tab, keyof typeof Ionicons.glyphMap, string, number?]> = [
     ['dashboard', 'home', copy.home],
     ['active', 'navigate', copy.active, activeCount],
@@ -3293,7 +3298,7 @@ function BottomTabs({
     ['profile', 'person', copy.profile]
   ];
   return (
-    <View style={styles.tabs}>
+    <View style={[styles.tabs, { height: 68 + bottomInset, paddingBottom: bottomInset }]}>
       {tabs.map(([key, icon, label, count]) => {
         const selected = active === key;
         return (
@@ -3480,10 +3485,14 @@ function PanicSheet({
   onCall: (phoneNumber: string) => void;
 }) {
   const copy = useCopy();
+  const { bottom: bottomInset } = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.panicOverlay} onPress={onClose}>
-        <Pressable style={styles.panicSheet} onPress={(event) => event.stopPropagation()}>
+        <Pressable
+          style={[styles.panicSheet, { paddingBottom: Math.max(24, bottomInset + 12) }]}
+          onPress={(event) => event.stopPropagation()}
+        >
           <View style={styles.panicHandle} />
 
           <View style={styles.panicHero}>
@@ -3757,7 +3766,7 @@ function MapPreview({
       onRequestClose={() => setExpanded(false)}
     >
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      <SafeAreaView style={styles.expandedRouteShell}>
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.expandedRouteShell}>
         <View style={styles.expandedRouteMap}>
           {canRenderNativeMap ? (
             <MapView
@@ -4084,7 +4093,7 @@ const styles = StyleSheet.create({
   panicButton: { minHeight: 42, borderRadius: 14, backgroundColor: colors.red, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' },
   panicButtonText: { color: colors.white, fontSize: 12, fontWeight: '900' },
   panicOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.48)' },
-  panicSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.white, paddingHorizontal: 18, paddingTop: 10, paddingBottom: Platform.OS === 'android' ? 24 : 34, gap: 12 },
+  panicSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.white, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 24, gap: 12 },
   panicHandle: { width: 48, height: 5, borderRadius: 999, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 4 },
   panicHero: { borderRadius: 22, backgroundColor: colors.red, padding: 15, overflow: 'hidden' },
   panicHeroTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -4203,7 +4212,7 @@ const styles = StyleSheet.create({
   expandedRouteTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
   expandedRouteSubtitle: { color: colors.muted, fontSize: 10, fontWeight: '700', lineHeight: 14, marginTop: 2 },
   expandedRouteError: { color: '#B45309', fontSize: 10, fontWeight: '800', lineHeight: 14, marginTop: 4 },
-  expandedRouteMinimizeButton: { position: 'absolute', right: 16, bottom: Platform.OS === 'android' ? androidStatusBarInset + 24 : 20, width: 50, height: 50, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  expandedRouteMinimizeButton: { position: 'absolute', right: 16, bottom: 20, width: 50, height: 50, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   payoutCard: { backgroundColor: colors.partnerLight, borderRadius: 16, padding: 14, marginBottom: 14 },
   fareLabel: { color: colors.partner, fontSize: 13 },
   fareValue: { color: colors.partner, fontSize: 13, fontWeight: '800' },
@@ -4316,7 +4325,7 @@ const styles = StyleSheet.create({
   policyHeading: { color: colors.partner, fontSize: 13, fontWeight: '900', marginBottom: 4 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
   flex: { flex: 1 },
-  tabs: { height: 76, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white, paddingBottom: 8 },
+  tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
   tabText: { color: colors.muted, fontSize: 11, fontWeight: '800' },
   tabTextActive: { color: colors.partner },

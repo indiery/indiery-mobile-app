@@ -17,6 +17,7 @@ import {
   StatusBar,
   Text,
   TextInput,
+  useWindowDimensions,
   View
 } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
@@ -79,10 +80,7 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 }
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
-const androidStatusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
-const appSafeAreaEdges: Edge[] = Platform.OS === 'android'
-  ? ['left', 'right', 'bottom']
-  : ['top', 'right', 'bottom', 'left'];
+const appSafeAreaEdges: Edge[] = ['top', 'right', 'bottom', 'left'];
 const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'bottom');
 const expoProjectId =
   (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
@@ -762,6 +760,36 @@ function useLanguage() {
   return useContext(LanguageContext);
 }
 
+function useResponsiveLayout() {
+  const { width, height, fontScale } = useWindowDimensions();
+  const effectiveWidth = width / Math.min(Math.max(fontScale, 1), 1.5);
+  const isLandscape = width > height;
+  const isNarrow = effectiveWidth < 340;
+  const isShort = height < 640;
+  const isTablet = width >= 600;
+  const hasLargeText = fontScale >= 1.25;
+  const stackActions = isNarrow || fontScale >= 1.35;
+  const horizontalPadding = isNarrow ? 12 : isTablet ? 24 : 16;
+  const contentMaxWidth = isTablet ? 1040 : 680;
+  const tabBarHeight = 68 + Math.min(28, Math.max(0, (fontScale - 1) * 24));
+
+  return {
+    width,
+    height,
+    fontScale,
+    effectiveWidth,
+    isLandscape,
+    isNarrow,
+    isShort,
+    isTablet,
+    hasLargeText,
+    stackActions,
+    horizontalPadding,
+    contentMaxWidth,
+    tabBarHeight
+  };
+}
+
 function useAndroidBackHandler(onBack: () => boolean, dependencies: React.DependencyList) {
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
@@ -1287,6 +1315,8 @@ async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (messag
 }
 
 export default function App() {
+  const responsive = useResponsiveLayout();
+  const { bottom: rootBottomInset } = useSafeAreaInsets();
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
   const estimateRequestSeqRef = useRef(0);
@@ -1653,8 +1683,9 @@ export default function App() {
   }
 
   async function shareActiveOrder(order: Order) {
-    const trackingUrl = `${socketUrl}/track/${encodeURIComponent(order.orderNo)}`;
     try {
+      const { trackingPath } = await api.createTrackingLink(order.id);
+      const trackingUrl = `${socketUrl}${trackingPath}`;
       await Share.share({
         title: `Track ${order.orderNo}`,
         message: `Track your Indiery delivery ${order.orderNo}: ${trackingUrl}`,
@@ -1796,14 +1827,6 @@ export default function App() {
     setStep(nextStep);
     setTab('book');
   };
-  const openActiveOrder = (orderId?: string) => {
-    const nextOrderId = orderId ?? activeOrder?.id;
-    if (nextOrderId) {
-      setSelectedActiveOrderId(nextOrderId);
-      setRequestedOrderDetailId(nextOrderId);
-    }
-    setTab('orders');
-  };
   const applyHomePickupLocation = (location: LocationDetails, askForSenderDetails: boolean) => {
     setBooking((current) => ({
       ...current,
@@ -1854,16 +1877,20 @@ export default function App() {
     <SafeAreaView edges={tabScreenSafeAreaEdges} style={styles.shell}>
       <AppStatusBar variant="brand" />
       <View style={styles.appHeader}>
-        <View>
-          <Text style={styles.eyebrow}>INDIERY</Text>
-          <Text style={styles.headerTitle}>{copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}</Text>
-        </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{data.user.initials}</Text>
+        <View style={[styles.appHeaderInner, { maxWidth: responsive.contentMaxWidth }]}>
+          <View style={styles.appHeaderCopy}>
+            <Text style={styles.eyebrow}>INDIERY</Text>
+            <Text style={styles.headerTitle} numberOfLines={2} ellipsizeMode="tail">
+              {copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}
+            </Text>
+          </View>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{data.user.initials}</Text>
+          </View>
         </View>
       </View>
 
-      <View style={styles.content}>
+      <View style={[styles.content, { maxWidth: responsive.contentMaxWidth }]}>
         {tab === 'home' && (
           <HomeScreen
             api={api}
@@ -1873,7 +1900,6 @@ export default function App() {
             onPickupPress={() => setPickupSearchOpen(true)}
             onVehicleSelect={handleHomeVehicleSelect}
             onBook={openBook}
-            onTrack={openActiveOrder}
           />
         )}
         {tab === 'book' && (
@@ -1986,7 +2012,23 @@ export default function App() {
           }}
         />
       ) : null}
-      {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
+      {toast ? (
+        <View
+          style={[
+            styles.toast,
+            {
+              bottom: responsive.tabBarHeight + rootBottomInset + 12,
+              left: Math.max(
+                responsive.horizontalPadding,
+                (responsive.width - Math.min(560, responsive.width - (responsive.horizontalPadding * 2))) / 2
+              ),
+              width: Math.min(560, responsive.width - (responsive.horizontalPadding * 2))
+            }
+          ]}
+        >
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      ) : null}
     </SafeAreaView>
     </LanguageContext.Provider>
   );
@@ -1999,6 +2041,7 @@ function LoginScreen({
   initialError: string;
   onVerified: (firebaseIdToken: string) => Promise<void>;
 }) {
+  const responsive = useResponsiveLayout();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
@@ -2067,7 +2110,7 @@ function LoginScreen({
     <>
     <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={loginScrollRef}
           contentContainerStyle={[styles.authScroll, confirmation && styles.authScrollOtp]}
@@ -2075,8 +2118,15 @@ function LoginScreen({
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
-          <LoginHero title="Indiery" caption="Delivering trust, every mile." compact={Boolean(confirmation)} />
-          <View style={styles.authForm}>
+          <View
+            style={[
+              styles.authResponsiveFrame,
+              responsive.isLandscape && responsive.width >= 600 && styles.authResponsiveFrameLandscape,
+              { maxWidth: responsive.isLandscape && responsive.width >= 600 ? 960 : Math.min(640, responsive.contentMaxWidth) }
+            ]}
+          >
+            <LoginHero title="Indiery" caption="Delivering trust, every mile." compact={Boolean(confirmation)} />
+            <View style={[styles.authForm, responsive.isLandscape && responsive.width >= 600 && styles.authFormLandscape]}>
             <Text style={styles.authTitle}>Welcome Back</Text>
             <Text style={styles.loginSubtitle}>Login to book and manage your shipments</Text>
             <PhoneLoginField value={phone} onChangeText={setPhone} />
@@ -2124,6 +2174,7 @@ function LoginScreen({
             </View>
             <AuthDivider />
             <LoginFeatureRow />
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -2144,10 +2195,23 @@ function LoginScreen({
 }
 
 function LoginHero({ title, caption, compact = false }: { title: string; caption: string; compact?: boolean }) {
+  const responsive = useResponsiveLayout();
+  const heroMinHeight = compact
+    ? Math.max(180, Math.min(230, responsive.height * 0.32))
+    : Math.max(
+        responsive.isShort ? 220 : 280,
+        Math.min(responsive.isTablet ? 420 : 360, responsive.height * (responsive.isLandscape ? 0.7 : 0.45))
+      );
+
   return (
     <ImageBackground
       source={customerLoginBackgroundImage}
-      style={[styles.loginHero, compact && styles.loginHeroOtp]}
+      style={[
+        styles.loginHero,
+        compact && styles.loginHeroOtp,
+        { minHeight: heroMinHeight },
+        responsive.isLandscape && responsive.width >= 600 && styles.loginHeroLandscape
+      ]}
       imageStyle={styles.loginHeroImage}
       resizeMode="cover"
     >
@@ -2184,8 +2248,9 @@ function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText:
 }
 
 function AuthActionButton({ title, onPress }: { title: string; onPress: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={styles.authPrimaryButton} onPress={onPress}>
+    <Pressable style={[styles.authPrimaryButton, responsive.stackActions && styles.buttonStacked]} onPress={onPress}>
       <Text style={styles.authPrimaryButtonText}>{title}</Text>
     </Pressable>
   );
@@ -2233,6 +2298,7 @@ function ProfileSetupScreen({
   error: string;
   onSave: (input: { name: string; email: string; city: string }) => Promise<void>;
 }) {
+  const responsive = useResponsiveLayout();
   const [name, setName] = useState(user.name === 'Indiery Customer' ? '' : user.name);
   const [email, setEmail] = useState(user.email || '');
   const [city, setCity] = useState(user.city || 'Lucknow');
@@ -2263,22 +2329,41 @@ function ProfileSetupScreen({
       <AppStatusBar variant="light" />
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.profileSetupScroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.authHero}>
-            <View style={styles.authTrackOne} />
-            <View style={styles.authTrackTwo} />
-            <View style={styles.authAccentLine} />
-            <BrandLogo title="Indiery" accentColor={colors.customer} />
-          </View>
-          <View style={styles.authForm}>
-            <Text style={styles.authKicker}>Almost there</Text>
-            <Text style={styles.authTitle}>Profile</Text>
-            <Text style={styles.loginSubtitle}>Complete your profile</Text>
-            <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
-            <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
-            <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
-            <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
-            {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
-            <PrimaryButton title={busy ? 'Saving' : 'Continue'} icon="arrow-forward" onPress={submit} />
+          <View
+            style={[
+              styles.authResponsiveFrame,
+              responsive.isLandscape && responsive.width >= 600 && styles.authResponsiveFrameLandscape,
+              { maxWidth: responsive.isLandscape && responsive.width >= 600 ? 960 : Math.min(640, responsive.contentMaxWidth) }
+            ]}
+          >
+            <View
+              style={[
+                styles.authHero,
+                responsive.isLandscape && responsive.width >= 600 && styles.authHeroLandscape,
+                {
+                  minHeight: Math.max(
+                    responsive.isShort ? 220 : 280,
+                    Math.min(responsive.isTablet ? 420 : 350, responsive.height * (responsive.isLandscape ? 0.7 : 0.44))
+                  )
+                }
+              ]}
+            >
+              <View style={styles.authTrackOne} />
+              <View style={styles.authTrackTwo} />
+              <View style={styles.authAccentLine} />
+              <BrandLogo title="Indiery" accentColor={colors.customer} />
+            </View>
+            <View style={[styles.authForm, responsive.isLandscape && responsive.width >= 600 && styles.authFormLandscape]}>
+              <Text style={styles.authKicker}>Almost there</Text>
+              <Text style={styles.authTitle}>Profile</Text>
+              <Text style={styles.loginSubtitle}>Complete your profile</Text>
+              <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
+              <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
+              <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
+              <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
+              {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
+              <PrimaryButton title={busy ? 'Saving' : 'Continue'} icon="arrow-forward" onPress={submit} />
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -2351,8 +2436,7 @@ function HomeScreen({
   setBooking,
   onPickupPress,
   onVehicleSelect,
-  onBook,
-  onTrack
+  onBook
 }: {
   api: IndieryApi;
   data: CustomerBootstrap;
@@ -2361,9 +2445,10 @@ function HomeScreen({
   onPickupPress: () => void;
   onVehicleSelect: (vehicle: Vehicle) => void;
   onBook: (nextStep?: number) => void;
-  onTrack: (orderId?: string) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const singleColumnCards = responsive.hasLargeText && responsive.effectiveWidth < 520;
   const lastOrder = data.orders[0];
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
@@ -2476,7 +2561,10 @@ function HomeScreen({
         <View style={[styles.homePatternRoad, styles.homePatternRoadThree]} />
       </View>
       <ScrollView
-        contentContainerStyle={styles.homeScroll}
+        contentContainerStyle={[
+          styles.homeScroll,
+          { maxWidth: responsive.contentMaxWidth, paddingHorizontal: responsive.horizontalPadding }
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <Pressable style={styles.homeLocationCard} onPress={onPickupPress}>
@@ -2498,7 +2586,7 @@ function HomeScreen({
           {homeVehicleCards.map((service) => (
             <Pressable
               key={service.id}
-              style={styles.homeServiceCard}
+              style={[styles.homeServiceCard, singleColumnCards && styles.responsiveSingleColumnCard]}
               onPress={() => startBookingFromHome(service.vehicle)}
             >
               <HomeVehicleVisual vehicle={service.vehicle} color={service.accent} />
@@ -2526,23 +2614,8 @@ function HomeScreen({
         </Pressable>
       ) : null}
 
-        <Pressable style={styles.homeRewardCard} onPress={() => onBook(1)}>
-          <View style={styles.homeRewardIcon}>
-            <Ionicons name="disc" size={24} color={colors.amber} />
-          </View>
-          <View style={styles.flex}>
-            <Text style={styles.homeRewardTitle}>{copy.indieryCoins}</Text>
-            <Text style={styles.homeRewardText}>{copy.useCoinsDiscount}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.ink} />
-        </Pressable>
-
         <View style={styles.homeAnnouncementHeader}>
           <Text style={styles.homeAnnouncementTitle}>Announcements</Text>
-          <Pressable style={styles.homeSeeAllButton} onPress={() => onTrack()}>
-            <Text style={styles.homeSeeAllText}>See all</Text>
-            <Ionicons name="chevron-forward" size={14} color={colors.customer} />
-          </Pressable>
         </View>
         <View
           style={styles.homeAnnouncementCarousel}
@@ -2559,13 +2632,12 @@ function HomeScreen({
             }}
           >
             {homeAnnouncements.map((item) => (
-              <Pressable
+              <View
                 key={item.id}
                 style={[
                   styles.homeAnnouncementCard,
                   announcementWidth ? { width: announcementWidth } : null
                 ]}
-                onPress={() => onTrack()}
               >
                 <View style={styles.homeAnnouncementIcon}>
                   <Ionicons name={item.icon} size={22} color={item.iconColor} />
@@ -2574,8 +2646,7 @@ function HomeScreen({
                   <Text style={styles.homeAnnouncementCopy}>{item.title}</Text>
                   <Text style={styles.homeAnnouncementMeta}>{item.subtitle}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.ink} />
-              </Pressable>
+              </View>
             ))}
           </ScrollView>
         </View>
@@ -2606,6 +2677,7 @@ function PickupSearchModal({
   onSelectTyped: (value: string) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -2683,8 +2755,14 @@ function PickupSearchModal({
       <AppStatusBar variant="light" />
       <SafeAreaView edges={appSafeAreaEdges} style={styles.pickupSearchShell}>
         <KeyboardAvoidingView style={styles.pickupSearchKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={[styles.pickupSearchContent, { maxWidth: responsive.contentMaxWidth }]}>
           <View style={styles.pickupSearchTopBar}>
-            <Pressable style={styles.pickupSearchBackButton} onPress={onClose}>
+            <Pressable
+              style={styles.pickupSearchBackButton}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close pickup search"
+            >
               <Ionicons name="arrow-back" size={22} color={colors.ink} />
             </Pressable>
           </View>
@@ -2748,6 +2826,7 @@ function PickupSearchModal({
               </Pressable>
             ))}
           </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
@@ -3015,11 +3094,14 @@ function VehicleChoiceCard({
   onPress: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const singleColumnCard = responsive.hasLargeText && responsive.effectiveWidth < 520;
 
   return (
     <Pressable
       style={[
         styles.vehicleCard,
+        singleColumnCard && styles.responsiveSingleColumnCard,
         suggested && styles.vehicleCardSuggested,
         selected && styles.vehicleCardActive,
         disabled && styles.vehicleCardDisabled
@@ -3065,10 +3147,13 @@ function VehicleFareOption({
   onPress: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const stackFare = responsive.isNarrow || responsive.hasLargeText;
   return (
     <Pressable
       style={[
         styles.vehicleFareOption,
+        suggested && styles.vehicleFareOptionSuggested,
         selected && styles.vehicleFareOptionSelected,
         disabled && styles.vehicleFareOptionDisabled
       ]}
@@ -3078,7 +3163,7 @@ function VehicleFareOption({
       <View style={styles.vehicleFareOptionIcon}>
         <VehicleMiniArt vehicle={vehicle} muted={disabled} selected={selected} />
       </View>
-      <View style={styles.flex}>
+      <View style={styles.vehicleFareOptionCopy}>
         <View style={styles.vehicleFareOptionTitleRow}>
           <Text style={[styles.vehicleFareOptionTitle, disabled && styles.vehicleNameDisabled]}>{vehicle.shortName}</Text>
           {suggested ? (
@@ -3091,7 +3176,7 @@ function VehicleFareOption({
           {vehicleCapacityText(vehicle, copy.upTo)} - {vehicle.etaMinutes} min
         </Text>
       </View>
-      <View style={styles.vehicleFareOptionPriceWrap}>
+      <View style={[styles.vehicleFareOptionPriceWrap, stackFare && styles.vehicleFareOptionPriceWrapStacked]}>
         <Text style={[styles.vehicleFareOptionPrice, disabled && styles.vehicleNameDisabled]}>
           {typeof price === 'number' ? money(price) : copy.estimating}
         </Text>
@@ -3157,7 +3242,8 @@ function BookScreen({
 }) {
   const copy = useCopy();
   const language = useLanguage();
-  const { bottom: bottomInset } = useSafeAreaInsets();
+  const responsive = useResponsiveLayout();
+  const { bottom: bottomInset, left: leftInset, right: rightInset } = useSafeAreaInsets();
   const bookingWeightKg = parseBookingWeight(booking.weightKg);
   const vehicleChoices = customerVehicles(vehicles);
   const suggestedVehicle = suggestedCustomerVehicle(vehicles, bookingWeightKg);
@@ -3508,6 +3594,8 @@ function BookScreen({
             }
             onBackToHome();
           }}
+          accessibilityRole="button"
+          accessibilityLabel={step > 1 ? 'Previous booking step' : 'Back to home'}
         >
           <Ionicons name="arrow-back" size={20} color={colors.ink} />
         </Pressable>
@@ -3746,14 +3834,19 @@ function BookScreen({
               <View style={styles.vehicleFareIcon}>
                 <Ionicons name={vehicleIcon(selectedVehicle)} size={26} color={colors.customer} />
               </View>
-              <View style={styles.flex}>
+              <View style={styles.vehicleFareCopy}>
                 <Text style={styles.vehicleName}>{selectedVehicle.shortName}</Text>
                 <Text style={styles.vehicleFareMeta}>
                   {vehicleCapacityText(selectedVehicle, copy.upTo)} - {selectedFare?.etaMinutes || selectedVehicle.etaMinutes} min
                 </Text>
                 <Text style={styles.mutedSmall}>{copy.pricedAfterRoute}</Text>
               </View>
-              <Text style={styles.vehicleFarePrice}>
+              <Text
+                style={[
+                  styles.vehicleFarePrice,
+                  (responsive.isNarrow || responsive.hasLargeText) && styles.vehicleFarePriceStacked
+                ]}
+              >
                 {selectedFare
                   ? money(selectedFare.total)
                   : typeof routeBillableKm === 'number'
@@ -3857,7 +3950,11 @@ function BookScreen({
           style={[
             styles.contactSheet,
             styles.goodsTypePickerSheet,
-            { paddingBottom: Math.max(24, bottomInset + 12) }
+            {
+              paddingBottom: Math.max(24, bottomInset + 12),
+              paddingLeft: Math.max(16, leftInset + 12),
+              paddingRight: Math.max(16, rightInset + 12)
+            }
           ]}
         >
           <View style={styles.contactSheetHandle} />
@@ -3871,7 +3968,12 @@ function BookScreen({
                 <Text style={styles.contactSheetSubtitle}>{copy.tapToChooseGoods}</Text>
               </View>
             </View>
-            <Pressable style={styles.mapPickerClose} onPress={() => setGoodsTypePickerOpen(false)}>
+            <Pressable
+              style={styles.mapPickerClose}
+              onPress={() => setGoodsTypePickerOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close goods category"
+            >
               <Ionicons name="close" size={20} color={colors.ink} />
             </Pressable>
           </View>
@@ -3977,7 +4079,7 @@ function ContactSummaryCard({
 
 function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
   const copy = useCopy();
-  const { bottom: bottomInset } = useSafeAreaInsets();
+  const { bottom: bottomInset, left: leftInset, right: rightInset } = useSafeAreaInsets();
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.contactSheetOverlay}>
@@ -3986,7 +4088,11 @@ function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
           style={[
             styles.contactSheet,
             styles.goodsRulesSheet,
-            { paddingBottom: Math.max(18, bottomInset + 12) }
+            {
+              paddingBottom: Math.max(18, bottomInset + 12),
+              paddingLeft: Math.max(16, leftInset + 12),
+              paddingRight: Math.max(16, rightInset + 12)
+            }
           ]}
         >
           <View style={styles.contactSheetHandle} />
@@ -3995,7 +4101,12 @@ function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
               <Text style={styles.contactSheetTitle}>{copy.goodsRules}</Text>
               <Text style={styles.contactSheetSubtitle}>{copy.goodsRulesIntro}</Text>
             </View>
-            <Pressable style={styles.mapPickerClose} onPress={onClose}>
+            <Pressable
+              style={styles.mapPickerClose}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close goods rules"
+            >
               <Ionicons name="close" size={20} color={colors.ink} />
             </Pressable>
           </View>
@@ -4060,6 +4171,7 @@ function InlineExactLocationPicker({
   onLocationChange: (location: LocationDetails) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const hasInitialPin = hasValidCoordinates(lat, lng);
   const initialRegion: Region = {
     latitude: hasInitialPin ? lat ?? defaultMapCenter.lat : defaultMapCenter.lat,
@@ -4084,6 +4196,16 @@ function InlineExactLocationPicker({
   const pinColor = target === 'pickup' ? colors.green : colors.red;
   const hasExactPin = pinSelected && hasValidCoordinates(region.latitude, region.longitude);
   const displayLabel = query || pinLabel || value || copy.selectedLocation;
+  const mapHeroHeight = compact && !expanded
+    ? responsive.isLandscape && responsive.isShort
+      ? 64
+      : Math.max(110, Math.min(165, responsive.height * 0.24))
+    : responsive.isLandscape && responsive.isShort
+      ? Math.max(160, Math.min(240, responsive.height * 0.45))
+    : Math.max(
+        responsive.isShort ? 230 : 300,
+        Math.min(responsive.isTablet ? 480 : 410, responsive.height * (responsive.isLandscape ? 0.62 : 0.46))
+      );
 
   useEffect(() => {
     const search = query.trim();
@@ -4232,7 +4354,9 @@ function InlineExactLocationPicker({
       <View style={[
         styles.contactMapHeroCanvas,
         compact && !expanded && styles.contactMapHeroCanvasCompact,
-        expanded && styles.contactMapHeroCanvasExpanded
+        { height: mapHeroHeight },
+        expanded && styles.contactMapHeroCanvasExpanded,
+        expanded && { minHeight: responsive.isShort ? 80 : 180 }
       ]}>
         {canRenderNativeMap ? (
           <>
@@ -4260,9 +4384,11 @@ function InlineExactLocationPicker({
             <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
               <Ionicons name="location" size={42} color={pinColor} />
             </View>
-            <View pointerEvents="none" style={[styles.mapPickerHint, styles.contactMapPickerHint]}>
-              <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
-            </View>
+            {!compact || expanded ? (
+              <View pointerEvents="none" style={[styles.mapPickerHint, styles.contactMapPickerHint]}>
+                <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
+              </View>
+            ) : null}
           </>
         ) : (
           <View style={styles.mapPickerFallback}>
@@ -4272,7 +4398,12 @@ function InlineExactLocationPicker({
             </Text>
           </View>
         )}
-        <Pressable style={styles.contactMapBackButton} onPress={onBack}>
+        <Pressable
+          style={styles.contactMapBackButton}
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? 'Close expanded map' : 'Close location details'}
+        >
           <Ionicons name="arrow-back" size={22} color={colors.ink} />
         </Pressable>
         <Pressable
@@ -4283,9 +4414,14 @@ function InlineExactLocationPicker({
         >
           <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={21} color={colors.customer} />
         </Pressable>
-        <View pointerEvents="none" style={styles.contactMapTitlePill}>
-          <Text style={styles.contactMapTitleText}>{title}</Text>
-        </View>
+        {!compact || expanded ? (
+          <View
+            pointerEvents="none"
+            style={[styles.contactMapTitlePill, responsive.isShort && styles.contactMapTitlePillShort]}
+          >
+            <Text style={styles.contactMapTitleText} numberOfLines={2}>{title}</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -4315,6 +4451,7 @@ function ContactDetailsModal({
   onSaved?: (nextBooking: typeof initialBooking) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const [localError, setLocalError] = useState('');
   const [selectedAddressType, setSelectedAddressType] = useState<'home' | 'work' | 'other' | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -4476,6 +4613,18 @@ function ContactDetailsModal({
     onSaved?.(nextBooking);
   }
 
+  const footerInsideScroll = keyboardVisible && responsive.isLandscape && responsive.isShort;
+  const contactFooter = (
+    <View style={styles.contactPageFooter}>
+      <View style={[styles.contactResponsiveFooterContent, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
+        {localError ? <Text style={styles.contactFooterError}>{localError}</Text> : null}
+        <Pressable style={styles.contactConfirmButton} onPress={saveDetails}>
+          <Text style={styles.contactConfirmButtonText}>{primaryTitle || 'Confirm and continue'}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
   return (
     <Modal
       visible
@@ -4487,7 +4636,7 @@ function ContactDetailsModal({
       <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.contactPageShell}>
         <KeyboardAvoidingView
           style={styles.contactPageKeyboard}
-          behavior={keyboardVisible ? (Platform.OS === 'ios' ? 'padding' : 'height') : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <InlineExactLocationPicker
             api={api}
@@ -4504,21 +4653,34 @@ function ContactDetailsModal({
             onLocationChange={updateExactLocation}
           />
           {mapExpanded ? (
-            <View style={styles.contactExpandedMapFooter}>
-              <View style={styles.contactExpandedLocationRow}>
-                <Ionicons name="location" size={22} color={locationColor} />
-                <View style={styles.flex}>
-                  <Text style={styles.contactExpandedLocationTitle} numberOfLines={1}>{locationTitle}</Text>
-                  <Text style={styles.contactExpandedLocationSubtitle} numberOfLines={2}>{locationSubtitle}</Text>
+            <View
+              style={[
+                styles.contactExpandedMapFooter,
+                { maxHeight: Math.max(112, responsive.height * (responsive.isShort ? 0.48 : 0.4)) }
+              ]}
+            >
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={[
+                  styles.contactResponsiveFooterContent,
+                  { maxWidth: responsive.contentMaxWidth }
+                ]}
+              >
+                <View style={styles.contactExpandedLocationRow}>
+                  <Ionicons name="location" size={22} color={locationColor} />
+                  <View style={styles.flex}>
+                    <Text style={styles.contactExpandedLocationTitle} numberOfLines={1}>{locationTitle}</Text>
+                    <Text style={styles.contactExpandedLocationSubtitle} numberOfLines={2}>{locationSubtitle}</Text>
+                  </View>
                 </View>
-              </View>
-              {localError ? <Text style={styles.contactExpandedMapError}>{localError}</Text> : null}
-              <Pressable style={styles.contactExpandedConfirmButton} onPress={confirmExpandedLocation}>
-                <Ionicons name="checkmark" size={18} color={colors.white} />
-                <Text style={styles.contactExpandedConfirmText}>
-                  {isPickup ? copy.confirmPickupLocation : copy.confirmDropLocation}
-                </Text>
-              </Pressable>
+                {localError ? <Text style={styles.contactExpandedMapError}>{localError}</Text> : null}
+                <Pressable style={styles.contactExpandedConfirmButton} onPress={confirmExpandedLocation}>
+                  <Ionicons name="checkmark" size={18} color={colors.white} />
+                  <Text style={styles.contactExpandedConfirmText}>
+                    {isPickup ? copy.confirmPickupLocation : copy.confirmDropLocation}
+                  </Text>
+                </Pressable>
+              </ScrollView>
             </View>
           ) : (
           <>
@@ -4530,7 +4692,15 @@ function ContactDetailsModal({
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               bounces={false}
               overScrollMode="never"
-              contentContainerStyle={styles.contactPagePanelContent}
+              contentContainerStyle={[
+                styles.contactPagePanelContent,
+                {
+                  width: '100%',
+                  maxWidth: Math.min(680, responsive.contentMaxWidth),
+                  alignSelf: 'center',
+                  paddingHorizontal: responsive.horizontalPadding
+                }
+              ]}
             >
             <View style={styles.contactSheetHandle} />
             <View style={styles.contactAddressHeader}>
@@ -4539,7 +4709,12 @@ function ContactDetailsModal({
                 <Text style={styles.contactAddressTitle} numberOfLines={1}>{locationTitle}</Text>
                 <Text style={styles.contactAddressSubtitle} numberOfLines={1}>{locationSubtitle}</Text>
               </View>
-              <Pressable style={styles.contactChangeButton} onPress={onChangeLocation || onClose}>
+              <Pressable
+                style={styles.contactChangeButton}
+                onPress={onChangeLocation || onClose}
+                accessibilityRole="button"
+                accessibilityLabel="Change location"
+              >
                 <Text style={styles.contactChangeButtonText}>Change</Text>
               </Pressable>
             </View>
@@ -4560,7 +4735,13 @@ function ContactDetailsModal({
               value={phone}
               onChangeText={(value) => updateContact(isPickup ? { pickupContactPhone: value } : { dropContactPhone: value })}
             />
-            <Pressable style={styles.contactMobileCheckRow} onPress={usingMine ? enterManually : useMine}>
+            <Pressable
+              style={styles.contactMobileCheckRow}
+              onPress={usingMine ? enterManually : useMine}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: usingMine }}
+              accessibilityLabel={`Use my mobile number ${user.phone}`}
+            >
               <Ionicons name={usingMine ? 'checkbox' : 'square-outline'} size={18} color={colors.customer} />
               <Text style={styles.contactMobileCheckText}>Use my mobile number: {user.phone}</Text>
             </Pressable>
@@ -4577,6 +4758,9 @@ function ContactDetailsModal({
                     key={option.type}
                     style={[styles.contactTypeChip, active && styles.contactTypeChipActive]}
                     onPress={() => setSelectedAddressType(active ? null : option.type)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: active }}
+                    accessibilityLabel={`Save address as ${option.label}`}
                   >
                     <Ionicons name={option.icon} size={13} color={active ? colors.customer : colors.ink} />
                     <Text style={[styles.contactTypeChipText, active && styles.contactTypeChipTextActive]}>
@@ -4586,13 +4770,9 @@ function ContactDetailsModal({
                 );
               })}
             </View>
+            {footerInsideScroll ? contactFooter : null}
             </ScrollView>
-            <View style={styles.contactPageFooter}>
-              {localError ? <Text style={styles.contactFooterError}>{localError}</Text> : null}
-              <Pressable style={styles.contactConfirmButton} onPress={saveDetails}>
-                <Text style={styles.contactConfirmButtonText}>{primaryTitle || 'Confirm and continue'}</Text>
-              </Pressable>
-            </View>
+            {!footerInsideScroll ? contactFooter : null}
           </>
           )}
         </KeyboardAvoidingView>
@@ -4648,6 +4828,7 @@ function MapLocationPicker({
   onConfirm: (location: LocationDetails) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const initialRegion: Region = {
     latitude: initialLat ?? defaultMapCenter.lat,
     longitude: initialLng ?? defaultMapCenter.lng,
@@ -4667,6 +4848,7 @@ function MapLocationPicker({
   const lat = region.latitude;
   const lng = region.longitude;
   const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
+  const mapCanvasMinHeight = responsive.isShort ? 120 : responsive.isTablet ? 360 : 220;
 
   useEffect(() => {
     const search = query.trim();
@@ -4785,9 +4967,24 @@ function MapLocationPicker({
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <AppStatusBar variant="light" />
-      <SafeAreaView edges={appSafeAreaEdges} style={styles.mapPickerShell}>
+      <SafeAreaView
+        edges={appSafeAreaEdges}
+        style={[styles.mapPickerShell, { paddingHorizontal: responsive.horizontalPadding }]}
+      >
+        <ScrollView
+          style={styles.mapPickerResponsiveScroll}
+          contentContainerStyle={[styles.mapPickerResponsiveContent, { maxWidth: responsive.contentMaxWidth }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
         <View style={styles.mapPickerHeader}>
-          <Pressable style={styles.mapPickerClose} onPress={onClose}>
+          <Pressable
+            style={styles.mapPickerClose}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close location map"
+          >
             <Ionicons name="close" size={22} color={colors.ink} />
           </Pressable>
           <View style={styles.flex}>
@@ -4824,7 +5021,7 @@ function MapLocationPicker({
           </View>
         ) : null}
 
-        <View style={styles.mapPickerCanvas}>
+        <View style={[styles.mapPickerCanvas, { minHeight: mapCanvasMinHeight }]}>
           {canRenderNativeMap ? (
             <>
               <MapView
@@ -4876,6 +5073,7 @@ function MapLocationPicker({
             <PrimaryButton title={copy.confirmLocation} icon="checkmark" onPress={confirmPin} />
           </View>
         </View>
+        </ScrollView>
       </SafeAreaView>
     </Modal>
   );
@@ -5054,7 +5252,12 @@ function OrderDetailsPanel({
           <View style={styles.orderDetailHeaderActions}>
             <Badge label={statusLabel(language, order.status)} />
             {onClose ? (
-              <Pressable style={styles.orderDetailClose} onPress={onClose}>
+              <Pressable
+                style={styles.orderDetailClose}
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close order details"
+              >
                 <Ionicons name="close" size={16} color={colors.ink} />
               </Pressable>
             ) : null}
@@ -5572,7 +5775,12 @@ function AccountScreen({
             <Text style={styles.accountSubtext}>{data.user.phone}</Text>
             <Text style={styles.accountSubtext}>{data.user.city}</Text>
           </View>
-          <Pressable style={styles.accountEditButton} onPress={() => openPage('personal')}>
+          <Pressable
+            style={styles.accountEditButton}
+            onPress={() => openPage('personal')}
+            accessibilityRole="button"
+            accessibilityLabel="Edit personal details"
+          >
             <Ionicons name="create-outline" size={18} color={colors.customer} />
           </Pressable>
         </View>
@@ -5650,7 +5858,12 @@ function AccountScreen({
 function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
   return (
     <View style={styles.accountDetailHeader}>
-      <Pressable style={styles.mapPickerClose} onPress={onBack}>
+      <Pressable
+        style={styles.mapPickerClose}
+        onPress={onBack}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+      >
         <Ionicons name="arrow-back" size={21} color={colors.ink} />
       </Pressable>
       <View style={styles.flex}>
@@ -5663,6 +5876,8 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
 
 function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const singleColumnCards = responsive.hasLargeText && responsive.effectiveWidth < 520;
   const businessFeatures: Array<{
     icon: keyof typeof Ionicons.glyphMap;
     title: string;
@@ -5694,7 +5909,12 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <View style={styles.enterprisePageHeader}>
-        <Pressable style={styles.mapPickerClose} onPress={onBack}>
+        <Pressable
+          style={styles.mapPickerClose}
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Ionicons name="arrow-back" size={21} color={colors.ink} />
         </Pressable>
         <View style={styles.flex}>
@@ -5713,7 +5933,10 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
       <SectionTitle title={copy.whatYouGet} />
       <View style={styles.enterpriseFeatureGrid}>
         {businessFeatures.map((feature) => (
-          <View key={feature.title} style={styles.enterpriseFeatureCard}>
+          <View
+            key={feature.title}
+            style={[styles.enterpriseFeatureCard, singleColumnCards && styles.responsiveSingleColumnCard]}
+          >
             <View style={styles.enterpriseFeatureIcon}>
               <Ionicons name={feature.icon} size={18} color={colors.customer} />
             </View>
@@ -5772,7 +5995,14 @@ function SavedAddressesSection({
                 <Text style={styles.savedAddressSubtitle}>{address.addressLine || address.address}</Text>
                 <Text style={styles.savedAddressMeta} numberOfLines={1}>{address.address}</Text>
               </View>
-              <Pressable style={styles.savedAddressDeleteButton} disabled={busy} onPress={() => onDeleteAddress(address.id)}>
+              <Pressable
+                style={styles.savedAddressDeleteButton}
+                disabled={busy}
+                onPress={() => onDeleteAddress(address.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${address.label}`}
+                accessibilityState={{ disabled: busy }}
+              >
                 <Ionicons name="trash-outline" size={17} color={colors.red} />
               </Pressable>
             </View>
@@ -5967,6 +6197,7 @@ function BottomTabs({
   activeOrder: boolean;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const { bottom: bottomInset } = useSafeAreaInsets();
   const tabs: Array<[Tab, keyof typeof Ionicons.glyphMap, string]> = [
     ['home', 'home', copy.homeTab],
@@ -5975,26 +6206,36 @@ function BottomTabs({
     ['account', 'person', copy.accountTab]
   ];
   return (
-    <View style={[styles.tabs, { height: 68 + bottomInset, paddingBottom: bottomInset }]}>
-      {tabs.map(([key, icon, label]) => {
-        const selected = active === key;
-        return (
-          <Pressable key={key} style={styles.tab} onPress={() => onChange(key)}>
-            <View>
-              <Ionicons name={icon} size={22} color={selected ? colors.customer : colors.muted} />
-              {key === 'orders' && activeOrder ? <View style={styles.tabDot} /> : null}
-            </View>
-            <Text style={[styles.tabText, selected && styles.tabTextActive]}>{label}</Text>
-          </Pressable>
-        );
-      })}
+    <View style={[styles.tabs, { height: responsive.tabBarHeight + bottomInset, paddingBottom: bottomInset }]}>
+      <View style={[styles.tabsInner, { maxWidth: Math.min(720, responsive.contentMaxWidth) }]}>
+        {tabs.map(([key, icon, label]) => {
+          const selected = active === key;
+          return (
+            <Pressable
+              key={key}
+              style={styles.tab}
+              onPress={() => onChange(key)}
+              accessibilityRole="tab"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+            >
+              <View>
+                <Ionicons name={icon} size={22} color={selected ? colors.customer : colors.muted} />
+                {key === 'orders' && activeOrder ? <View style={styles.tabDot} /> : null}
+              </View>
+              <Text numberOfLines={2} style={[styles.tabText, selected && styles.tabTextActive]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={styles.primaryButton} onPress={onPress}>
+    <Pressable style={[styles.primaryButton, responsive.stackActions && styles.buttonStacked]} onPress={onPress}>
       <Ionicons name={icon} size={17} color={colors.white} />
       <Text style={styles.primaryButtonText}>{title}</Text>
     </Pressable>
@@ -6002,8 +6243,9 @@ function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof ty
 }
 
 function SecondaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={styles.secondaryButton} onPress={onPress}>
+    <Pressable style={[styles.secondaryButton, responsive.stackActions && styles.buttonStacked]} onPress={onPress}>
       <Ionicons name={icon} size={17} color={colors.ink} />
       <Text style={styles.secondaryButtonText}>{title}</Text>
     </Pressable>
@@ -6146,19 +6388,22 @@ function OrderCard({
       </View>
 
       <View style={styles.orderCardFareRow}>
-        <View>
+        <View style={styles.orderCardVehicleArt}>
+          <VehicleMiniArt vehicle={order.vehicle} />
+        </View>
+        <View style={styles.orderCardFareCopy}>
           <Text style={styles.orderCardVehicle}>{order.vehicle.shortName}</Text>
           <Text style={styles.mutedSmall}>{order.distanceKm} km - {goodsLabel(language, order.goodsType)}</Text>
         </View>
         <Text style={styles.priceText}>{money(order.fare.total)}</Text>
       </View>
-      <View style={styles.orderMetaRow}>
-        <Text style={styles.orderMetaText}>{order.paymentMode.toUpperCase()}</Text>
-        <Text style={styles.orderMetaText}>{order.paymentStatus.toUpperCase()}</Text>
-        <Text style={styles.orderMetaText}>{order.etaMinutes} min {copy.eta}</Text>
-      </View>
       {actionTitle && onActionPress ? (
-        <Pressable style={styles.orderCardActionButton} onPress={onActionPress}>
+        <Pressable
+          style={styles.orderCardActionButton}
+          onPress={onActionPress}
+          accessibilityRole="button"
+          accessibilityLabel={actionTitle}
+        >
           <Ionicons name={actionIcon} size={15} color={colors.white} />
           <Text style={styles.orderCardActionText}>{actionTitle}</Text>
         </Pressable>
@@ -6200,10 +6445,12 @@ function OrderActionButton({
   tone?: 'default' | 'primary' | 'danger';
   onPress: () => void;
 }) {
+  const responsive = useResponsiveLayout();
   return (
     <Pressable
       style={[
         styles.orderActionButton,
+        responsive.stackActions && styles.buttonStacked,
         tone === 'primary' && styles.orderActionButtonPrimary,
         tone === 'danger' && styles.orderActionButtonDanger
       ]}
@@ -6243,6 +6490,11 @@ function MapPreview({
   partnerLocation?: Order['partnerLocation'];
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const mapHeight = Math.max(
+    responsive.isShort ? 170 : 200,
+    Math.min(responsive.isTablet ? 320 : 260, responsive.height * (responsive.isLandscape ? 0.46 : 0.28))
+  );
   const hasLiveLocation = liveTracking && typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
   const routePoints = [pickup, ...extraStops, drop]
@@ -6267,25 +6519,40 @@ function MapPreview({
     longitudeDelta: 0.05
   };
   const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const mapReadyRef = useRef(false);
+  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const fitKey = fitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|');
 
+  function fitMapToRoute() {
+    if (!canRenderNativeMap || !mapReadyRef.current || !mapRef.current || !fitCoordinates.length) return;
+    if (fitCoordinates.length === 1) {
+      mapRef.current.animateToRegion({ ...initialRegion, ...fitCoordinates[0] }, 250);
+      return;
+    }
+    mapRef.current.fitToCoordinates(fitCoordinates, {
+      edgePadding: { top: 58, right: 38, bottom: 58, left: 38 },
+      animated: true
+    });
+  }
+
   useEffect(() => {
-    if (!canRenderNativeMap || !mapRef.current || !fitCoordinates.length) return;
-    const timer = setTimeout(() => {
-      if (fitCoordinates.length === 1) {
-        mapRef.current?.animateToRegion({ ...initialRegion, ...fitCoordinates[0] }, 250);
-        return;
-      }
-      mapRef.current?.fitToCoordinates(fitCoordinates, {
-        edgePadding: { top: 58, right: 38, bottom: 58, left: 38 },
-        animated: true
-      });
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [canRenderNativeMap, fitKey]);
+    if (!mapReadyRef.current) return undefined;
+    const frame = requestAnimationFrame(fitMapToRoute);
+    return () => cancelAnimationFrame(frame);
+  }, [canRenderNativeMap, fitKey, mapHeight, mapSize.height, mapSize.width, responsive.width]);
 
   return (
-    <View style={styles.map}>
+    <View
+      style={[styles.map, { height: mapHeight }]}
+      onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        setMapSize((current) => (
+          Math.abs(current.width - width) < 1 && Math.abs(current.height - height) < 1
+            ? current
+            : { width, height }
+        ));
+      }}
+    >
       {canRenderNativeMap ? (
         <MapView
           ref={mapRef}
@@ -6295,6 +6562,10 @@ function MapPreview({
           rotateEnabled={false}
           pitchEnabled={false}
           toolbarEnabled={false}
+          onMapReady={() => {
+            mapReadyRef.current = true;
+            requestAnimationFrame(fitMapToRoute);
+          }}
         >
           {routePoints.length > 1 ? (
             <Polyline
@@ -6423,30 +6694,38 @@ function FareCard({ fare }: { fare: FareBreakup }) {
 }
 
 function FareRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  const responsive = useResponsiveLayout();
+  const stacked = responsive.isNarrow || responsive.hasLargeText;
   return (
-    <View style={styles.between}>
-      <Text style={[styles.fareLabel, bold && styles.bold]}>{label}</Text>
-      <Text style={[styles.fareValue, bold && styles.bold]}>{value}</Text>
+    <View style={[styles.between, stacked && styles.betweenStacked]}>
+      <Text style={[styles.fareLabel, stacked && styles.fareLabelStacked, bold && styles.bold]}>{label}</Text>
+      <Text style={[styles.fareValue, stacked && styles.fareValueStacked, bold && styles.bold]}>{value}</Text>
     </View>
   );
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
+  const responsive = useResponsiveLayout();
+  const stacked = responsive.isNarrow || responsive.hasLargeText;
   return (
-    <View style={styles.summaryRow}>
+    <View style={[styles.summaryRow, stacked && styles.summaryRowStacked]}>
       <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue} numberOfLines={1}>{value}</Text>
+      <Text style={[styles.summaryValue, stacked && styles.summaryValueStacked]} numberOfLines={stacked ? undefined : 2}>
+        {value}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
-  loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
+  shell: { flex: 1, backgroundColor: colors.white },
+  loginShell: { flex: 1, backgroundColor: colors.white },
   authKeyboard: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
   authScrollOtp: { paddingBottom: 24 },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
+  authResponsiveFrame: { width: '100%', alignSelf: 'center', flexGrow: 1 },
+  authResponsiveFrameLandscape: { flexDirection: 'row', alignItems: 'stretch' },
   loginHero: {
     minHeight: 360,
     backgroundColor: '#F1EDFF',
@@ -6454,6 +6733,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden'
   },
   loginHeroOtp: { minHeight: 230 },
+  loginHeroLandscape: { flexBasis: '44%', flexGrow: 0 },
   loginHeroImage: { width: '100%', height: '100%' },
   loginHeroWash: {
     position: 'absolute',
@@ -6484,6 +6764,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 30,
     overflow: 'hidden'
   },
+  authHeroLandscape: { flexBasis: '44%', flexGrow: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
   authTrackOne: {
     position: 'absolute',
     left: -34,
@@ -6522,6 +6803,7 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     paddingBottom: 26
   },
+  authFormLandscape: { flexBasis: '56%', flexGrow: 1, justifyContent: 'center' },
   authKicker: { color: colors.customer, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8 },
   authTitle: { color: colors.ink, fontSize: 32, fontWeight: '700', marginBottom: 6 },
   authFieldGroup: { marginBottom: 14 },
@@ -6554,13 +6836,13 @@ const styles = StyleSheet.create({
   loginConsent: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 4, rowGap: 2, marginTop: -3, marginBottom: 14, paddingHorizontal: 6 },
   loginConsentText: { color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15 },
   loginConsentLink: { color: colors.customer, fontSize: 10, fontWeight: '700', lineHeight: 15, textDecorationLine: 'underline' },
-  loginPolicyShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarHeight },
+  loginPolicyShell: { flex: 1, backgroundColor: colors.white },
   authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
   authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
   authDividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
-  loginFeatureRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
-  loginFeatureItem: { flex: 1, alignItems: 'center', gap: 4 },
+  loginFeatureRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 6 },
+  loginFeatureItem: { flexGrow: 1, flexShrink: 1, flexBasis: 64, minWidth: 60, alignItems: 'center', gap: 4 },
   loginFeatureIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   loginFeatureTitle: { color: colors.ink, fontSize: 9, fontWeight: '600', textAlign: 'center' },
   loginFeatureSubtitle: { color: colors.muted, fontSize: 8, fontWeight: '600', textAlign: 'center' },
@@ -6577,8 +6859,8 @@ const styles = StyleSheet.create({
   authNoticeText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600' },
   authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center', lineHeight: 16, marginTop: 4 },
   loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
-  brandLogo: { alignItems: 'center' },
-  brandLogoImage: { width: 258, height: 88 },
+  brandLogo: { width: '100%', alignItems: 'center', paddingHorizontal: 8 },
+  brandLogoImage: { width: '100%', maxWidth: 258, aspectRatio: 258 / 88 },
   brandMark: { width: 222, height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   motionStack: { position: 'absolute', left: 14, top: 36, gap: 8 },
   motionDot: { width: 10, height: 10, borderRadius: 5 },
@@ -6591,20 +6873,25 @@ const styles = StyleSheet.create({
   routeRoad: { position: 'absolute', left: 0, bottom: 6, width: 86, height: 15, borderRadius: 16, backgroundColor: colors.ink, transform: [{ rotate: '-24deg' }] },
   loginTitle: { color: colors.ink, fontSize: 31, fontWeight: '700', letterSpacing: 6, textAlign: 'center' },
   taglineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 6 },
-  taglineRule: { width: 50, height: 2, borderRadius: 2 },
-  tagline: { color: colors.muted, fontSize: 9, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
+  taglineRule: { flex: 1, maxWidth: 50, minWidth: 16, height: 2, borderRadius: 2 },
+  tagline: { flexShrink: 1, color: colors.muted, fontSize: 9, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
   loginSubtitle: { color: colors.muted, fontSize: 14, fontWeight: '500', marginBottom: 22 },
   loginError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
     backgroundColor: colors.customer,
-    paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 22,
+    paddingBottom: 22
+  },
+  appHeaderInner: {
+    width: '100%',
+    alignSelf: 'center',
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between'
   },
+  appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
   eyebrow: { color: '#DDD6FE', fontSize: 11, fontWeight: '600', letterSpacing: 1 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
   headerTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
@@ -6617,7 +6904,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   avatarText: { color: colors.white, fontWeight: '600' },
-  content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
+  content: { flex: 1, width: '100%', alignSelf: 'center', marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
   homeContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F8FAFC' },
   homeShell: { flex: 1, backgroundColor: '#F8FAFC', overflow: 'hidden' },
   homeMapPattern: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.55 },
@@ -6625,7 +6912,7 @@ const styles = StyleSheet.create({
   homePatternRoadOne: { left: -56, right: 16, top: 118, transform: [{ rotate: '-31deg' }] },
   homePatternRoadTwo: { left: 98, right: -84, top: 220, transform: [{ rotate: '34deg' }] },
   homePatternRoadThree: { left: -76, right: -24, top: 384, transform: [{ rotate: '18deg' }] },
-  homeScroll: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 102 },
+  homeScroll: { width: '100%', alignSelf: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 },
   homeLocationCard: {
     minHeight: 72,
     borderRadius: 16,
@@ -6650,8 +6937,9 @@ const styles = StyleSheet.create({
   homeLocationSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   pickupSearchShell: { flex: 1, backgroundColor: '#F8FAFC' },
   pickupSearchKeyboard: { flex: 1 },
-  pickupSearchTopBar: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight + 6 : 6 },
-  pickupSearchBackButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  pickupSearchContent: { flex: 1, width: '100%', alignSelf: 'center' },
+  pickupSearchTopBar: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, paddingTop: 6 },
+  pickupSearchBackButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   pickupSearchCard: {
     marginHorizontal: 8,
     borderRadius: 12,
@@ -6679,8 +6967,12 @@ const styles = StyleSheet.create({
   pickupSearchResultTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   pickupSearchResultSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   homeServiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  responsiveSingleColumnCard: { flexBasis: '100%', minWidth: '100%', width: '100%' },
   homeServiceCard: {
-    width: '48%',
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 160,
+    minWidth: 150,
     minHeight: 142,
     borderRadius: 16,
     backgroundColor: colors.white,
@@ -6703,25 +6995,8 @@ const styles = StyleSheet.create({
   homeServiceFooter: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   homeServiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   homeServiceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 3 },
-  homeRewardCard: {
-    minHeight: 64,
-    borderRadius: 16,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 13,
-    marginTop: 18
-  },
-  homeRewardIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center' },
-  homeRewardTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
-  homeRewardText: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   homeAnnouncementHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 10 },
   homeAnnouncementTitle: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-  homeSeeAllButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  homeSeeAllText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   homeAnnouncementCarousel: { borderRadius: 16, overflow: 'hidden' },
   homeAnnouncementCard: {
     minHeight: 72,
@@ -6753,11 +7028,11 @@ const styles = StyleSheet.create({
     gap: 10
   },
   homeActiveIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  homeActiveTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 3 },
-  homeActiveOrderNo: { color: colors.ink, fontSize: 12, fontWeight: '600' },
+  homeActiveTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 3 },
+  homeActiveOrderNo: { flexShrink: 1, color: colors.ink, fontSize: 12, fontWeight: '600' },
   homeActiveRoute: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 2 },
   homeActiveVehicle: { color: colors.muted, fontSize: 11, fontWeight: '600' },
-  scroll: { padding: 16, paddingBottom: 96 },
+  scroll: { width: '100%', maxWidth: 1040, alignSelf: 'center', padding: 16, paddingBottom: 28 },
   customerHero: { backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 14 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
   heroTitle: { color: colors.ink, fontSize: 22, fontWeight: '700', lineHeight: 27, maxWidth: 230 },
@@ -6767,9 +7042,9 @@ const styles = StyleSheet.create({
   heroLabel: { fontSize: 11, color: colors.muted, fontWeight: '600', letterSpacing: 1 },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.faint, borderRadius: 14, padding: 14 },
   searchText: { flex: 1, color: colors.muted, fontSize: 14 },
-  row: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
   serviceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  serviceCard: { width: '48%', minHeight: 112, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, gap: 6 },
+  serviceCard: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 150, minHeight: 112, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, gap: 6 },
   serviceIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   serviceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   serviceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15 },
@@ -6816,12 +7091,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 2
   },
-  liveOrderHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 12 },
+  liveOrderHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 11, marginBottom: 12 },
   liveOrderIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   liveOrderTitle: { color: colors.ink, fontSize: 16, fontWeight: '600' },
   liveOrderNo: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
-  orderDetailHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  orderDetailClose: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  orderDetailHeaderActions: { maxWidth: '100%', marginLeft: 'auto', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
+  orderDetailClose: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   liveRouteCard: { borderRadius: 15, backgroundColor: '#F8FAFC', padding: 12, marginBottom: 12 },
   liveRouteLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
   liveRouteDot: { width: 10, height: 10, borderRadius: 5 },
@@ -6830,8 +7105,8 @@ const styles = StyleSheet.create({
   liveRouteDropDot: { backgroundColor: colors.green },
   liveRouteLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
   liveRouteText: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
-  liveOrderMetrics: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  liveOrderMetric: { flex: 1, borderRadius: 13, backgroundColor: '#F8FAFC', padding: 10 },
+  liveOrderMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  liveOrderMetric: { flexGrow: 1, flexShrink: 1, flexBasis: 96, minWidth: 88, borderRadius: 13, backgroundColor: '#F8FAFC', padding: 10 },
   liveOrderMetricValue: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   liveOrderMetricLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
   activeOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
@@ -6843,24 +7118,24 @@ const styles = StyleSheet.create({
   assignedPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
   searchingPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
   searchingPartnerText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
-  compactOtpRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  compactOtpBox: { flex: 1, backgroundColor: colors.customerLight, borderRadius: 14, padding: 11, alignItems: 'center' },
+  compactOtpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  compactOtpBox: { flexGrow: 1, flexShrink: 1, flexBasis: 120, minWidth: 110, backgroundColor: colors.customerLight, borderRadius: 14, padding: 11, alignItems: 'center' },
   compactOtpText: { color: colors.customer, fontSize: 18, fontWeight: '700', marginTop: 2 },
   ordersOtpPanel: { borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginTop: 12 },
   ordersOtpTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   ordersOtpTitle: { color: colors.customer, fontSize: 13, fontWeight: '600' },
-  ordersOtpRow: { flexDirection: 'row', gap: 10 },
-  orderActionBar: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  orderActionButton: { flex: 1, minHeight: 40, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  ordersOtpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  orderActionBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  orderActionButton: { flexGrow: 1, flexShrink: 1, flexBasis: 96, minWidth: 92, minHeight: 44, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
   orderActionButtonPrimary: { backgroundColor: colors.customer },
   orderActionButtonDanger: { backgroundColor: '#FEF2F2' },
-  orderActionButtonText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
+  orderActionButtonText: { flexShrink: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center' },
   orderActionButtonTextPrimary: { color: colors.white },
   orderActionButtonTextDanger: { color: colors.red },
   timelinePanel: { marginBottom: 4 },
   timelinePanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   noActiveOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 8 },
-  historyHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  historyHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
   orderCardSelected: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   activeOrderSwitchRow: { gap: 10, paddingBottom: 10 },
@@ -6870,14 +7145,17 @@ const styles = StyleSheet.create({
   activeOrderSwitchTitleActive: { color: colors.customer },
   activeOrderSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 5 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
+  betweenStacked: { flexDirection: 'column', alignItems: 'flex-start', gap: 3 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '600' },
-  orderCardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  orderCardHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
   orderCardDate: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
   orderCardRouteBox: { borderRadius: 14, backgroundColor: '#F8FAFC', padding: 10, marginBottom: 10 },
-  orderCardFareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
+  orderCardFareRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
+  orderCardVehicleArt: { width: 58, height: 50, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  orderCardFareCopy: { flexGrow: 1, flexShrink: 1, minWidth: 140 },
   orderCardVehicle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
-  badge: { backgroundColor: colors.customerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
-  badgeText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
+  badge: { maxWidth: '100%', flexShrink: 1, backgroundColor: colors.customerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
+  badgeText: { flexShrink: 1, color: colors.customer, fontSize: 11, fontWeight: '600', textAlign: 'center' },
   route: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
   routeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.customer },
   routeDotStop: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.amber },
@@ -6887,8 +7165,8 @@ const styles = StyleSheet.create({
   mutedSmall: { color: colors.muted, fontSize: 12 },
   emptyHistoryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 18, alignItems: 'center', marginBottom: 12 },
   priceText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
-  bookingStepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
-  bookingStepBack: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  bookingStepHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 10 },
+  bookingStepBack: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   bookingStepTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
   bookingStepSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   bookingStepCount: { color: colors.customer, fontSize: 12, fontWeight: '600', backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 9 },
@@ -6904,7 +7182,7 @@ const styles = StyleSheet.create({
   serviceOptionCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   serviceOptionTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   vehicleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  vehicleCard: { width: '48%', borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
+  vehicleCard: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 150, borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
   vehicleCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   vehicleCardSuggested: { borderColor: colors.green, backgroundColor: colors.partnerLight },
   vehicleCardDisabled: { opacity: 0.55, backgroundColor: colors.faint },
@@ -6942,9 +7220,11 @@ const styles = StyleSheet.create({
   locationError: { color: colors.red, fontSize: 11, fontWeight: '600', marginTop: 7 },
   mapSelectButton: { alignSelf: 'flex-start', minHeight: 36, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, marginTop: 8 },
   mapSelectText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
-  mapPickerShell: { flex: 1, backgroundColor: colors.white, paddingHorizontal: 16, paddingBottom: 16, paddingTop: Platform.OS === 'android' ? androidStatusBarHeight + 16 : 16 },
+  mapPickerShell: { flex: 1, backgroundColor: colors.white, paddingHorizontal: 16, paddingBottom: 16, paddingTop: 16 },
+  mapPickerResponsiveScroll: { flex: 1 },
+  mapPickerResponsiveContent: { flexGrow: 1, width: '100%', alignSelf: 'center' },
   mapPickerHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  mapPickerClose: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  mapPickerClose: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   mapPickerTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
   mapPickerSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   mapPickerSearchShell: { minHeight: 52, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
@@ -6976,7 +7256,7 @@ const styles = StyleSheet.create({
   mapPickerBottomPanel: { gap: 10, paddingTop: 2 },
   mapPickerCurrentButton: { minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
   mapPickerCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
-  mapPickerActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  mapPickerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
   savedAddressStrip: { marginTop: -4, marginBottom: 12 },
   savedAddressStripTitle: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8 },
   savedAddressChips: { gap: 10, paddingRight: 16 },
@@ -7025,9 +7305,10 @@ const styles = StyleSheet.create({
   contactPageHeader: { marginBottom: 12 },
   contactPageActions: { marginTop: 4 },
   contactPageFooter: { backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+  contactResponsiveFooterContent: { width: '100%', alignSelf: 'center', gap: 10 },
   contactSheetOverlay: { flex: 1, justifyContent: 'flex-end' },
   contactSheetBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
-  contactSheet: { maxHeight: '92%', backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, paddingBottom: Platform.OS === 'android' ? 20 : 18 },
+  contactSheet: { width: '100%', maxWidth: 640, maxHeight: '92%', alignSelf: 'center', backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, paddingBottom: Platform.OS === 'android' ? 20 : 18 },
   contactSheetScroll: { paddingBottom: 2 },
   contactSheetHandle: { width: 44, height: 4, borderRadius: 4, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 12 },
   contactSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
@@ -7048,16 +7329,18 @@ const styles = StyleSheet.create({
   contactMapCanvas: { height: 178, borderRadius: 15, backgroundColor: '#EAF5EF', overflow: 'hidden', marginBottom: 10 },
   contactMapHeroCanvas: { height: 410, backgroundColor: '#EAF5EF', overflow: 'hidden' },
   contactMapHeroCanvasCompact: { height: 150 },
-  contactMapHeroCanvasExpanded: { flex: 1, height: '100%', minHeight: 360 },
+  contactMapHeroCanvasExpanded: { flex: 1, height: '100%', minHeight: 180 },
   contactMapRealMap: { flex: 1 },
   contactMapHint: { position: 'absolute', left: 12, right: 12, bottom: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.94)', paddingVertical: 7, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHint: { position: 'absolute', left: 70, right: 70, top: 84, borderRadius: 8, backgroundColor: 'rgba(17,24,39,0.88)', paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '600' },
-  contactMapBackButton: { position: 'absolute', left: 10, top: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
-  contactMapExpandButton: { position: 'absolute', right: 12, bottom: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapBackButton: { position: 'absolute', left: 10, top: 8, width: 48, height: 48, borderRadius: 24, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapExpandButton: { position: 'absolute', right: 10, bottom: 8, width: 48, height: 48, borderRadius: 24, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   contactMapPickerHint: { left: 60, right: 60, bottom: 68 },
-  contactMapTitlePill: { position: 'absolute', alignSelf: 'center', top: 90, minHeight: 31, borderRadius: 5, backgroundColor: 'rgba(17,24,39,0.88)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
-  contactMapTitleText: { color: colors.white, fontSize: 11, fontWeight: '600' },
+  contactMapTitlePill: { position: 'absolute', left: 60, right: 60, top: 90, minHeight: 31, borderRadius: 5, backgroundColor: 'rgba(17,24,39,0.88)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
+  contactMapTitlePillShort: { top: 12, left: 68, right: 68 },
+  contactMapTitlePillCompact: { top: 62 },
+  contactMapTitleText: { color: colors.white, fontSize: 11, fontWeight: '600', textAlign: 'center' },
   contactLocationPanel: { borderTopLeftRadius: 22, borderTopRightRadius: 22, backgroundColor: colors.white, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, marginTop: -18, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 4 },
   contactExactFooter: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   contactUseCurrentButton: { flex: 1, minHeight: 40, borderRadius: 12, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
@@ -7067,33 +7350,33 @@ const styles = StyleSheet.create({
   contactAddressHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
   contactAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   contactAddressSubtitle: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: '500', marginTop: 3 },
-  contactChangeButton: { minWidth: 64, minHeight: 34, borderRadius: 5, borderWidth: 1, borderColor: '#D8D3C6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.white },
+  contactChangeButton: { minWidth: 64, minHeight: 48, borderRadius: 8, borderWidth: 1, borderColor: '#D8D3C6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.white },
   contactChangeButtonText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactFormField: { marginBottom: 8 },
   contactFormLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginBottom: 3 },
   contactFormInputShell: { minHeight: 39, borderWidth: 1, borderColor: '#DDE3EC', borderRadius: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10 },
   contactFormInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 8 },
-  contactMobileCheckRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
+  contactMobileCheckRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
   contactMobileCheckText: { flex: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
   contactSaveAsLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginBottom: 8 },
-  contactTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  contactTypeChip: { minHeight: 36, minWidth: 75, borderRadius: 6, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
+  contactTypeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 12 },
+  contactTypeChip: { flexGrow: 1, flexShrink: 1, flexBasis: 82, minHeight: 48, minWidth: 75, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
   contactTypeChipActive: { borderColor: '#93C5FD', backgroundColor: colors.customerLight },
   contactTypeChipText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
   contactTypeChipTextActive: { color: colors.customer },
   contactConfirmButton: { minHeight: 48, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
   contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '600' },
-  contactExpandedMapFooter: { flexShrink: 0, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, gap: 10 },
+  contactExpandedMapFooter: { flexShrink: 1, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, gap: 10 },
   contactExpandedLocationRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 10 },
   contactExpandedLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   contactExpandedLocationSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 2 },
   contactExpandedMapError: { color: colors.red, fontSize: 12, fontWeight: '600' },
   contactExpandedConfirmButton: { minHeight: 50, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
   contactExpandedConfirmText: { color: colors.white, fontSize: 14, fontWeight: '700' },
-  contactSheetActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 },
+  contactSheetActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 4 },
   sameAsUserPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.faint, padding: 12, marginBottom: 12 },
   sameAsUserTitle: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 9 },
-  sameAsUserActions: { flexDirection: 'row', gap: 8 },
+  sameAsUserActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   sameAsUserButton: { flex: 1, minHeight: 38, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
   sameAsUserButtonAlt: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
   sameAsUserButtonText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
@@ -7142,30 +7425,35 @@ const styles = StyleSheet.create({
   goodsRulesBulletRestricted: { backgroundColor: colors.red },
   goodsRulesItemText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '500', lineHeight: 17 },
   routeReviewCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
-  routeReviewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  routeReviewHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
   changeRouteButton: { minHeight: 34, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9 },
   changeRouteText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   routeReviewLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7 },
   routeReviewDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.customer },
   routeReviewDotDrop: { backgroundColor: colors.green },
   routeReviewTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
-  vehicleFareCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 16, backgroundColor: colors.customerLight, padding: 14, marginBottom: 14 },
+  vehicleFareCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 16, backgroundColor: colors.customerLight, padding: 14, marginBottom: 14 },
   vehicleFareIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  vehicleFareCopy: { flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 130 },
   vehicleFareMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2, marginBottom: 2 },
   vehicleFarePrice: { color: colors.ink, fontSize: 18, fontWeight: '700' },
+  vehicleFarePriceStacked: { width: '100%', paddingLeft: 60, textAlign: 'left' },
   vehicleRoutePanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   vehicleRouteActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, marginTop: 9, paddingTop: 10 },
   vehicleRouteAction: { flex: 1, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
   vehicleRouteActionText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   vehicleFareList: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', marginBottom: 14 },
-  vehicleFareOption: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
+  vehicleFareOption: { minHeight: 78, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
+  vehicleFareOptionSuggested: { minHeight: 96, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderRadius: 16, margin: 8 },
   vehicleFareOptionSelected: { minHeight: 104, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderRadius: 16, margin: 8 },
   vehicleFareOptionDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   vehicleFareOptionIcon: { width: 52, height: 44, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  vehicleFareOptionCopy: { flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 130 },
   vehicleFareOptionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
   vehicleFareOptionTitle: { color: colors.ink, fontSize: 15, fontWeight: '600' },
   vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 3 },
   vehicleFareOptionPriceWrap: { alignItems: 'flex-end', gap: 4 },
+  vehicleFareOptionPriceWrapStacked: { flexBasis: '100%', alignItems: 'flex-start', paddingLeft: 64 },
   vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   vehicleNewBadge: { borderRadius: 7, backgroundColor: '#F97316', paddingHorizontal: 6, paddingVertical: 2 },
   vehicleNewBadgeText: { color: colors.white, fontSize: 9, fontWeight: '600' },
@@ -7178,8 +7466,10 @@ const styles = StyleSheet.create({
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginBottom: 8 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },
-  summaryLabel: { color: colors.muted, fontSize: 12, fontWeight: '600' },
-  summaryValue: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  summaryRowStacked: { flexDirection: 'column', alignItems: 'flex-start', gap: 3 },
+  summaryLabel: { flexShrink: 1, color: colors.muted, fontSize: 12, fontWeight: '600' },
+  summaryValue: { flex: 1, minWidth: 0, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  summaryValueStacked: { flex: 0, width: '100%', textAlign: 'left' },
   payRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 14, marginBottom: 10 },
   payRowActive: { backgroundColor: colors.customerLight, borderColor: colors.customer },
   payRowDisabled: { opacity: 0.55, backgroundColor: colors.faint },
@@ -7189,24 +7479,24 @@ const styles = StyleSheet.create({
   mapNativeView: { flex: 1 },
   mapRoad: { position: 'absolute', top: 72, left: -20, right: -20, height: 20, backgroundColor: '#DDD6FE', transform: [{ rotate: '-8deg' }] },
   mapRoadTwo: { top: 30, transform: [{ rotate: '12deg' }], opacity: 0.7 },
-  mapRoute: { position: 'absolute', left: 72, top: 88, width: 190, height: 4, borderRadius: 2, backgroundColor: colors.customer },
-  mapPinA: { position: 'absolute', left: 64, top: 78, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.customer },
-  mapPinB: { position: 'absolute', left: 248, top: 78, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.green },
-  mapStopPin: { position: 'absolute', left: 128, top: 74, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.white },
-  mapStopPinTwo: { left: 172, top: 86 },
-  mapStopPinThree: { left: 208, top: 68 },
+  mapRoute: { position: 'absolute', left: '20%', right: '20%', top: '48%', height: 4, borderRadius: 2, backgroundColor: colors.customer },
+  mapPinA: { position: 'absolute', left: '18%', top: '43%', width: 18, height: 18, borderRadius: 9, backgroundColor: colors.customer },
+  mapPinB: { position: 'absolute', right: '18%', top: '43%', width: 18, height: 18, borderRadius: 9, backgroundColor: colors.green },
+  mapStopPin: { position: 'absolute', left: '38%', top: '41%', width: 24, height: 24, borderRadius: 12, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.white },
+  mapStopPinTwo: { left: '52%', top: '49%' },
+  mapStopPinThree: { left: '66%', top: '38%' },
   mapStopText: { color: colors.white, fontSize: 10, fontWeight: '600' },
-  vehiclePulse: { position: 'absolute', left: 144, top: 68, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(124,58,237,0.14)' },
+  vehiclePulse: { position: 'absolute', left: '50%', top: '40%', width: 42, height: 42, marginLeft: -21, borderRadius: 21, backgroundColor: 'rgba(124,58,237,0.14)' },
   vehiclePulseLive: { backgroundColor: 'rgba(5,150,105,0.16)' },
-  vehicleMarker: { position: 'absolute', left: 153, top: 77, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  vehicleMarker: { position: 'absolute', left: '50%', top: '45%', width: 24, height: 24, marginLeft: -12, borderRadius: 12, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   vehicleMarkerLive: { backgroundColor: colors.green },
-  etaChip: { position: 'absolute', right: 12, top: 12, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  etaChip: { position: 'absolute', right: 12, top: 12, maxWidth: '42%', backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   etaValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
   etaLabel: { color: colors.muted, fontSize: 9, fontWeight: '600' },
-  liveChip: { position: 'absolute', left: 12, top: 12, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  liveChip: { position: 'absolute', left: 12, top: 12, maxWidth: '48%', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },
   liveDotOn: { backgroundColor: colors.green },
-  liveText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
+  liveText: { flexShrink: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
   mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '600', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },
   card: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
@@ -7215,7 +7505,7 @@ const styles = StyleSheet.create({
   driverAvatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   driverAvatarText: { color: colors.white, fontWeight: '600' },
   rating: { color: '#92400E', fontWeight: '600', backgroundColor: '#FEF3C7', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10 },
-  flex: { flex: 1 },
+  flex: { flex: 1, minWidth: 0 },
   timelineItem: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
   timelineDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   timelineDone: { backgroundColor: colors.green },
@@ -7225,18 +7515,18 @@ const styles = StyleSheet.create({
   otpCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   otpBox: { flex: 1, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, alignItems: 'center' },
   otpText: { color: colors.customer, fontSize: 22, fontWeight: '700', marginTop: 4 },
-  fareLabel: { color: colors.customer, fontSize: 13 },
-  fareValue: { color: colors.customer, fontSize: 13, fontWeight: '500' },
+  fareLabel: { flex: 1, minWidth: 0, color: colors.customer, fontSize: 13 },
+  fareLabelStacked: { flex: 0, width: '100%' },
+  fareValue: { flexShrink: 0, color: colors.customer, fontSize: 13, fontWeight: '500', textAlign: 'right' },
+  fareValueStacked: { width: '100%', textAlign: 'left' },
   farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2, marginBottom: 8 },
-  orderMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
-  orderMetaText: { color: colors.muted, fontSize: 10, fontWeight: '600', backgroundColor: colors.faint, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8 },
-  orderCardActionButton: { minHeight: 38, borderRadius: 13, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
+  orderCardActionButton: { minHeight: 48, borderRadius: 13, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6, paddingHorizontal: 12 },
   orderCardActionText: { color: colors.white, fontSize: 12, fontWeight: '600' },
   bold: { fontWeight: '600', fontSize: 15 },
   divider: { height: 1, backgroundColor: '#C4B5FD', marginVertical: 8 },
   walletCard: { borderRadius: 18, padding: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', gap: 10 },
   walletSurface: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14, gap: 13 },
-  walletHero: { borderRadius: 14, padding: 15, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  walletHero: { borderRadius: 14, padding: 15, backgroundColor: colors.customer, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 12 },
   walletHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', marginTop: 4, lineHeight: 17 },
   walletHeroIcon: { width: 46, height: 46, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
   walletBalanceBlock: { marginLeft: 'auto', alignItems: 'flex-end' },
@@ -7246,8 +7536,8 @@ const styles = StyleSheet.create({
   walletTopupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   walletSecureBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.partnerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 8 },
   walletSecureText: { color: colors.green, fontSize: 10, fontWeight: '600' },
-  walletAmountRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
-  walletAmountChip: { flex: 1, minHeight: 40, borderWidth: 1, borderColor: colors.line, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
+  walletAmountRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 2 },
+  walletAmountChip: { flexGrow: 1, flexShrink: 1, flexBasis: 72, minWidth: 68, minHeight: 40, borderWidth: 1, borderColor: colors.line, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
   walletAmountChipActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   walletAmountChipText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   walletAmountChipTextActive: { color: colors.customer },
@@ -7260,10 +7550,10 @@ const styles = StyleSheet.create({
   walletCoinsIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   walletCoinsEyebrow: { color: colors.ink, fontSize: 15, fontWeight: '600', textTransform: 'uppercase' },
   walletCoinsCaption: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 2 },
-  walletCoinsBalanceRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  walletCoinsBalanceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14, paddingVertical: 16 },
   walletCoinsValue: { color: colors.customer, fontSize: 36, fontWeight: '700', lineHeight: 40 },
   walletCoinsAvailable: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
-  walletCoinsDiscountBox: { flex: 1, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
+  walletCoinsDiscountBox: { flexGrow: 1, flexShrink: 1, flexBasis: 180, minWidth: 160, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
   walletCoinsDiscountValue: { color: colors.green, fontSize: 14, fontWeight: '600' },
   walletCoinsDiscount: { color: colors.green, fontSize: 10, fontWeight: '600', lineHeight: 14, marginTop: 1 },
   walletCouponButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
@@ -7272,6 +7562,9 @@ const styles = StyleSheet.create({
   walletCouponOverlay: { flex: 1, justifyContent: 'flex-end' },
   walletCouponBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
   walletCouponSheet: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     backgroundColor: colors.white,
@@ -7296,7 +7589,7 @@ const styles = StyleSheet.create({
   walletCouponInput: { color: colors.ink, fontSize: 16, fontWeight: '700', letterSpacing: 1, paddingVertical: 11 },
   walletCouponSuccess: { color: colors.green, fontSize: 12, fontWeight: '600', marginBottom: 12 },
   walletCouponError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 12 },
-  walletCouponActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 2 },
+  walletCouponActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 2 },
   walletCouponCancelButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   walletCouponCancelText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   walletCouponApplyButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
@@ -7330,17 +7623,17 @@ const styles = StyleSheet.create({
   accountHero: { position: 'relative', borderRadius: 18, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
   accountHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
   accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  accountIdentityCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.94)', padding: 12 },
+  accountIdentityCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.94)', padding: 12 },
   accountAvatar: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarSmall: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '600' },
   accountName: { color: colors.ink, fontSize: 18, fontWeight: '600' },
   accountSubtext: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
-  accountVerifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
-  accountVerifiedText: { color: colors.green, fontSize: 10, fontWeight: '600' },
-  accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  accountStatsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  accountStatBox: { flex: 1, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
+  accountVerifiedBadge: { maxWidth: '100%', flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
+  accountVerifiedText: { flexShrink: 1, color: colors.green, fontSize: 10, fontWeight: '600' },
+  accountEditButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  accountStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  accountStatBox: { flexGrow: 1, flexShrink: 1, flexBasis: 92, minWidth: 84, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
   accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
   accountStatLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   enterpriseCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 15, marginTop: 14 },
@@ -7354,7 +7647,7 @@ const styles = StyleSheet.create({
   enterpriseHeroTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
   enterpriseHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', lineHeight: 18 },
   enterpriseFeatureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  enterpriseFeatureCard: { width: '48%', minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
+  enterpriseFeatureCard: { flexGrow: 1, flexShrink: 1, flexBasis: 160, minWidth: 150, minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
   enterpriseFeatureIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   enterpriseFeatureTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   enterpriseFeatureText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 4 },
@@ -7369,14 +7662,14 @@ const styles = StyleSheet.create({
   savedAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   savedAddressSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   savedAddressMeta: { color: colors.muted, fontSize: 10, fontWeight: '500', marginTop: 3 },
-  savedAddressDeleteButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
+  savedAddressDeleteButton: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
   savedAddressEmpty: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16, alignItems: 'center', gap: 5 },
   savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   accountDetailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   accountDetailTitle: { color: colors.ink, fontSize: 21, fontWeight: '700', marginTop: 2 },
   accountDetailSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   accountDetailCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
-  accountProfilePreview: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 12, marginBottom: 14 },
+  accountProfilePreview: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 12, marginBottom: 14 },
   accountInfoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginBottom: 12 },
   accountInfoText: { flex: 1, color: colors.customer, fontSize: 12, fontWeight: '600', lineHeight: 17 },
   accountWalletHero: { alignItems: 'center', borderRadius: 22, backgroundColor: colors.customer, padding: 18, marginBottom: 14 },
@@ -7398,7 +7691,7 @@ const styles = StyleSheet.create({
   languageSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
   supportActionRow: { minHeight: 58, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
   accountEditCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginTop: 12 },
-  accountEditActions: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 },
+  accountEditActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 4 },
   accountEditError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 10 },
   accountDangerZone: { marginTop: 6 },
   profileHero: { alignItems: 'center', paddingVertical: 18 },
@@ -7416,20 +7709,22 @@ const styles = StyleSheet.create({
   policyDetailSection: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
   policyHeading: { color: colors.customer, fontSize: 13, fontWeight: '600', marginBottom: 4 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
-  tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white },
+  tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.white },
+  tabsInner: { flex: 1, width: '100%', alignSelf: 'center', flexDirection: 'row' },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  tabText: { color: colors.muted, fontSize: 11, fontWeight: '500' },
+  tabText: { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center' },
   tabTextActive: { color: colors.customer },
   tabDot: { position: 'absolute', right: -3, top: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
-  primaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
-  primaryButtonText: { color: colors.white, fontWeight: '600' },
-  secondaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
-  secondaryButtonText: { color: colors.ink, fontWeight: '600' },
+  primaryButton: { flex: 1, minWidth: 120, minHeight: 48, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  primaryButtonText: { flexShrink: 1, color: colors.white, fontWeight: '600', textAlign: 'center' },
+  secondaryButton: { flex: 1, minWidth: 120, minHeight: 48, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  secondaryButtonText: { flexShrink: 1, color: colors.ink, fontWeight: '600', textAlign: 'center' },
+  buttonStacked: { flex: 0, width: '100%', maxWidth: '100%', minWidth: 0, alignSelf: 'stretch' },
   deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 10 },
   deleteAccountButtonText: { color: colors.red, fontWeight: '600' },
   logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
   logoutButtonText: { color: colors.ink, fontWeight: '600' },
-  toast: { position: 'absolute', left: 16, right: 16, bottom: 88, backgroundColor: colors.ink, borderRadius: 14, padding: 14 },
+  toast: { position: 'absolute', bottom: 88, maxWidth: 560, backgroundColor: colors.ink, borderRadius: 14, padding: 14 },
   toastText: { color: colors.white, fontWeight: '600' },
   empty: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyTitle: { color: colors.ink, fontSize: 18, fontWeight: '600' },

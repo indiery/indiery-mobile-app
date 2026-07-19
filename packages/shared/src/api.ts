@@ -186,6 +186,13 @@ export class IndieryApi {
     });
   }
 
+  createTrackingLink(orderId: string) {
+    return this.request<{ trackingPath: string }>(`/customer/orders/${orderId}/tracking-link`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  }
+
   applyCoupon(code: string) {
     return this.request<{ user: UserProfile; addedCoins: number; alreadyApplied?: boolean }>('/customer/wallet/coupon', {
       method: 'POST',

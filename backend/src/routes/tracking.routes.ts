@@ -1,6 +1,13 @@
+import crypto from 'crypto';
 import { Router } from 'express';
 import { asyncRoute } from '../middleware/error';
-import { Order } from '../models/Order';
+import { Order, type OrderDocument } from '../models/Order';
+import {
+  renderLiveTrackingPage,
+  trackingContentSecurityPolicy,
+  type PublicTrackingState
+} from '../services/tracking-page.service';
+import { verifyTrackingToken } from '../services/tracking-link.service';
 
 export const trackingRouter = Router();
 
@@ -15,23 +22,6 @@ const statusLabels: Record<string, string> = {
   cancelled: 'Cancelled'
 };
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function formatCountdown(targetAt: number) {
-  const remaining = Math.max(0, targetAt - Date.now());
-  const totalSeconds = Math.ceil(remaining / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
 function orderTimelineTime(order: { timeline?: Array<{ key?: string; at?: Date | string | null }> }, key: string) {
   const at = order.timeline?.find((item) => item.key === key)?.at;
   if (!at) return undefined;
@@ -39,72 +29,161 @@ function orderTimelineTime(order: { timeline?: Array<{ key?: string; at?: Date |
   return Number.isNaN(time) ? undefined : time;
 }
 
-trackingRouter.get(
-  '/track/:orderNo',
-  asyncRoute(async (req, res) => {
-    const order = await Order.findOne({ orderNo: String(req.params.orderNo).toUpperCase() })
-      .populate('vehicle')
-      .populate('partner');
+function validCoordinate(value: unknown, minimum: number, maximum: number) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
+    ? value
+    : undefined;
+}
 
+function publicPoint(point: {
+  label: string;
+  address: string;
+  lat?: number | null;
+  lng?: number | null;
+}) {
+  const lat = validCoordinate(point.lat, -90, 90);
+  const lng = validCoordinate(point.lng, -180, 180);
+  return {
+    label: point.label,
+    ...(lat !== undefined && lng !== undefined ? { lat, lng } : {})
+  };
+}
+
+function publicTrackingState(order: OrderDocument, routePath?: PublicTrackingState['routePath']): PublicTrackingState {
+  const vehicle = order.vehicle as unknown as { shortName?: string; name?: string };
+  const partner = order.partner as unknown as {
+    name?: string;
+    partnerProfile?: { vehicleNumber?: string };
+  } | undefined;
+  const active = !['delivered', 'cancelled'].includes(order.status);
+  const timerCanStart = ['picked_up', 'in_transit'].includes(order.status);
+  const pickedUpAt = orderTimelineTime(order, 'picked_up');
+  const targetAt = timerCanStart && pickedUpAt ? pickedUpAt + order.etaMinutes * 60_000 : undefined;
+  const driverLat = active ? validCoordinate(order.partnerLocation?.lat, -90, 90) : undefined;
+  const driverLng = active ? validCoordinate(order.partnerLocation?.lng, -180, 180) : undefined;
+  const heading = validCoordinate(order.partnerLocation?.heading, 0, 360);
+
+  return {
+    orderNo: order.orderNo,
+    status: order.status,
+    statusLabel: statusLabels[order.status] || order.status,
+    active,
+    serverTime: new Date().toISOString(),
+    updatedAt: new Date(order.updatedAt).toISOString(),
+    etaMinutes: order.etaMinutes,
+    etaTargetAt: targetAt ? new Date(targetAt).toISOString() : undefined,
+    pickup: publicPoint(order.pickup),
+    extraStops: (order.extraStops ?? []).map(publicPoint),
+    drop: publicPoint(order.drop),
+    routePath,
+    vehicle: {
+      name: vehicle?.shortName || vehicle?.name || 'Vehicle'
+    },
+    goods: {
+      type: order.goodsType,
+      weightKg: order.weightKg,
+      distanceKm: order.distanceKm
+    },
+    partner: partner?.name
+      ? {
+          name: partner.name,
+          vehicleNumber: partner.partnerProfile?.vehicleNumber || undefined
+        }
+      : undefined,
+    driverLocation:
+      driverLat !== undefined && driverLng !== undefined
+        ? {
+            lat: driverLat,
+            lng: driverLng,
+            heading,
+            updatedAt: order.partnerLocation?.updatedAt
+              ? new Date(order.partnerLocation.updatedAt).toISOString()
+              : undefined
+          }
+        : null
+  };
+}
+
+async function loadSharedTrackingOrder(token: string) {
+  const claims = verifyTrackingToken(token);
+  if (!claims) return undefined;
+  const order = await Order.findOne({ _id: claims.orderId, orderNo: claims.orderNo })
+    .select(
+      'orderNo status pickup extraStops drop vehicle partner partnerLocation etaMinutes timeline goodsType weightKg distanceKm updatedAt'
+    )
+    .populate('vehicle', 'shortName name')
+    .populate('partner', 'name partnerProfile.vehicleNumber');
+  return order ?? undefined;
+}
+
+function routePathFor(order: OrderDocument): PublicTrackingState['routePath'] {
+  return [order.pickup, ...(order.extraStops ?? []), order.drop]
+    .map(publicPoint)
+    .filter(
+      (point): point is PublicTrackingState['pickup'] & { lat: number; lng: number } =>
+        point.lat !== undefined && point.lng !== undefined
+    )
+    .map((point) => ({ lat: point.lat, lng: point.lng }));
+}
+
+trackingRouter.get(
+  '/track/share/:token/data',
+  asyncRoute(async (req, res) => {
+    const order = await loadSharedTrackingOrder(String(req.params.token));
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
     if (!order) {
-      return res.status(404).send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order not found</title></head><body><main style="font-family:Arial,sans-serif;padding:24px"><h1>Order not found</h1><p>Please check the tracking link.</p></main></body></html>`);
+      return res.status(404).json({ message: 'Tracking link is invalid or has expired' });
+    }
+    return res.json(publicTrackingState(order));
+  })
+);
+
+trackingRouter.get(
+  '/track/share/:token',
+  asyncRoute(async (req, res) => {
+    const order = await loadSharedTrackingOrder(String(req.params.token));
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    if (!order) {
+      return res.status(404).send(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tracking link unavailable</title></head><body><main style="max-width:520px;margin:64px auto;padding:24px;font-family:Arial,sans-serif"><h1>Tracking link unavailable</h1><p>This link is invalid or has expired. Ask the sender to share a new live-tracking link.</p></main></body></html>'
+      );
     }
 
-    const vehicle = order.vehicle as unknown as { shortName?: string };
-    const partner = order.partner as unknown as { name?: string; partnerProfile?: { vehicleNumber?: string } } | undefined;
-    const delivered = ['delivered', 'cancelled'].includes(order.status);
-    const timerCanStart = ['picked_up', 'in_transit'].includes(order.status);
-    const pickedUpAt = orderTimelineTime(order, 'picked_up');
-    const targetAt = pickedUpAt ? pickedUpAt + order.etaMinutes * 60_000 : undefined;
-    const countdown = !delivered && timerCanStart && targetAt ? formatCountdown(targetAt) : '';
-    const late = !delivered && timerCanStart && targetAt ? targetAt <= Date.now() : false;
-    const timerHtml = delivered
-      ? ''
-      : !timerCanStart
-        ? '<div class="timer waiting">Starts after pickup</div><div class="muted">Countdown will begin once the partner picks up the goods.</div>'
-        : targetAt
-          ? `<div class="timer">${late ? 'Running late' : escapeHtml(countdown)}</div><div class="muted">${late ? 'The estimated time has passed. Please stay available for delivery updates.' : 'Estimated time remaining after pickup'}</div>`
-          : '<div class="timer waiting">Pickup time syncing</div><div class="muted">Countdown will appear after pickup is confirmed.</div>';
+    const state = publicTrackingState(order, routePathFor(order));
+    const nonce = crypto.randomBytes(18).toString('base64');
+    res.setHeader('Content-Security-Policy', trackingContentSecurityPolicy(nonce));
+    return res.send(renderLiveTrackingPage(state, nonce));
+  })
+);
 
-    res.send(`<!doctype html>
+trackingRouter.get('/track/:orderNo', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  );
+  return res.status(410).send(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta http-equiv="refresh" content="20" />
-  <title>Track ${escapeHtml(order.orderNo)}</title>
+  <title>New tracking link required</title>
   <style>
     body{font-family:Arial,sans-serif;margin:0;background:#f8fafc;color:#111827}
-    main{max-width:520px;margin:0 auto;padding:24px 16px 36px}
-    .card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:18px;margin-bottom:14px}
+    main{max-width:520px;margin:64px auto;padding:24px}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:22px}
     .brand{color:#7c3aed;font-size:12px;font-weight:900;letter-spacing:.08em}
-    h1{font-size:24px;margin:6px 0 4px}.muted{color:#6b7280;font-size:13px;line-height:1.45}
-    .status{display:inline-block;background:#ede9fe;color:#7c3aed;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900}
-    .timer{font-size:38px;font-weight:900;color:${late ? '#dc2626' : '#7c3aed'};margin:8px 0 0}.waiting{font-size:22px}
-    .route{display:flex;gap:10px;padding:10px 0}.dot{width:11px;height:11px;border-radius:99px;background:#7c3aed;margin-top:4px}.green{background:#10b981}
-    .label{font-weight:900}.footer{font-size:11px;color:#6b7280;text-align:center;margin-top:20px}
+    h1{font-size:24px;margin:8px 0}.muted{color:#6b7280;font-size:14px;line-height:1.5}
   </style>
 </head>
 <body>
   <main>
     <div class="card">
       <div class="brand">INDIERY TRACKING</div>
-      <h1>${escapeHtml(order.orderNo)}</h1>
-      <span class="status">${escapeHtml(statusLabels[order.status] || order.status)}</span>
-      ${timerHtml}
+      <h1>New tracking link required</h1>
+      <p class="muted">For privacy, older order-number links no longer show delivery details. Ask the sender to tap Share again and send the new secure live-tracking link.</p>
     </div>
-    <div class="card">
-      <div class="route"><div class="dot"></div><div><div class="label">${escapeHtml(order.pickup.label)}</div><div class="muted">Pickup</div></div></div>
-      <div class="route"><div class="dot green"></div><div><div class="label">${escapeHtml(order.drop.label)}</div><div class="muted">Drop</div></div></div>
-      <p class="muted">${escapeHtml(vehicle?.shortName || 'Vehicle')} • ${escapeHtml(order.goodsType)} • ${order.weightKg} kg</p>
-    </div>
-    <div class="card">
-      <div class="label">${partner?.name ? escapeHtml(partner.name) : 'Partner assignment pending'}</div>
-      <div class="muted">${partner?.partnerProfile?.vehicleNumber ? escapeHtml(partner.partnerProfile.vehicleNumber) : 'This page refreshes automatically every 20 seconds.'}</div>
-    </div>
-    <div class="footer">Shared by the sender through Indiery. OTP and payment details are hidden.</div>
   </main>
 </body>
 </html>`);
-  })
-);
+});

@@ -327,10 +327,10 @@ partnerRouter.post(
   asyncRoute(async (req: AuthRequest, res) => {
     const body = z
       .object({
-        lat: z.coerce.number(),
-        lng: z.coerce.number(),
-        heading: z.coerce.number().optional(),
-        speed: z.coerce.number().optional()
+        lat: z.number().finite().min(-90).max(90),
+        lng: z.number().finite().min(-180).max(180),
+        heading: z.number().finite().min(0).max(360).optional(),
+        speed: z.number().finite().min(0).max(100).optional()
       })
       .parse(req.body);
     const currentLocation = { ...body, updatedAt: new Date() };

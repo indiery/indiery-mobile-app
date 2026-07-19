@@ -867,7 +867,10 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
-async function readDeviceLocation(language: AppLanguage = 'en') {
+async function readDeviceLocation(
+  language: AppLanguage = 'en',
+  accuracy: Location.Accuracy = Location.Accuracy.Balanced
+) {
   const existingPermission = await Location.getForegroundPermissionsAsync();
   const permission =
     existingPermission.status === 'granted'
@@ -884,7 +887,7 @@ async function readDeviceLocation(language: AppLanguage = 'en') {
 
   try {
     return await withTimeout(
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      Location.getCurrentPositionAsync({ accuracy }),
       8000,
       copyFor(language, 'gpsTakingTooLong')
     );
@@ -1016,6 +1019,14 @@ function routeStopSummary(stops?: LocationPoint[]) {
   return count === 1 ? '1 stop' : `${count} stops`;
 }
 
+type PendingLocationUpdate = {
+  coords: Location.LocationObjectCoords;
+  waiters: Array<{
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }>;
+};
+
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
@@ -1023,7 +1034,12 @@ export default function App() {
   const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const locationStreamModeRef = useRef<'online' | 'active' | null>(null);
+  const locationStreamGenerationRef = useRef(0);
+  const locationStreamRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locationStreamRetryCountRef = useRef(0);
   const locationSyncInFlightRef = useRef(false);
+  const pendingLocationRef = useRef<PendingLocationUpdate | null>(null);
   const exitBackPressedAtRef = useRef(0);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [language, setLanguage] = useState<AppLanguage>('en');
@@ -1105,7 +1121,7 @@ export default function App() {
 
   useEffect(() => {
     if (data?.user.partnerProfile?.online || data?.activeOrders[0]) {
-      startLocationStream();
+      startLocationStream(Boolean(data?.activeOrders[0]));
     } else {
       stopLocationStream();
     }
@@ -1239,13 +1255,24 @@ export default function App() {
     return {
       lat: coords.latitude,
       lng: coords.longitude,
-      heading: coords.heading ?? undefined,
-      speed: coords.speed ?? undefined
+      heading:
+        typeof coords.heading === 'number' &&
+        Number.isFinite(coords.heading) &&
+        coords.heading >= 0 &&
+        coords.heading <= 360
+          ? coords.heading
+          : undefined,
+      speed:
+        typeof coords.speed === 'number' &&
+        Number.isFinite(coords.speed) &&
+        coords.speed >= 0 &&
+        coords.speed <= 100
+          ? coords.speed
+          : undefined
     };
   }
 
-  async function sendLocationUpdate(coords: Location.LocationObjectCoords, options: { throwOnError?: boolean } = {}) {
-    if (locationSyncInFlightRef.current) return;
+  async function performLocationUpdate(coords: Location.LocationObjectCoords, throwOnError: boolean) {
     locationSyncInFlightRef.current = true;
     try {
       const result = await api.updatePartnerLocation(toLocationPayload(coords));
@@ -1259,36 +1286,117 @@ export default function App() {
         }))
       } : current);
     } catch (err) {
-      if (options.throwOnError) throw err;
+      if (throwOnError) throw err;
       // Location is helpful but should not block accepting or completing jobs.
     } finally {
       locationSyncInFlightRef.current = false;
+      const pendingLocation = pendingLocationRef.current;
+      pendingLocationRef.current = null;
+      if (pendingLocation) {
+        void performLocationUpdate(pendingLocation.coords, true).then(
+          () => pendingLocation.waiters.forEach((waiter) => waiter.resolve()),
+          (error) => pendingLocation.waiters.forEach((waiter) => waiter.reject(error))
+        );
+      }
     }
   }
 
-  async function startLocationStream() {
-    if (locationSubscriptionRef.current) return;
+  async function sendLocationUpdate(coords: Location.LocationObjectCoords, options: { throwOnError?: boolean } = {}) {
+    if (!locationSyncInFlightRef.current) {
+      return performLocationUpdate(coords, Boolean(options.throwOnError));
+    }
+
+    if (!options.throwOnError) {
+      if (pendingLocationRef.current) {
+        pendingLocationRef.current.coords = coords;
+      } else {
+        pendingLocationRef.current = { coords, waiters: [] };
+      }
+      return;
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      if (pendingLocationRef.current) {
+        pendingLocationRef.current.coords = coords;
+        pendingLocationRef.current.waiters.push({ resolve, reject });
+      } else {
+        pendingLocationRef.current = {
+          coords,
+          waiters: [{ resolve, reject }]
+        };
+      }
+    });
+  }
+
+  async function startLocationStream(activeTrip = false, retry = false) {
+    if (locationStreamRetryRef.current) {
+      clearTimeout(locationStreamRetryRef.current);
+      locationStreamRetryRef.current = null;
+    }
+    if (!retry) locationStreamRetryCountRef.current = 0;
+
+    const mode = activeTrip ? 'active' : 'online';
+    if (locationSubscriptionRef.current && locationStreamModeRef.current === mode) {
+      locationStreamRetryCountRef.current = 0;
+      return;
+    }
+    const previousSubscription = locationSubscriptionRef.current;
+    const previousMode = locationStreamModeRef.current;
+    const generation = locationStreamGenerationRef.current + 1;
+    locationStreamGenerationRef.current = generation;
+    locationStreamModeRef.current = mode;
+
     try {
-      const current = await readDeviceLocation(language);
+      const accuracy = activeTrip ? Location.Accuracy.High : Location.Accuracy.Balanced;
+      const current = await readDeviceLocation(language, accuracy);
+      if (locationStreamGenerationRef.current !== generation || locationStreamModeRef.current !== mode) return;
       sendLocationUpdate(current.coords);
-      locationSubscriptionRef.current = await Location.watchPositionAsync(
+      const subscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 8000,
-          distanceInterval: 20
+          accuracy,
+          timeInterval: activeTrip ? 6000 : 8000,
+          distanceInterval: activeTrip ? 10 : 20
         },
         (currentPosition) => {
           sendLocationUpdate(currentPosition.coords);
         }
       );
+      if (locationStreamGenerationRef.current !== generation || locationStreamModeRef.current !== mode) {
+        subscription.remove();
+        return;
+      }
+      previousSubscription?.remove();
+      locationSubscriptionRef.current = subscription;
+      locationStreamRetryCountRef.current = 0;
     } catch (err) {
-      showToast(err instanceof Error ? err.message : copyFor(language, 'waitingGpsLocation'));
+      if (locationStreamGenerationRef.current !== generation || locationStreamModeRef.current !== mode) return;
+      locationSubscriptionRef.current = previousSubscription;
+      locationStreamModeRef.current = previousSubscription ? previousMode : null;
+      const retryDelay = Math.min(60_000, 5_000 * (2 ** Math.min(locationStreamRetryCountRef.current, 4)));
+      locationStreamRetryCountRef.current += 1;
+      locationStreamRetryRef.current = setTimeout(() => {
+        locationStreamRetryRef.current = null;
+        void startLocationStream(activeTrip, true);
+      }, retryDelay);
+      if (!retry) {
+        showToast(err instanceof Error ? err.message : copyFor(language, 'waitingGpsLocation'));
+      }
     }
   }
 
   function stopLocationStream() {
+    locationStreamGenerationRef.current += 1;
+    if (locationStreamRetryRef.current) {
+      clearTimeout(locationStreamRetryRef.current);
+      locationStreamRetryRef.current = null;
+    }
+    locationStreamRetryCountRef.current = 0;
     locationSubscriptionRef.current?.remove();
     locationSubscriptionRef.current = null;
+    locationStreamModeRef.current = null;
+    const pendingLocation = pendingLocationRef.current;
+    pendingLocationRef.current = null;
+    pendingLocation?.waiters.forEach((waiter) => waiter.reject(new Error('Location tracking stopped')));
   }
 
   async function syncLocation() {

@@ -18,6 +18,7 @@ import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { initialsFromName } from '../services/profile.service';
 import { offerOrderToNextDrivers } from '../services/order-offers.service';
 import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } from '../services/notification.service';
+import { createTrackingToken } from '../services/tracking-link.service';
 
 export const customerRouter = Router();
 
@@ -495,6 +496,22 @@ customerRouter.get(
     const order = await populatedOrder(String(req.params.orderId));
     if (!order || String(order.customer._id) !== req.auth!.userId) throw new ApiError(404, 'Order not found');
     res.json({ order: serializeOrder(order, { includeTripOtp: true }) });
+  })
+);
+
+customerRouter.post(
+  '/orders/:orderId/tracking-link',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const order = await Order.findOne({ _id: String(req.params.orderId), customer: req.auth!.userId })
+      .select('_id orderNo status');
+    if (!order) throw new ApiError(404, 'Order not found');
+    if (['delivered', 'cancelled'].includes(order.status)) {
+      throw new ApiError(409, 'Only active orders can be shared for live tracking');
+    }
+
+    const token = createTrackingToken(String(order._id), order.orderNo);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ trackingPath: `/track/share/${encodeURIComponent(token)}` });
   })
 );
 

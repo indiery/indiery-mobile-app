@@ -13,8 +13,26 @@ export const authRouter = Router();
 
 const FirebaseLoginSchema = z.object({
   role: z.enum(['customer', 'partner']),
-  firebaseIdToken: z.string().min(20)
+  firebaseIdToken: z.string().min(20),
+  customerProfile: z.object({
+    name: z.string().trim().min(2).max(80),
+    email: z.string().trim().email().max(160),
+    city: z.string().trim().min(2).max(80)
+  }).optional()
 });
+
+const CustomerOnboardingStatusSchema = z.object({
+  phone: z.string().trim().min(10).max(20)
+});
+
+function normalizeCustomerPhone(phoneInput: string) {
+  const trimmed = phoneInput.trim();
+  if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
+  throw new ApiError(400, 'Enter a valid mobile number');
+}
 
 async function ensureUser(phone: string, role: 'customer' | 'partner') {
   const existing = await User.findOne({ phone, role });
@@ -65,11 +83,29 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
 }
 
 authRouter.post(
+  '/customer-onboarding-status',
+  asyncRoute(async (req, res) => {
+    const body = CustomerOnboardingStatusSchema.parse(req.body);
+    const phone = normalizeCustomerPhone(body.phone);
+    const customer = await User.findOne({ phone, role: 'customer' }).select('name email');
+    const needsProfile = !customer || !customer.email || customer.name === 'Indiery Customer';
+    res.json({ needsProfile });
+  })
+);
+
+authRouter.post(
   '/firebase-login',
   asyncRoute(async (req, res) => {
     const body = FirebaseLoginSchema.parse(req.body);
     const verification = await verifyFirebasePhoneToken(body.firebaseIdToken);
     const user = await ensureUser(verification.phone, body.role);
+    if (body.role === 'customer' && body.customerProfile) {
+      user.name = body.customerProfile.name;
+      user.initials = initialsFromName(body.customerProfile.name);
+      user.email = body.customerProfile.email;
+      user.city = body.customerProfile.city;
+      await user.save();
+    }
     const token = signToken(String(user._id), body.role);
     res.json({ token, user: serializeUser(user) });
   })

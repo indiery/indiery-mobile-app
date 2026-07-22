@@ -4,7 +4,6 @@ import {
   Alert,
   BackHandler,
   Image,
-  ImageBackground,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -15,8 +14,8 @@ import {
   Share,
   StyleSheet,
   StatusBar,
-  Text,
-  TextInput,
+  Text as NativeText,
+  TextInput as NativeTextInput,
   useWindowDimensions,
   View
 } from 'react-native';
@@ -57,6 +56,17 @@ import {
   UserProfile,
   Vehicle
 } from '@indiery/shared';
+
+type LockedTextProps = React.ComponentProps<typeof NativeText>;
+type LockedTextInputProps = React.ComponentProps<typeof NativeTextInput>;
+
+function Text(props: LockedTextProps) {
+  return <NativeText {...props} allowFontScaling={false} />;
+}
+
+function TextInput(props: LockedTextInputProps) {
+  return <NativeTextInput {...props} allowFontScaling={false} />;
+}
 
 declare const process: { env?: Record<string, string | undefined> };
 declare const __DEV__: boolean;
@@ -126,6 +136,9 @@ type MapPickerTarget = {
   lng?: number;
   openContact?: boolean;
 };
+type OrderHistoryFilter = 'all' | 'delivered' | 'cancelled';
+type CustomerOnboardingProfile = { name: string; email: string; city: string };
+type LoginStep = 'phone' | 'profile' | 'otp';
 
 const goodsOptions = [
   'Documents',
@@ -343,6 +356,10 @@ const enCopy = {
   liveTrackingAppear: 'Your live tracking will appear here after booking.',
   bookDelivery: 'Book a delivery',
   orderHistory: 'Order History',
+  allOrders: 'All',
+  noMatchingOrders: 'No matching orders',
+  adjustOrderFilters: 'Try a different search or filter.',
+  clearFilters: 'Clear filters',
   noPastOrders: 'No past orders',
   completedCancelledAppear: 'Completed and cancelled deliveries will appear here.',
   pickupOtp: 'Pickup OTP',
@@ -605,6 +622,10 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   liveTrackingAppear: 'बुकिंग के बाद लाइव ट्रैकिंग यहां दिखेगी.',
   bookDelivery: 'डिलीवरी बुक करें',
   orderHistory: 'ऑर्डर हिस्ट्री',
+  allOrders: 'सभी',
+  noMatchingOrders: 'कोई मिलता ऑर्डर नहीं',
+  adjustOrderFilters: 'अलग खोज या फ़िल्टर आज़माएँ।',
+  clearFilters: 'फ़िल्टर हटाएँ',
   noPastOrders: 'कोई पिछला ऑर्डर नहीं',
   completedCancelledAppear: 'पूरी और रद्द डिलीवरी यहां दिखेंगी.',
   pickupOtp: 'पिकअप OTP',
@@ -761,29 +782,18 @@ function useLanguage() {
 }
 
 function useResponsiveLayout() {
-  const { width, height, fontScale } = useWindowDimensions();
-  const effectiveWidth = width / Math.min(Math.max(fontScale, 1), 1.5);
+  const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const isNarrow = width < 320;
   const isShort = height < 640;
-  const isTablet = width >= 600;
-  const hasLargeText = fontScale >= 1.25;
-  const stackActions = isNarrow || fontScale >= 1.4;
-  const horizontalPadding = isNarrow ? 12 : isTablet ? 24 : 16;
-  const contentMaxWidth = isTablet ? 1040 : 680;
-  const tabBarHeight = 68 + Math.min(12, Math.max(0, (fontScale - 1) * 12));
+  const horizontalPadding = 16;
+  const contentMaxWidth = 680;
+  const tabBarHeight = 68;
 
   return {
     width,
     height,
-    fontScale,
-    effectiveWidth,
     isLandscape,
-    isNarrow,
     isShort,
-    isTablet,
-    hasLargeText,
-    stackActions,
     horizontalPadding,
     contentMaxWidth,
     tabBarHeight
@@ -1447,14 +1457,21 @@ export default function App() {
     }
   }
 
-  async function completeFirebaseLogin(firebaseIdToken: string) {
+  async function completeFirebaseLogin(
+    firebaseIdToken: string,
+    customerProfile?: CustomerOnboardingProfile
+  ) {
     setError('');
-    const login = await api.firebaseLogin('customer', firebaseIdToken);
+    const login = await api.firebaseLogin('customer', firebaseIdToken, customerProfile);
     api.setToken(login.token);
     const bootstrap = await api.customerBootstrap();
     setData(bootstrap);
     setTab('home');
     connectRealtime(login.token);
+    if (!needsCustomerProfile(bootstrap.user)) requestPermissionsAfterLogin();
+  }
+
+  function requestPermissionsAfterLogin() {
     requestCustomerAppPermissions(api, showToast)
       .then((token) => {
         pushTokenRef.current = token;
@@ -1659,6 +1676,7 @@ export default function App() {
       const result = await api.updateCustomerProfile(input);
       setData((current) => current ? { ...current, user: result.user } : current);
       showToast('Profile saved');
+      requestPermissionsAfterLogin();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Profile update failed');
     } finally {
@@ -1813,7 +1831,11 @@ export default function App() {
 
   if (!data) {
     return (
-      <LoginScreen initialError={error} onVerified={completeFirebaseLogin} />
+      <LoginScreen
+        initialError={error}
+        onCheckCustomer={(phone) => api.customerOnboardingStatus(phone)}
+        onVerified={completeFirebaseLogin}
+      />
     );
   }
 
@@ -2046,19 +2068,31 @@ export default function App() {
 
 function LoginScreen({
   initialError,
+  onCheckCustomer,
   onVerified
 }: {
   initialError: string;
-  onVerified: (firebaseIdToken: string) => Promise<void>;
+  onCheckCustomer: (phone: string) => Promise<{ needsProfile: boolean }>;
+  onVerified: (firebaseIdToken: string, customerProfile?: CustomerOnboardingProfile) => Promise<void>;
 }) {
   const responsive = useResponsiveLayout();
+  const [loginStep, setLoginStep] = useState<LoginStep>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [profileRequired, setProfileRequired] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profileCity, setProfileCity] = useState('Lucknow');
   const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
+  const [resendSeconds, setResendSeconds] = useState(0);
   const [loginPolicy, setLoginPolicy] = useState<LegalPolicy | null>(null);
   const loginScrollRef = useRef<ScrollView | null>(null);
+  const loginKeyboardScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+  const phoneReady = normalizedPhone.length === 10;
+  const otpReady = code.trim().length === 6;
 
   useEffect(() => {
     setError(initialError);
@@ -2066,32 +2100,136 @@ function LoginScreen({
 
   useEffect(() => {
     if (!confirmation) return undefined;
-    const timer = setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 250);
+    const timer = setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 100);
     return () => clearTimeout(timer);
   }, [confirmation]);
+
+  useEffect(() => {
+    if (!confirmation || resendSeconds <= 0) return undefined;
+    const timer = setTimeout(() => setResendSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [confirmation, resendSeconds]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => {
+      if (loginKeyboardScrollTimerRef.current) clearTimeout(loginKeyboardScrollTimerRef.current);
+      loginKeyboardScrollTimerRef.current = setTimeout(() => {
+        loginScrollRef.current?.scrollToEnd({ animated: true });
+        loginKeyboardScrollTimerRef.current = null;
+      }, Platform.OS === 'ios' ? 280 : 140);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      if (loginKeyboardScrollTimerRef.current) {
+        clearTimeout(loginKeyboardScrollTimerRef.current);
+        loginKeyboardScrollTimerRef.current = null;
+      }
+    });
+    return () => {
+      if (loginKeyboardScrollTimerRef.current) clearTimeout(loginKeyboardScrollTimerRef.current);
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useAndroidBackHandler(() => {
     if (loginPolicy) {
       setLoginPolicy(null);
       return true;
     }
-    if (!confirmation) return false;
-    setConfirmation(null);
-    setCode('');
-    setError('');
-    return true;
-  }, [confirmation, loginPolicy]);
+    if (loginStep === 'otp') {
+      setCode('');
+      setError('');
+      if (profileRequired) {
+        setLoginStep('profile');
+      } else {
+        setConfirmation(null);
+        setResendSeconds(0);
+        setLoginStep('phone');
+      }
+      return true;
+    }
+    if (loginStep === 'profile') {
+      changePhoneNumber();
+      return true;
+    }
+    return false;
+  }, [loginPolicy, loginStep, profileRequired]);
 
   function openLoginPolicy(policyId: LegalPolicy['id']) {
     setLoginPolicy(legalPolicies.find((policy) => policy.id === policyId) ?? null);
+  }
+
+  async function requestOtp() {
+    const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone));
+    setConfirmation(result);
+    setCode('');
+    setResendSeconds(30);
+    setLoginStep('otp');
+    setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
+  }
+
+  async function continueFromPhone() {
+    setBusy(true);
+    setError('');
+    try {
+      const formattedPhone = formatPhoneForFirebase(phone);
+      const status = await onCheckCustomer(formattedPhone);
+      setProfileRequired(status.needsProfile);
+      if (status.needsProfile) {
+        Keyboard.dismiss();
+        setLoginStep('profile');
+        setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
+      } else {
+        await requestOtp();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to continue');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function continueFromProfile() {
+    const nextProfile = {
+      name: profileName.trim(),
+      email: profileEmail.trim(),
+      city: profileCity.trim()
+    };
+    if (nextProfile.name.length < 2) {
+      setError('Enter your full name');
+      return;
+    }
+    if (!nextProfile.email.includes('@')) {
+      setError('Enter a valid email');
+      return;
+    }
+    if (nextProfile.city.length < 2) {
+      setError('Enter your city');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      if (confirmation) {
+        setLoginStep('otp');
+        setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
+      } else {
+        await requestOtp();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send OTP');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function sendOtp() {
     setBusy(true);
     setError('');
     try {
-      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone));
-      setConfirmation(result);
+      await requestOtp();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to send OTP');
     } finally {
@@ -2108,7 +2246,12 @@ function LoginScreen({
       const credential = await confirmation.confirm(code.trim());
       if (!credential?.user) throw new Error('Unable to verify OTP');
       const firebaseIdToken = await credential.user.getIdToken();
-      await onVerified(firebaseIdToken);
+      await onVerified(
+        firebaseIdToken,
+        profileRequired
+          ? { name: profileName.trim(), email: profileEmail.trim(), city: profileCity.trim() }
+          : undefined
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid OTP');
     } finally {
@@ -2116,14 +2259,40 @@ function LoginScreen({
     }
   }
 
+  function changePhoneNumber() {
+    Keyboard.dismiss();
+    setConfirmation(null);
+    setCode('');
+    setLoginStep('phone');
+    setProfileRequired(false);
+    setProfileName('');
+    setProfileEmail('');
+    setProfileCity('Lucknow');
+    setResendSeconds(0);
+    setError('');
+    setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
+  }
+
+  function goBackFromOtp() {
+    Keyboard.dismiss();
+    setCode('');
+    setError('');
+    if (profileRequired) {
+      setLoginStep('profile');
+    } else {
+      changePhoneNumber();
+    }
+  }
+
   return (
     <>
     <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           ref={loginScrollRef}
-          contentContainerStyle={[styles.authScroll, confirmation && styles.authScrollOtp]}
+          style={styles.authScrollViewport}
+          contentContainerStyle={[styles.authScroll, loginStep !== 'phone' && styles.authScrollOtp]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
@@ -2131,59 +2300,152 @@ function LoginScreen({
           <View
             style={[
               styles.authResponsiveFrame,
-              responsive.isLandscape && responsive.width >= 600 && styles.authResponsiveFrameLandscape,
-              { maxWidth: responsive.isLandscape && responsive.width >= 600 ? 960 : Math.min(640, responsive.contentMaxWidth) }
+              { maxWidth: Math.min(640, responsive.contentMaxWidth) }
             ]}
           >
-            <LoginHero title="Indiery" caption="Delivering trust, every mile." compact={Boolean(confirmation)} />
-            <View style={[styles.authForm, responsive.isLandscape && responsive.width >= 600 && styles.authFormLandscape]}>
-            <Text style={styles.authTitle}>Welcome Back</Text>
-            <Text style={styles.loginSubtitle}>Login to book and manage your shipments</Text>
-            <PhoneLoginField value={phone} onChangeText={setPhone} />
-            {!confirmation ? (
-              <View style={styles.loginConsent}>
-                <Text style={styles.loginConsentText}>By continuing, you agree to the</Text>
-                <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('terms')}>
-                  <Text style={styles.loginConsentLink}>Terms & Conditions</Text>
-                </Pressable>
-                <Text style={styles.loginConsentText}>and</Text>
-                <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('privacy')}>
-                  <Text style={styles.loginConsentLink}>Privacy Policy</Text>
-                </Pressable>
-                <Text style={styles.loginConsentText}>.</Text>
-              </View>
+            {loginStep === 'phone' ? (
+              <LoginHero
+                title="Indiery"
+                caption="Delivering trust, every mile."
+              />
             ) : null}
-            {confirmation ? (
+            <View style={[styles.authForm, loginStep !== 'phone' && styles.authFormOtp]}>
+            {loginStep === 'otp' ? (
               <>
-                <View style={styles.authNotice}>
-                  <Ionicons name="checkmark-circle" size={16} color={colors.customer} />
-                  <Text style={styles.authNoticeText}>OTP sent. Enter the code to verify.</Text>
+                <Pressable
+                  style={styles.loginOtpBackButton}
+                  onPress={goBackFromOtp}
+                  hitSlop={7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Go back to mobile number"
+                >
+                  <Ionicons name="arrow-back" size={21} color={colors.ink} />
+                </Pressable>
+                <View style={styles.loginOtpIcon}>
+                  <Ionicons name="shield-checkmark" size={24} color={colors.customer} />
                 </View>
-                <AuthField
-                  label="OTP code"
+                <Text style={styles.loginOtpTitle}>OTP verification</Text>
+                <Text style={styles.loginOtpSubtitle}>Enter the 6-digit code sent to</Text>
+                <View style={styles.loginOtpDestinationRow}>
+                  <Text style={styles.loginOtpPhone}>+91 {normalizedPhone}</Text>
+                  <Pressable onPress={changePhoneNumber} hitSlop={6} accessibilityRole="button">
+                    <Text style={styles.loginOtpChange}>Change</Text>
+                  </Pressable>
+                </View>
+                <OtpCodeField
                   value={code}
                   onChangeText={setCode}
-                  keyboardType="numeric"
-                  icon="key"
-                  maxLength={6}
+                  onSubmit={otpReady && !busy ? verifyOtp : undefined}
+                />
+                <View style={styles.loginOtpHintRow}>
+                  <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
+                  <Text style={styles.loginOtpHint}>Your code is private and securely verified.</Text>
+                </View>
+                {error ? <Text style={styles.loginError}>{error}</Text> : null}
+                <AuthActionButton
+                  title={busy ? 'Verifying…' : 'Verify and continue'}
+                  onPress={verifyOtp}
+                  disabled={!otpReady || busy}
+                />
+                <View style={styles.loginResendBlock}>
+                  <Text style={styles.loginResendLabel}>
+                    {resendSeconds > 0 ? `Resend OTP in ${resendSeconds}s` : "Didn't receive the code?"}
+                  </Text>
+                  <Pressable
+                    style={[styles.loginResendButton, (resendSeconds > 0 || busy) && styles.loginResendButtonDisabled]}
+                    onPress={sendOtp}
+                    disabled={resendSeconds > 0 || busy}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="refresh-outline" size={15} color={resendSeconds > 0 || busy ? colors.muted : colors.customer} />
+                    <Text style={[styles.loginResendText, (resendSeconds > 0 || busy) && styles.loginResendTextDisabled]}>
+                      Resend OTP
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : loginStep === 'profile' ? (
+              <>
+                <Pressable
+                  style={styles.loginOtpBackButton}
+                  onPress={changePhoneNumber}
+                  hitSlop={7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Go back to mobile number"
+                >
+                  <Ionicons name="arrow-back" size={21} color={colors.ink} />
+                </Pressable>
+                <View style={styles.loginOtpIcon}>
+                  <Ionicons name="person-add-outline" size={24} color={colors.customer} />
+                </View>
+                <Text style={styles.authKicker}>Almost there</Text>
+                <Text style={styles.loginProfileTitle}>Complete your profile</Text>
+                <Text style={styles.loginProfileSubtitle}>Add your details before we verify your mobile number.</Text>
+                <AuthField
+                  label="Full name"
+                  value={profileName}
+                  onChangeText={setProfileName}
+                  icon="person"
                   autoFocus
-                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 120)}
+                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 160)}
+                />
+                <AuthField
+                  label="Email"
+                  value={profileEmail}
+                  onChangeText={setProfileEmail}
+                  keyboardType="email-address"
+                  icon="mail"
+                  autoCapitalize="none"
+                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 160)}
+                />
+                <AuthField
+                  label="City"
+                  value={profileCity}
+                  onChangeText={setProfileCity}
+                  icon="location"
+                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 160)}
+                />
+                <AuthField
+                  label="Mobile number"
+                  value={`+91 ${normalizedPhone}`}
+                  editable={false}
+                  keyboardType="phone-pad"
+                  icon="call"
+                />
+                {error ? <Text style={styles.loginError}>{error}</Text> : null}
+                <AuthActionButton
+                  title={busy ? 'Sending OTP…' : 'Continue to OTP'}
+                  onPress={continueFromProfile}
+                  disabled={busy}
                 />
               </>
-            ) : null}
-            {error ? <Text style={styles.loginError}>{error}</Text> : null}
-            <View style={styles.row}>
-              {confirmation ? (
-                <>
-                  <SecondaryButton title="Change" icon="create" onPress={() => setConfirmation(null)} />
-                  <AuthActionButton title={busy ? 'Verifying' : 'Verify'} onPress={verifyOtp} />
-                </>
-              ) : (
-                <AuthActionButton title={busy ? 'Sending' : 'Send OTP'} onPress={sendOtp} />
-              )}
-            </View>
-            <AuthDivider />
-            <LoginFeatureRow />
+            ) : (
+              <>
+                <Text style={styles.authKicker}>Fast · Secure · Reliable</Text>
+                <Text style={styles.authTitle}>Let’s get moving</Text>
+                <Text style={styles.loginSubtitle}>Enter your mobile number to book and track deliveries.</Text>
+                <PhoneLoginField value={phone} onChangeText={setPhone} />
+                {error ? <Text style={styles.loginError}>{error}</Text> : null}
+                <AuthActionButton
+                  title={busy ? 'Checking…' : 'Continue'}
+                  onPress={continueFromPhone}
+                  disabled={!phoneReady || busy}
+                />
+                <View style={styles.loginConsent}>
+                  <Text style={styles.loginConsentText}>By continuing, you agree to the</Text>
+                  <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('terms')}>
+                    <Text style={styles.loginConsentLink}>Terms & Conditions</Text>
+                  </Pressable>
+                  <Text style={styles.loginConsentText}>and</Text>
+                  <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('privacy')}>
+                    <Text style={styles.loginConsentLink}>Privacy Policy</Text>
+                  </Pressable>
+                  <Text style={styles.loginConsentText}>.</Text>
+                </View>
+                <AuthDivider />
+                <LoginFeatureRow />
+              </>
+            )}
             </View>
           </View>
         </ScrollView>
@@ -2204,33 +2466,16 @@ function LoginScreen({
   );
 }
 
-function LoginHero({ title, caption, compact = false }: { title: string; caption: string; compact?: boolean }) {
-  const responsive = useResponsiveLayout();
-  const heroMinHeight = compact
-    ? Math.max(180, Math.min(230, responsive.height * 0.32))
-    : Math.max(
-        responsive.isShort ? 220 : 280,
-        Math.min(360, responsive.height * (responsive.isLandscape ? 0.7 : 0.45))
-      );
-
+function LoginHero({ title, caption }: { title: string; caption: string }) {
   return (
-    <ImageBackground
-      source={customerLoginBackgroundImage}
-      style={[
-        styles.loginHero,
-        compact && styles.loginHeroOtp,
-        { minHeight: heroMinHeight },
-        responsive.isLandscape && responsive.width >= 600 && styles.loginHeroLandscape
-      ]}
-      imageStyle={styles.loginHeroImage}
-      resizeMode="cover"
-    >
+    <View style={styles.loginHero}>
+      <Image source={customerLoginBackgroundImage} style={styles.loginHeroImage} resizeMode="cover" />
       <View style={styles.loginHeroWash} />
       <View style={styles.loginBrandPanel}>
         <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
         <Text style={styles.loginHeroCaption}>{caption}</Text>
       </View>
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -2245,7 +2490,7 @@ function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText:
         <View style={styles.phoneDivider} />
         <TextInput
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={(nextValue) => onChangeText(nextValue.replace(/\D/g, '').slice(0, 10))}
           keyboardType="phone-pad"
           maxLength={10}
           placeholder="Enter your mobile number"
@@ -2257,10 +2502,78 @@ function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText:
   );
 }
 
-function AuthActionButton({ title, onPress }: { title: string; onPress: () => void }) {
-  const responsive = useResponsiveLayout();
+function OtpCodeField({
+  value,
+  onChangeText,
+  onSubmit
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  onSubmit?: () => void;
+}) {
+  const inputRef = useRef<React.ElementRef<typeof NativeTextInput> | null>(null);
+  const digits = value.replace(/\D/g, '').slice(0, 6);
+
   return (
-    <Pressable style={[styles.authPrimaryButton, responsive.stackActions && styles.buttonStacked]} onPress={onPress}>
+    <Pressable
+      style={styles.loginOtpField}
+      onPress={() => inputRef.current?.focus()}
+      accessibilityRole="button"
+      accessibilityLabel="Enter 6-digit OTP"
+    >
+      <View style={styles.loginOtpBoxes} pointerEvents="none">
+        {Array.from({ length: 6 }).map((_, index) => {
+          const digit = digits[index] ?? '';
+          const active = index === Math.min(digits.length, 5);
+          return (
+            <View
+              key={index}
+              style={[
+                styles.loginOtpBox,
+                digit && styles.loginOtpBoxFilled,
+                active && styles.loginOtpBoxActive
+              ]}
+            >
+              <Text style={styles.loginOtpDigit}>{digit}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <NativeTextInput
+        ref={inputRef}
+        value={digits}
+        onChangeText={(nextValue) => onChangeText(nextValue.replace(/\D/g, '').slice(0, 6))}
+        onSubmitEditing={onSubmit}
+        keyboardType="number-pad"
+        textContentType="oneTimeCode"
+        autoComplete="sms-otp"
+        maxLength={6}
+        autoFocus
+        caretHidden
+        allowFontScaling={false}
+        style={styles.loginOtpHiddenInput}
+      />
+    </Pressable>
+  );
+}
+
+function AuthActionButton({
+  title,
+  onPress,
+  disabled = false
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      style={[styles.authPrimaryButton, disabled && styles.authPrimaryButtonDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+    >
       <Text style={styles.authPrimaryButtonText}>{title}</Text>
     </Pressable>
   );
@@ -2313,6 +2626,20 @@ function ProfileSetupScreen({
   const [email, setEmail] = useState(user.email || '');
   const [city, setCity] = useState(user.city || 'Lucknow');
   const [localError, setLocalError] = useState('');
+  const profileScrollRef = useRef<ScrollView | null>(null);
+  const profileFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (profileFocusTimerRef.current) clearTimeout(profileFocusTimerRef.current);
+  }, []);
+
+  function revealProfileField(y: number) {
+    if (profileFocusTimerRef.current) clearTimeout(profileFocusTimerRef.current);
+    profileFocusTimerRef.current = setTimeout(() => {
+      profileScrollRef.current?.scrollTo({ y, animated: true });
+      profileFocusTimerRef.current = null;
+    }, Platform.OS === 'ios' ? 260 : 180);
+  }
 
   async function submit() {
     const nextName = name.trim();
@@ -2337,39 +2664,58 @@ function ProfileSetupScreen({
   return (
     <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <AppStatusBar variant="light" />
-      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.profileSetupScroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          ref={profileScrollRef}
+          style={styles.authScrollViewport}
+          contentContainerStyle={styles.profileSetupScroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          showsVerticalScrollIndicator={false}
+        >
           <View
             style={[
               styles.authResponsiveFrame,
-              responsive.isLandscape && responsive.width >= 600 && styles.authResponsiveFrameLandscape,
-              { maxWidth: responsive.isLandscape && responsive.width >= 600 ? 960 : Math.min(640, responsive.contentMaxWidth) }
+              { maxWidth: Math.min(640, responsive.contentMaxWidth) }
             ]}
           >
-            <View
-              style={[
-                styles.authHero,
-                responsive.isLandscape && responsive.width >= 600 && styles.authHeroLandscape,
-                {
-                  minHeight: Math.max(
-                    responsive.isShort ? 220 : 280,
-                    Math.min(350, responsive.height * (responsive.isLandscape ? 0.7 : 0.44))
-                  )
-                }
-              ]}
-            >
-              <View style={styles.authTrackOne} />
-              <View style={styles.authTrackTwo} />
-              <View style={styles.authAccentLine} />
-              <BrandLogo title="Indiery" accentColor={colors.customer} />
+            <View style={styles.profileSetupHero}>
+              <View style={styles.profileSetupHeroIcon}>
+                <Ionicons name="person-add-outline" size={28} color={colors.customer} />
+              </View>
+              <Text style={styles.profileSetupHeroKicker}>WELCOME TO INDIERY</Text>
+              <Text style={styles.profileSetupHeroTitle}>Tell us about you</Text>
+              <Text style={styles.profileSetupHeroText}>A few details will help us personalize your deliveries.</Text>
             </View>
-            <View style={[styles.authForm, responsive.isLandscape && responsive.width >= 600 && styles.authFormLandscape]}>
+            <View style={styles.authForm}>
               <Text style={styles.authKicker}>Almost there</Text>
               <Text style={styles.authTitle}>Profile</Text>
               <Text style={styles.loginSubtitle}>Complete your profile</Text>
-              <AuthField label="Full name" value={name} onChangeText={setName} icon="person" />
-              <AuthField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
-              <AuthField label="City" value={city} onChangeText={setCity} icon="location" />
+              <AuthField
+                label="Full name"
+                value={name}
+                onChangeText={setName}
+                icon="person"
+                autoFocus
+                onFocus={() => revealProfileField(150)}
+              />
+              <AuthField
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                icon="mail"
+                autoCapitalize="none"
+                onFocus={() => revealProfileField(210)}
+              />
+              <AuthField
+                label="City"
+                value={city}
+                onChangeText={setCity}
+                icon="location"
+                onFocus={() => revealProfileField(270)}
+              />
               <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
               {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
               <PrimaryButton title={busy ? 'Saving' : 'Continue'} icon="arrow-forward" onPress={submit} />
@@ -2426,19 +2772,6 @@ function AuthField({
   );
 }
 
-function BrandLogo({ title, accentColor }: { title: string; accentColor: string }) {
-  return (
-    <View style={styles.brandLogo}>
-      <Image source={indieryLogoImage} style={styles.brandLogoImage} resizeMode="contain" accessibilityLabel={title} />
-      <View style={styles.taglineRow}>
-        <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
-        <Text style={styles.tagline}>SMART LAST-MILE LOGISTICS INDIA</Text>
-        <View style={[styles.taglineRule, { backgroundColor: accentColor }]} />
-      </View>
-    </View>
-  );
-}
-
 function HomeScreen({
   api,
   data,
@@ -2458,8 +2791,6 @@ function HomeScreen({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
-  const singleColumnCards =
-    responsive.width < 320 || (responsive.hasLargeText && responsive.effectiveWidth < 520);
   const lastOrder = data.orders[0];
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
@@ -2597,7 +2928,7 @@ function HomeScreen({
           {homeVehicleCards.map((service) => (
             <Pressable
               key={service.id}
-              style={[styles.homeServiceCard, singleColumnCards && styles.responsiveSingleColumnCard]}
+              style={styles.homeServiceCard}
               onPress={() => startBookingFromHome(service.vehicle)}
             >
               <HomeVehicleVisual vehicle={service.vehicle} color={service.accent} />
@@ -3106,15 +3437,11 @@ function VehicleChoiceCard({
   onPress: () => void;
 }) {
   const copy = useCopy();
-  const responsive = useResponsiveLayout();
-  const singleColumnCard =
-    responsive.width < 320 || (responsive.hasLargeText && responsive.effectiveWidth < 520);
 
   return (
     <Pressable
       style={[
         styles.vehicleCard,
-        singleColumnCard && styles.responsiveSingleColumnCard,
         suggested && styles.vehicleCardSuggested,
         selected && styles.vehicleCardActive,
         disabled && styles.vehicleCardDisabled
@@ -3123,7 +3450,11 @@ function VehicleChoiceCard({
       onPress={onPress}
     >
       <View style={styles.vehicleCardHeader}>
-        <Ionicons name={vehicleIcon(vehicle)} size={24} color={disabled ? colors.muted : colors.customer} />
+        <Ionicons
+          name={vehicleIcon(vehicle)}
+          size={24}
+          color={disabled ? colors.muted : selected ? colors.customer : suggested ? colors.blue : colors.customer}
+        />
         <View style={styles.vehicleBadgeRow}>
           {suggested ? (
             <View style={styles.vehicleSuggestedBadge}>
@@ -3135,7 +3466,13 @@ function VehicleChoiceCard({
       </View>
       <Text style={[styles.vehicleName, disabled && styles.vehicleNameDisabled]}>{vehicle.shortName}</Text>
       <Text style={styles.mutedSmall}>{vehicleCapacityText(vehicle, copy.upTo)}</Text>
-      <Text style={styles.vehiclePriceLine}>
+      <Text
+        style={[
+          styles.vehiclePriceLine,
+          suggested && styles.vehiclePriceLineSuggested,
+          selected && styles.vehiclePriceLineSelected
+        ]}
+      >
         {copy.fareBeforeTax}: {money(price ?? porterVehicleQuote(vehicle))}
       </Text>
       {selected ? <Text style={styles.vehicleSelectedText}>{copy.selected}</Text> : null}
@@ -3160,8 +3497,6 @@ function VehicleFareOption({
   onPress: () => void;
 }) {
   const copy = useCopy();
-  const responsive = useResponsiveLayout();
-  const stackFare = responsive.isNarrow || responsive.hasLargeText;
   return (
     <Pressable
       style={[
@@ -3174,11 +3509,20 @@ function VehicleFareOption({
       onPress={onPress}
     >
       <View style={styles.vehicleFareOptionIcon}>
-        <VehicleMiniArt vehicle={vehicle} muted={disabled} selected={selected} />
+        <VehicleMiniArt vehicle={vehicle} muted={disabled} selected={selected} suggested={suggested} />
       </View>
       <View style={styles.vehicleFareOptionCopy}>
         <View style={styles.vehicleFareOptionTitleRow}>
-          <Text style={[styles.vehicleFareOptionTitle, disabled && styles.vehicleNameDisabled]}>{vehicle.shortName}</Text>
+          <Text
+            style={[
+              styles.vehicleFareOptionTitle,
+              suggested && styles.vehicleFareOptionTitleSuggested,
+              selected && styles.vehicleFareOptionTitleSelected,
+              disabled && styles.vehicleNameDisabled
+            ]}
+          >
+            {vehicle.shortName}
+          </Text>
           {suggested ? (
             <View style={styles.vehicleNewBadge}>
               <Text style={styles.vehicleNewBadgeText}>{copy.suggested}</Text>
@@ -3189,8 +3533,15 @@ function VehicleFareOption({
           {vehicleCapacityText(vehicle, copy.upTo)} - {vehicle.etaMinutes} min
         </Text>
       </View>
-      <View style={[styles.vehicleFareOptionPriceWrap, stackFare && styles.vehicleFareOptionPriceWrapStacked]}>
-        <Text style={[styles.vehicleFareOptionPrice, disabled && styles.vehicleNameDisabled]}>
+      <View style={styles.vehicleFareOptionPriceWrap}>
+        <Text
+          style={[
+            styles.vehicleFareOptionPrice,
+            suggested && styles.vehicleFareOptionPriceSuggested,
+            selected && styles.vehicleFareOptionPriceSelected,
+            disabled && styles.vehicleNameDisabled
+          ]}
+        >
           {typeof price === 'number' ? money(price) : copy.estimating}
         </Text>
         {selected ? <Ionicons name="checkmark-circle" size={17} color={colors.customer} /> : null}
@@ -3200,9 +3551,19 @@ function VehicleFareOption({
   );
 }
 
-function VehicleMiniArt({ vehicle, muted, selected }: { vehicle: Vehicle; muted?: boolean; selected?: boolean }) {
+function VehicleMiniArt({
+  vehicle,
+  muted,
+  selected,
+  suggested
+}: {
+  vehicle: Vehicle;
+  muted?: boolean;
+  selected?: boolean;
+  suggested?: boolean;
+}) {
   const source = vehicleArtSources[vehicle.code] ?? mini700VehicleImage;
-  const shadowColor = muted ? colors.muted : selected ? colors.blue : colors.customer;
+  const shadowColor = muted ? colors.muted : selected ? colors.customer : suggested ? colors.blue : colors.customer;
   return (
     <View style={styles.vehicleMiniArt}>
       <View style={[styles.vehicleMiniShadow, { backgroundColor: shadowColor }]} />
@@ -3855,12 +4216,7 @@ function BookScreen({
                 </Text>
                 <Text style={styles.mutedSmall}>{copy.pricedAfterRoute}</Text>
               </View>
-              <Text
-                style={[
-                  styles.vehicleFarePrice,
-                  (responsive.isNarrow || responsive.hasLargeText) && styles.vehicleFarePriceStacked
-                ]}
-              >
+              <Text style={styles.vehicleFarePrice}>
                 {selectedFare
                   ? money(selectedFare.total)
                   : typeof routeBillableKm === 'number'
@@ -4472,7 +4828,7 @@ function ContactDetailsModal({
   const responsive = useResponsiveLayout();
   const [localError, setLocalError] = useState('');
   const [selectedAddressType, setSelectedAddressType] = useState<'home' | 'work' | 'other' | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible());
   const [mapExpanded, setMapExpanded] = useState(false);
   const contactScrollRef = useRef<ScrollView | null>(null);
   const contactScrollResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -4641,7 +4997,7 @@ function ContactDetailsModal({
     onSaved?.(nextBooking);
   }
 
-  const footerInsideScroll = keyboardVisible && responsive.isLandscape && responsive.isShort;
+  const contactFormCompactMap = keyboardVisible && !mapExpanded;
   const contactFooter = (
     <View style={styles.contactPageFooter}>
       <View style={[styles.contactResponsiveFooterContent, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
@@ -4664,7 +5020,7 @@ function ContactDetailsModal({
       <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.contactPageShell}>
         <KeyboardAvoidingView
           style={styles.contactPageKeyboard}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <InlineExactLocationPicker
             api={api}
@@ -4673,7 +5029,7 @@ function ContactDetailsModal({
             value={place}
             lat={placeLat}
             lng={placeLng}
-            compact={keyboardVisible && !mapExpanded}
+            compact={contactFormCompactMap}
             expanded={mapExpanded}
             onBack={mapExpanded ? minimizeMap : onClose}
             onToggleExpanded={mapExpanded ? minimizeMap : maximizeMap}
@@ -4718,7 +5074,7 @@ function ContactDetailsModal({
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              scrollEnabled={keyboardVisible}
+              scrollEnabled
               bounces={false}
               overScrollMode="never"
               contentContainerStyle={[
@@ -4727,7 +5083,8 @@ function ContactDetailsModal({
                   width: '100%',
                   maxWidth: Math.min(680, responsive.contentMaxWidth),
                   alignSelf: 'center',
-                  paddingHorizontal: responsive.horizontalPadding
+                  paddingHorizontal: responsive.horizontalPadding,
+                  paddingBottom: 22
                 }
               ]}
             >
@@ -4802,9 +5159,8 @@ function ContactDetailsModal({
                 );
               })}
             </View>
-            {footerInsideScroll ? contactFooter : null}
             </ScrollView>
-            {!footerInsideScroll ? contactFooter : null}
+            {contactFooter}
           </>
           )}
         </KeyboardAvoidingView>
@@ -4880,7 +5236,7 @@ function MapLocationPicker({
   const lat = region.latitude;
   const lng = region.longitude;
   const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
-  const mapCanvasMinHeight = responsive.isShort ? 120 : responsive.isTablet ? 300 : 220;
+  const mapCanvasMinHeight = 220;
 
   useEffect(() => {
     const search = query.trim();
@@ -5145,9 +5501,19 @@ function OrdersScreen({
   const activeOrderIds = new Set(activeOrders.map((order) => order.id));
   const pastOrders = orders.filter((order) => !activeOrderIds.has(order.id));
   const [detailOrderId, setDetailOrderId] = useState<string | undefined>();
+  const [historyFilter, setHistoryFilter] = useState<OrderHistoryFilter>('all');
   const ordersScrollRef = useRef<ScrollView | null>(null);
   const allOrderIds = orders.map((order) => order.id).join('|');
   const allActiveOrderIds = activeOrders.map((order) => order.id).join('|');
+  const deliveredOrderCount = pastOrders.filter((order) => order.status === 'delivered').length;
+  const cancelledOrderCount = pastOrders.filter((order) => order.status === 'cancelled').length;
+  const filteredPastOrders = pastOrders.filter((order) => historyFilter === 'all' || order.status === historyFilter);
+  const historyFilterOptions: Array<{ id: OrderHistoryFilter; label: string; count: number }> = [
+    { id: 'all', label: copy.allOrders, count: pastOrders.length },
+    { id: 'delivered', label: copy.delivered, count: deliveredOrderCount },
+    { id: 'cancelled', label: copy.cancelled, count: cancelledOrderCount }
+  ];
+  const historyFiltersActive = historyFilter !== 'all';
   const detailOrder = detailOrderId
     ? activeOrders.find((order) => order.id === detailOrderId) ?? orders.find((order) => order.id === detailOrderId)
     : undefined;
@@ -5186,7 +5552,12 @@ function OrdersScreen({
   }
 
   return (
-    <ScrollView ref={ordersScrollRef} contentContainerStyle={styles.scroll}>
+    <ScrollView
+      ref={ordersScrollRef}
+      contentContainerStyle={styles.scroll}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+    >
       {detailOrder ? (
         <OrderDetailsPanel
           order={detailOrder}
@@ -5225,16 +5596,67 @@ function OrdersScreen({
 
           <View style={styles.historyHeader}>
             <SectionTitle title={copy.orderHistory} />
-            <Text style={styles.mutedSmall}>{pastOrders.length} {copy.orders.toLowerCase()}</Text>
+            <Text style={styles.mutedSmall}>
+              {historyFiltersActive ? `${filteredPastOrders.length} / ${pastOrders.length}` : pastOrders.length} {copy.orders.toLowerCase()}
+            </Text>
           </View>
           {pastOrders.length ? (
-            pastOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                onPress={() => openOrderDetails(order)}
-              />
-            ))
+            <>
+              <View style={styles.orderHistoryTools}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.orderHistoryFilters}
+                >
+                  {historyFilterOptions.map((option) => {
+                    const selected = historyFilter === option.id;
+                    return (
+                      <Pressable
+                        key={option.id}
+                        style={[styles.orderHistoryFilterChip, selected && styles.orderHistoryFilterChipActive]}
+                        onPress={() => setHistoryFilter(option.id)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                      >
+                        <Text style={[styles.orderHistoryFilterText, selected && styles.orderHistoryFilterTextActive]}>
+                          {option.label}
+                        </Text>
+                        <View style={[styles.orderHistoryFilterCount, selected && styles.orderHistoryFilterCountActive]}>
+                          <Text style={[styles.orderHistoryFilterCountText, selected && styles.orderHistoryFilterCountTextActive]}>
+                            {option.count}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+              {filteredPastOrders.length ? (
+                filteredPastOrders.map((order) => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    onPress={() => openOrderDetails(order)}
+                  />
+                ))
+              ) : (
+                <View style={styles.emptyHistoryCard}>
+                  <Ionicons name="filter-outline" size={28} color={colors.muted} />
+                  <Text style={styles.emptyTitle}>{copy.noMatchingOrders}</Text>
+                  <Text style={styles.muted}>{copy.adjustOrderFilters}</Text>
+                  <Pressable
+                    style={styles.orderHistoryClearButton}
+                    onPress={() => {
+                      setHistoryFilter('all');
+                    }}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="refresh" size={15} color={colors.customer} />
+                    <Text style={styles.orderHistoryClearButtonText}>{copy.clearFilters}</Text>
+                  </Pressable>
+                </View>
+              )}
+            </>
           ) : (
             <View style={styles.emptyHistoryCard}>
               <Ionicons name="cube-outline" size={28} color={colors.muted} />
@@ -5360,13 +5782,6 @@ function OrderDetailsPanel({
             <View style={styles.flex}>
               <Text style={[styles.countdownValue, countdown.delayed && styles.countdownValueDelayed]}>
                 {countdown.delayed ? copy.runningLate : countdown.pendingPickup ? copy.countdownBegins : countdown.label}
-              </Text>
-              <Text style={styles.countdownLabel}>
-                {countdown.delayed
-                  ? copy.estimatedDeliveryPassed
-                  : countdown.pendingPickup
-                    ? copy.countdownBegins
-                    : copy.estimatedTimeAfterPickup}
               </Text>
             </View>
           </View>
@@ -5519,7 +5934,7 @@ function WalletScreen({
           </View>
 
           <View style={styles.walletCoinsBalanceRow}>
-            <View>
+            <View style={styles.walletCoinsBalanceMain}>
               <Text style={styles.walletCoinsValue}>{wallet.coins}</Text>
               <Text style={styles.walletCoinsAvailable}>{copy.coinsAvailable}</Text>
             </View>
@@ -5912,9 +6327,6 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
 
 function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   const copy = useCopy();
-  const responsive = useResponsiveLayout();
-  const singleColumnCards =
-    responsive.width < 320 || (responsive.hasLargeText && responsive.effectiveWidth < 520);
   const businessFeatures: Array<{
     icon: keyof typeof Ionicons.glyphMap;
     title: string;
@@ -5973,7 +6385,7 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
         {businessFeatures.map((feature) => (
           <View
             key={feature.title}
-            style={[styles.enterpriseFeatureCard, singleColumnCards && styles.responsiveSingleColumnCard]}
+            style={styles.enterpriseFeatureCard}
           >
             <View style={styles.enterpriseFeatureIcon}>
               <Ionicons name={feature.icon} size={18} color={colors.customer} />
@@ -6072,7 +6484,7 @@ function LanguagePanel({
         const active = selected === option.id;
         return (
           <Pressable key={option.id} style={[styles.languageOption, active && styles.languageOptionActive]} onPress={() => onSelect(option.id)}>
-            <View>
+            <View style={styles.flex}>
               <Text style={styles.languageTitle}>{option.id === 'hi' ? copy.languageHindi : copy.languageEnglish}</Text>
               <Text style={styles.languageSubtitle}>{languageNativeLabel(option.id)}</Text>
             </View>
@@ -6272,9 +6684,8 @@ function BottomTabs({
 }
 
 function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
-  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.primaryButton, responsive.stackActions && styles.buttonStacked]} onPress={onPress}>
+    <Pressable style={styles.primaryButton} onPress={onPress}>
       <Ionicons name={icon} size={17} color={colors.white} />
       <Text style={styles.primaryButtonText}>{title}</Text>
     </Pressable>
@@ -6282,9 +6693,8 @@ function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof ty
 }
 
 function SecondaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
-  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.secondaryButton, responsive.stackActions && styles.buttonStacked]} onPress={onPress}>
+    <Pressable style={styles.secondaryButton} onPress={onPress}>
       <Ionicons name={icon} size={17} color={colors.ink} />
       <Text style={styles.secondaryButtonText}>{title}</Text>
     </Pressable>
@@ -6485,12 +6895,10 @@ function OrderActionButton({
   tone?: 'default' | 'primary' | 'danger';
   onPress: () => void;
 }) {
-  const responsive = useResponsiveLayout();
   return (
     <Pressable
       style={[
         styles.orderActionButton,
-        responsive.stackActions && styles.buttonStacked,
         tone === 'primary' && styles.orderActionButtonPrimary,
         tone === 'danger' && styles.orderActionButtonDanger
       ]}
@@ -6531,10 +6939,7 @@ function MapPreview({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
-  const mapHeight = Math.max(
-    responsive.isShort ? 160 : 190,
-    Math.min(responsive.isTablet ? 260 : 218, responsive.height * (responsive.isLandscape ? 0.46 : 0.28))
-  );
+  const mapHeight = 218;
   const hasLiveLocation = liveTracking && typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
   const routePoints = [pickup, ...extraStops, drop]
@@ -6734,23 +7139,19 @@ function FareCard({ fare }: { fare: FareBreakup }) {
 }
 
 function FareRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  const responsive = useResponsiveLayout();
-  const stacked = responsive.isNarrow || responsive.hasLargeText;
   return (
-    <View style={[styles.between, stacked && styles.betweenStacked]}>
-      <Text style={[styles.fareLabel, stacked && styles.fareLabelStacked, bold && styles.bold]}>{label}</Text>
-      <Text style={[styles.fareValue, stacked && styles.fareValueStacked, bold && styles.bold]}>{value}</Text>
+    <View style={styles.between}>
+      <Text style={[styles.fareLabel, bold && styles.bold]}>{label}</Text>
+      <Text style={[styles.fareValue, bold && styles.bold]}>{value}</Text>
     </View>
   );
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
-  const responsive = useResponsiveLayout();
-  const stacked = responsive.isNarrow || responsive.hasLargeText;
   return (
-    <View style={[styles.summaryRow, stacked && styles.summaryRowStacked]}>
+    <View style={styles.summaryRow}>
       <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={[styles.summaryValue, stacked && styles.summaryValueStacked]} numberOfLines={stacked ? undefined : 2}>
+      <Text style={styles.summaryValue} numberOfLines={2}>
         {value}
       </Text>
     </View>
@@ -6761,89 +7162,49 @@ const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
   loginShell: { flex: 1, backgroundColor: colors.white },
   authKeyboard: { flex: 1 },
+  authScrollViewport: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
   authScrollOtp: { paddingBottom: 24 },
-  profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
+  profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white, paddingBottom: 32 },
   authResponsiveFrame: { width: '100%', alignSelf: 'center', flexGrow: 1 },
-  authResponsiveFrameLandscape: { flexDirection: 'row', alignItems: 'stretch' },
   loginHero: {
-    minHeight: 360,
-    backgroundColor: '#F1EDFF',
+    width: '100%',
+    aspectRatio: 1.55,
+    backgroundColor: '#F8F6FF',
     justifyContent: 'flex-start',
     overflow: 'hidden'
   },
-  loginHeroOtp: { minHeight: 230 },
-  loginHeroLandscape: { flexBasis: '44%', flexGrow: 0 },
-  loginHeroImage: { width: '100%', height: '100%' },
+  loginHeroImage: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', aspectRatio: 1448 / 1086 },
   loginHeroWash: {
     position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: 'rgba(255,255,255,0.16)'
+    backgroundColor: 'rgba(255,255,255,0.10)'
   },
   loginBrandPanel: {
     alignSelf: 'flex-start',
     alignItems: 'flex-start',
     paddingHorizontal: 18,
-    paddingTop: 24,
+    paddingTop: 18,
     maxWidth: 190
   },
   loginBrandLogo: { width: 172, height: 54 },
   loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '600', lineHeight: 19, marginTop: 10, maxWidth: 145 },
-  authHero: {
-    minHeight: 350,
-    backgroundColor: colors.customerLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 44,
-    paddingBottom: 30,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    overflow: 'hidden'
-  },
-  authHeroLandscape: { flexBasis: '44%', flexGrow: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
-  authTrackOne: {
-    position: 'absolute',
-    left: -34,
-    right: -24,
-    bottom: 46,
-    height: 22,
-    borderRadius: 18,
-    backgroundColor: colors.ink,
-    opacity: 0.12,
-    transform: [{ rotate: '-11deg' }]
-  },
-  authTrackTwo: {
-    position: 'absolute',
-    left: 180,
-    right: -60,
-    top: 86,
-    height: 18,
-    borderRadius: 16,
-    backgroundColor: colors.customer,
-    opacity: 0.16,
-    transform: [{ rotate: '15deg' }]
-  },
-  authAccentLine: {
-    position: 'absolute',
-    left: 22,
-    right: 22,
-    bottom: 0,
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: colors.customer
-  },
+  profileSetupHero: { minHeight: 190, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 22 },
+  profileSetupHeroIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', marginBottom: 13, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  profileSetupHeroKicker: { color: colors.customer, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginBottom: 6 },
+  profileSetupHeroTitle: { color: colors.ink, fontSize: 23, fontWeight: '700', textAlign: 'center' },
+  profileSetupHeroText: { maxWidth: 300, color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 17, textAlign: 'center', marginTop: 5 },
   authForm: {
     flexGrow: 1,
     backgroundColor: colors.white,
     paddingHorizontal: 22,
-    paddingTop: 30,
+    paddingTop: 24,
     paddingBottom: 26
   },
-  authFormLandscape: { flexBasis: '56%', flexGrow: 1, justifyContent: 'center' },
+  authFormOtp: { paddingTop: 18 },
   authKicker: { color: colors.customer, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8 },
   authTitle: { color: colors.ink, fontSize: 32, fontWeight: '700', marginBottom: 6 },
   authFieldGroup: { marginBottom: 14 },
@@ -6873,11 +7234,12 @@ const styles = StyleSheet.create({
   countryCode: { color: colors.ink, fontSize: 14, fontWeight: '600', marginLeft: 7 },
   phoneDivider: { width: 1, height: 24, backgroundColor: colors.line, marginHorizontal: 10 },
   phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 12 },
-  loginConsent: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 4, rowGap: 2, marginTop: -3, marginBottom: 14, paddingHorizontal: 6 },
+  loginConsent: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 4, rowGap: 2, marginTop: 12, marginBottom: 0, paddingHorizontal: 6 },
   loginConsentText: { color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15 },
   loginConsentLink: { color: colors.customer, fontSize: 10, fontWeight: '700', lineHeight: 15, textDecorationLine: 'underline' },
   loginPolicyShell: { flex: 1, backgroundColor: colors.white },
-  authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  authPrimaryButton: { width: '100%', minHeight: 50, borderRadius: 8, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  authPrimaryButtonDisabled: { opacity: 0.45 },
   authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
   authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
   authDividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
@@ -6897,6 +7259,30 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   authNoticeText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '600' },
+  loginOtpBackButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', marginBottom: 22 },
+  loginOtpIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  loginProfileTitle: { color: colors.ink, fontSize: 28, fontWeight: '700', marginBottom: 7 },
+  loginProfileSubtitle: { color: colors.muted, fontSize: 13, fontWeight: '500', lineHeight: 19, marginBottom: 20 },
+  loginOtpTitle: { color: colors.ink, fontSize: 28, fontWeight: '700', marginBottom: 7 },
+  loginOtpSubtitle: { color: colors.muted, fontSize: 13, fontWeight: '500', lineHeight: 19 },
+  loginOtpDestinationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3, marginBottom: 24 },
+  loginOtpPhone: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  loginOtpChange: { color: colors.customer, fontSize: 12, fontWeight: '700' },
+  loginOtpField: { position: 'relative', marginBottom: 13 },
+  loginOtpBoxes: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 },
+  loginOtpBox: { flex: 1, minWidth: 0, maxWidth: 52, height: 54, borderWidth: 1, borderColor: colors.line, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center', justifyContent: 'center' },
+  loginOtpBoxFilled: { borderColor: '#C4B5FD', backgroundColor: colors.white },
+  loginOtpBoxActive: { borderWidth: 1.5, borderColor: colors.customer, backgroundColor: colors.customerLight },
+  loginOtpDigit: { color: colors.ink, fontSize: 20, fontWeight: '700' },
+  loginOtpHiddenInput: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, width: '100%', height: '100%', opacity: 0, color: 'transparent' },
+  loginOtpHintRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 18 },
+  loginOtpHint: { flex: 1, color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15 },
+  loginResendBlock: { alignItems: 'center', marginTop: 22, gap: 9 },
+  loginResendLabel: { color: colors.muted, fontSize: 11, fontWeight: '500' },
+  loginResendButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 10, backgroundColor: colors.white, paddingHorizontal: 14 },
+  loginResendButtonDisabled: { borderColor: colors.line, backgroundColor: colors.faint },
+  loginResendText: { color: colors.customer, fontSize: 12, fontWeight: '700' },
+  loginResendTextDisabled: { color: colors.muted },
   authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center', lineHeight: 16, marginTop: 4 },
   loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
   brandLogo: { width: '100%', alignItems: 'center', paddingHorizontal: 8 },
@@ -7007,12 +7393,11 @@ const styles = StyleSheet.create({
   pickupSearchResultTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   pickupSearchResultSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   homeServiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  responsiveSingleColumnCard: { flexBasis: '100%', minWidth: '100%', width: '100%' },
   homeServiceCard: {
     flexGrow: 1,
     flexShrink: 1,
-    flexBasis: 150,
-    minWidth: 132,
+    flexBasis: '46%',
+    minWidth: 0,
     minHeight: 142,
     borderRadius: 16,
     backgroundColor: colors.white,
@@ -7084,7 +7469,7 @@ const styles = StyleSheet.create({
   searchText: { flex: 1, color: colors.muted, fontSize: 14 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
   serviceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  serviceCard: { flexGrow: 1, flexShrink: 1, flexBasis: 150, minWidth: 132, minHeight: 112, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, gap: 6 },
+  serviceCard: { flexGrow: 1, flexShrink: 1, flexBasis: '46%', minWidth: 0, minHeight: 112, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, gap: 6 },
   serviceIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   serviceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   serviceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15 },
@@ -7146,7 +7531,7 @@ const styles = StyleSheet.create({
   liveRouteLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
   liveRouteText: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
   liveOrderMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  liveOrderMetric: { flexGrow: 1, flexShrink: 1, flexBasis: 96, minWidth: 88, borderRadius: 13, backgroundColor: '#F8FAFC', padding: 10 },
+  liveOrderMetric: { flexGrow: 1, flexShrink: 1, flexBasis: '29%', minWidth: 0, borderRadius: 13, backgroundColor: '#F8FAFC', padding: 10 },
   liveOrderMetricValue: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   liveOrderMetricLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
   activeOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
@@ -7159,14 +7544,14 @@ const styles = StyleSheet.create({
   searchingPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
   searchingPartnerText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
   compactOtpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
-  compactOtpBox: { flexGrow: 1, flexShrink: 1, flexBasis: 120, minWidth: 110, backgroundColor: colors.customerLight, borderRadius: 14, padding: 11, alignItems: 'center' },
+  compactOtpBox: { flexGrow: 1, flexShrink: 1, flexBasis: '46%', minWidth: 0, backgroundColor: colors.customerLight, borderRadius: 14, padding: 11, alignItems: 'center' },
   compactOtpText: { color: colors.customer, fontSize: 18, fontWeight: '700', marginTop: 2 },
   ordersOtpPanel: { borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginTop: 12 },
   ordersOtpTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   ordersOtpTitle: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   ordersOtpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   orderActionBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  orderActionButton: { flexGrow: 1, flexShrink: 1, flexBasis: 96, minWidth: 92, minHeight: 40, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  orderActionButton: { flexGrow: 1, flexShrink: 1, flexBasis: '29%', minWidth: 0, minHeight: 40, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
   orderActionButtonPrimary: { backgroundColor: colors.customer },
   orderActionButtonDanger: { backgroundColor: '#FEF2F2' },
   orderActionButtonText: { flexShrink: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center' },
@@ -7176,6 +7561,18 @@ const styles = StyleSheet.create({
   timelinePanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   noActiveOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 8 },
   historyHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  orderHistoryTools: { gap: 10, marginBottom: 12 },
+  orderHistoryFilters: { gap: 8, paddingRight: 2 },
+  orderHistoryFilterChip: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: colors.line, borderRadius: 999, backgroundColor: colors.white, paddingLeft: 13, paddingRight: 8, paddingVertical: 7 },
+  orderHistoryFilterChipActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
+  orderHistoryFilterText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
+  orderHistoryFilterTextActive: { color: colors.customer },
+  orderHistoryFilterCount: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  orderHistoryFilterCountActive: { backgroundColor: colors.customer },
+  orderHistoryFilterCountText: { color: colors.muted, fontSize: 10, fontWeight: '700' },
+  orderHistoryFilterCountTextActive: { color: colors.white },
+  orderHistoryClearButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: colors.customerLight, paddingHorizontal: 14, marginTop: 8 },
+  orderHistoryClearButtonText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
   orderCardSelected: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   activeOrderSwitchRow: { gap: 10, paddingBottom: 10 },
@@ -7185,14 +7582,13 @@ const styles = StyleSheet.create({
   activeOrderSwitchTitleActive: { color: colors.customer },
   activeOrderSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 5 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
-  betweenStacked: { flexDirection: 'column', alignItems: 'flex-start', gap: 3 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   orderCardHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
   orderCardDate: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
   orderCardRouteBox: { borderRadius: 14, backgroundColor: '#F8FAFC', padding: 10, marginBottom: 10 },
   orderCardFareRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
   orderCardVehicleArt: { width: 58, height: 50, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  orderCardFareCopy: { flexGrow: 1, flexShrink: 1, minWidth: 140 },
+  orderCardFareCopy: { flexGrow: 1, flexShrink: 1, minWidth: 0 },
   orderCardVehicle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   badge: { maxWidth: '100%', flexShrink: 1, backgroundColor: colors.customerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
   badgeText: { flexShrink: 1, color: colors.customer, fontSize: 11, fontWeight: '600', textAlign: 'center' },
@@ -7222,18 +7618,20 @@ const styles = StyleSheet.create({
   serviceOptionCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   serviceOptionTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   vehicleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  vehicleCard: { flexGrow: 1, flexShrink: 1, flexBasis: 150, minWidth: 132, borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
+  vehicleCard: { flexGrow: 1, flexShrink: 1, flexBasis: '46%', minWidth: 0, borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, gap: 5 },
   vehicleCardActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  vehicleCardSuggested: { borderColor: colors.green, backgroundColor: colors.partnerLight },
+  vehicleCardSuggested: { borderColor: colors.blue, backgroundColor: '#EFF6FF' },
   vehicleCardDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   vehicleCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   vehicleBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
-  vehicleSuggestedBadge: { backgroundColor: colors.green, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  vehicleSuggestedBadge: { backgroundColor: colors.blue, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
   vehicleSuggestedText: { color: colors.white, fontSize: 9, fontWeight: '600' },
   vehicleEta: { color: colors.green, fontSize: 11, fontWeight: '600', backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   vehicleName: { color: colors.ink, fontWeight: '600', fontSize: 14 },
   vehicleNameDisabled: { color: colors.muted },
-  vehiclePriceLine: { color: colors.customer, fontSize: 13, fontWeight: '600' },
+  vehiclePriceLine: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  vehiclePriceLineSuggested: { color: colors.blue },
+  vehiclePriceLineSelected: { color: colors.customer },
   vehicleSelectedText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   vehicleUnavailableText: { color: colors.red, fontSize: 11, fontWeight: '600' },
   fieldGroup: { marginBottom: 12 },
@@ -7295,7 +7693,7 @@ const styles = StyleSheet.create({
   mapPickerControlButton: { width: 42, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   mapPickerBottomPanel: { gap: 10, paddingTop: 2 },
   mapPickerCurrentButton: { minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
-  mapPickerCurrentText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
+  mapPickerCurrentText: { flexShrink: 1, color: colors.customer, fontSize: 12, fontWeight: '600', textAlign: 'center' },
   mapPickerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
   savedAddressStrip: { marginTop: -4, marginBottom: 12 },
   savedAddressStripTitle: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 8 },
@@ -7344,7 +7742,7 @@ const styles = StyleSheet.create({
   contactPageFormContent: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 },
   contactPageHeader: { marginBottom: 12 },
   contactPageActions: { marginTop: 4 },
-  contactPageFooter: { backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+  contactPageFooter: { backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
   contactResponsiveFooterContent: { width: '100%', alignSelf: 'center', gap: 10 },
   contactSheetOverlay: { flex: 1, justifyContent: 'flex-end' },
   contactSheetBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
@@ -7404,7 +7802,7 @@ const styles = StyleSheet.create({
   contactTypeChipActive: { borderColor: '#93C5FD', backgroundColor: colors.customerLight },
   contactTypeChipText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
   contactTypeChipTextActive: { color: colors.customer },
-  contactConfirmButton: { minHeight: 48, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
+  contactConfirmButton: { minHeight: 44, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
   contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '600' },
   contactExpandedMapFooter: { flexShrink: 1, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, gap: 10 },
   contactExpandedLocationRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -7474,10 +7872,9 @@ const styles = StyleSheet.create({
   routeReviewTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   vehicleFareCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 16, backgroundColor: colors.customerLight, padding: 14, marginBottom: 14 },
   vehicleFareIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  vehicleFareCopy: { flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 130 },
+  vehicleFareCopy: { flex: 1, minWidth: 0 },
   vehicleFareMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2, marginBottom: 2 },
   vehicleFarePrice: { color: colors.ink, fontSize: 18, fontWeight: '700' },
-  vehicleFarePriceStacked: { width: '100%', paddingLeft: 60, textAlign: 'left' },
   vehicleRoutePanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   vehicleRouteActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, marginTop: 9, paddingTop: 10 },
   vehicleRouteAction: { flex: 1, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
@@ -7485,17 +7882,20 @@ const styles = StyleSheet.create({
   vehicleFareList: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', marginBottom: 14 },
   vehicleFareOption: { minHeight: 78, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
   vehicleFareOptionSuggested: { minHeight: 96, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderBottomWidth: 1.5, borderBottomColor: colors.blue, borderRadius: 16, margin: 8 },
-  vehicleFareOptionSelected: { minHeight: 104, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderBottomWidth: 1.5, borderBottomColor: colors.blue, borderRadius: 16, margin: 8 },
+  vehicleFareOptionSelected: { minHeight: 104, backgroundColor: colors.customerLight, borderWidth: 1.5, borderColor: colors.customer, borderBottomWidth: 1.5, borderBottomColor: colors.customer, borderRadius: 16, margin: 8 },
   vehicleFareOptionDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   vehicleFareOptionIcon: { width: 52, height: 44, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  vehicleFareOptionCopy: { flexGrow: 1, flexShrink: 1, flexBasis: 170, minWidth: 130 },
+  vehicleFareOptionCopy: { flex: 1, minWidth: 0 },
   vehicleFareOptionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
   vehicleFareOptionTitle: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  vehicleFareOptionTitleSuggested: { color: colors.blue },
+  vehicleFareOptionTitleSelected: { color: colors.customer },
   vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 3 },
   vehicleFareOptionPriceWrap: { alignItems: 'flex-end', gap: 4 },
-  vehicleFareOptionPriceWrapStacked: { flexBasis: '100%', alignItems: 'flex-start', paddingLeft: 64 },
   vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '600' },
-  vehicleNewBadge: { borderRadius: 7, backgroundColor: '#F97316', paddingHorizontal: 6, paddingVertical: 2 },
+  vehicleFareOptionPriceSuggested: { color: colors.blue },
+  vehicleFareOptionPriceSelected: { color: colors.customer },
+  vehicleNewBadge: { borderRadius: 7, backgroundColor: colors.blue, paddingHorizontal: 6, paddingVertical: 2 },
   vehicleNewBadgeText: { color: colors.white, fontSize: 9, fontWeight: '600' },
   vehicleMiniArt: { width: 50, height: 40, alignItems: 'center', justifyContent: 'center' },
   vehicleMiniShadow: { position: 'absolute', bottom: 2, width: 34, height: 4, borderRadius: 4, opacity: 0.14 },
@@ -7506,10 +7906,8 @@ const styles = StyleSheet.create({
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginBottom: 8 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },
-  summaryRowStacked: { flexDirection: 'column', alignItems: 'flex-start', gap: 3 },
   summaryLabel: { flexShrink: 1, color: colors.muted, fontSize: 12, fontWeight: '600' },
   summaryValue: { flex: 1, minWidth: 0, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'right' },
-  summaryValueStacked: { flex: 0, width: '100%', textAlign: 'left' },
   payRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 14, marginBottom: 10 },
   payRowActive: { backgroundColor: colors.customerLight, borderColor: colors.customer },
   payRowDisabled: { opacity: 0.55, backgroundColor: colors.faint },
@@ -7556,9 +7954,7 @@ const styles = StyleSheet.create({
   otpBox: { flex: 1, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, alignItems: 'center' },
   otpText: { color: colors.customer, fontSize: 22, fontWeight: '700', marginTop: 4 },
   fareLabel: { flex: 1, minWidth: 0, color: colors.customer, fontSize: 13 },
-  fareLabelStacked: { flex: 0, width: '100%' },
   fareValue: { flexShrink: 0, color: colors.customer, fontSize: 13, fontWeight: '500', textAlign: 'right' },
-  fareValueStacked: { width: '100%', textAlign: 'left' },
   farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2, marginBottom: 8 },
   orderCardActionButton: { minHeight: 32, borderRadius: 8, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 5, paddingHorizontal: 12, paddingVertical: 6 },
   orderCardActionText: { color: colors.white, fontSize: 11, fontWeight: '600' },
@@ -7591,9 +7987,10 @@ const styles = StyleSheet.create({
   walletCoinsEyebrow: { color: colors.ink, fontSize: 15, fontWeight: '600', textTransform: 'uppercase' },
   walletCoinsCaption: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 2 },
   walletCoinsBalanceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  walletCoinsBalanceMain: { flexBasis: 80, flexShrink: 0 },
   walletCoinsValue: { color: colors.customer, fontSize: 36, fontWeight: '700', lineHeight: 40 },
   walletCoinsAvailable: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
-  walletCoinsDiscountBox: { flexGrow: 1, flexShrink: 1, flexBasis: 180, minWidth: 160, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
+  walletCoinsDiscountBox: { flex: 1, minWidth: 0, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
   walletCoinsDiscountValue: { color: colors.green, fontSize: 14, fontWeight: '600' },
   walletCoinsDiscount: { color: colors.green, fontSize: 10, fontWeight: '600', lineHeight: 14, marginTop: 1 },
   walletCouponButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
@@ -7673,7 +8070,7 @@ const styles = StyleSheet.create({
   accountVerifiedText: { flexShrink: 1, color: colors.green, fontSize: 10, fontWeight: '600' },
   accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   accountStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  accountStatBox: { flexGrow: 1, flexShrink: 1, flexBasis: 92, minWidth: 84, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
+  accountStatBox: { flexGrow: 1, flexShrink: 1, flexBasis: '29%', minWidth: 0, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
   accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
   accountStatLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   enterpriseCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 15, marginTop: 14 },
@@ -7687,7 +8084,7 @@ const styles = StyleSheet.create({
   enterpriseHeroTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
   enterpriseHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', lineHeight: 18 },
   enterpriseFeatureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  enterpriseFeatureCard: { flexGrow: 1, flexShrink: 1, flexBasis: 150, minWidth: 132, minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
+  enterpriseFeatureCard: { flexGrow: 1, flexShrink: 1, flexBasis: '46%', minWidth: 0, minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
   enterpriseFeatureIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   enterpriseFeatureTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   enterpriseFeatureText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 4 },
@@ -7755,11 +8152,10 @@ const styles = StyleSheet.create({
   tabText: { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center' },
   tabTextActive: { color: colors.customer },
   tabDot: { position: 'absolute', right: -3, top: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
-  primaryButton: { flex: 1, minWidth: 110, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  primaryButton: { flex: 1, minWidth: 0, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
   primaryButtonText: { flexShrink: 1, color: colors.white, fontWeight: '600', textAlign: 'center' },
-  secondaryButton: { flex: 1, minWidth: 110, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  secondaryButton: { flex: 1, minWidth: 0, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
   secondaryButtonText: { flexShrink: 1, color: colors.ink, fontWeight: '600', textAlign: 'center' },
-  buttonStacked: { flex: 0, width: '100%', maxWidth: '100%', minWidth: 0, alignSelf: 'stretch' },
   deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 10 },
   deleteAccountButtonText: { color: colors.red, fontWeight: '600' },
   logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },

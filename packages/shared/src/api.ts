@@ -81,10 +81,21 @@ export class IndieryApi {
     return payload as T;
   }
 
-  firebaseLogin(role: Role, firebaseIdToken: string) {
+  customerOnboardingStatus(phone: string) {
+    return this.request<{ needsProfile: boolean }>('/auth/customer-onboarding-status', {
+      method: 'POST',
+      body: JSON.stringify({ phone })
+    });
+  }
+
+  firebaseLogin(
+    role: Role,
+    firebaseIdToken: string,
+    customerProfile?: { name: string; email: string; city: string }
+  ) {
     return this.request<{ token: string; user: UserProfile }>('/auth/firebase-login', {
       method: 'POST',
-      body: JSON.stringify({ role, firebaseIdToken })
+      body: JSON.stringify({ role, firebaseIdToken, customerProfile })
     });
   }
 

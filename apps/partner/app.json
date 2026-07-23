@@ -47,6 +47,7 @@
     "android": {
       "package": "com.indeiry.driver",
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "usesCleartextTraffic": false,
       "adaptiveIcon": {

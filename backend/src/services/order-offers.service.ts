@@ -7,7 +7,7 @@ import { setOrderStatusTimeline } from './timeline.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 
 export const DRIVER_OFFER_BATCH_SIZE = 3;
-export const DRIVER_OFFER_TIMEOUT_MS = 30_000;
+export const DRIVER_OFFER_TIMEOUT_MS = 45_000;
 export const MIN_PARTNER_WALLET_BALANCE = 200;
 
 const activePartnerStatuses = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];

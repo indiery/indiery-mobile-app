@@ -255,7 +255,12 @@ export class IndieryApi {
   }
 
   partnerBootstrap() {
-    return this.request<PartnerBootstrap>('/partner/bootstrap');
+    return this.request<PartnerBootstrap>(`/partner/bootstrap?refresh=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    });
   }
 
   updatePartnerProfile(input: { name: string; email?: string; city: string; vehicleId: string; vehicleNumber?: string }) {

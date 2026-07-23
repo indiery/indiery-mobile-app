@@ -4,7 +4,7 @@ import {
   Alert,
   BackHandler,
   Image,
-  ImageBackground,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -15,6 +15,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View
 } from 'react-native';
 import { SafeAreaView, type Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,7 +30,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
-import partnerLoginBackgroundImage from './assets/bg.png';
+import partnerLoginBackgroundImage from './assets/bg1.png';
 import {
   colors,
   IndieryApi,
@@ -110,6 +111,13 @@ const enCopy = {
   enterMobileNumber: 'Enter your mobile number',
   otpSent: 'OTP sent. Enter the code to verify.',
   otpCode: 'OTP code',
+  otpVerification: 'OTP verification',
+  otpDestination: 'Enter the 6-digit code sent to',
+  verifyAndContinue: 'Verify and continue',
+  changeNumber: 'Change number',
+  didNotReceiveCode: "Didn't receive the code?",
+  resendOtp: 'Resend OTP',
+  resendIn: 'Resend OTP in',
   change: 'Change',
   verify: 'Verify',
   verifying: 'Verifying',
@@ -281,7 +289,12 @@ const enCopy = {
   ifscCode: 'IFSC code',
   updateBank: 'Update Bank',
   saveBank: 'Save Bank',
-  profileSubmittedNotice: 'Profile submitted. Indiery will verify documents before order access is enabled.',
+  profileUnderReview: 'Profile submitted for verification',
+  profileSubmittedNotice: 'Your profile and documents were submitted successfully. Our admin team will review them before order access is enabled.',
+  checkVerificationStatus: 'Check verification status',
+  verificationApproved: 'Profile verified. Order access is now enabled.',
+  verificationStillPending: 'Admin verification is still pending.',
+  verificationRejected: 'Verification needs attention. Review your documents and submit them again.',
   requestAccountDeletion: 'Request account deletion',
   requestAccountDeletionBody: 'We will review your request and delete eligible account data. Some order, payout, KYC, fraud prevention, tax, or legal records may be retained where required.',
   submitRequest: 'Submit request',
@@ -585,7 +598,12 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   ifscCode: 'IFSC कोड',
   updateBank: 'बैंक अपडेट करें',
   saveBank: 'बैंक सेव करें',
-  profileSubmittedNotice: 'प्रोफाइल जमा हो गई है. ऑर्डर एक्सेस से पहले Indiery दस्तावेज सत्यापित करेगा.',
+  profileUnderReview: 'प्रोफाइल सत्यापन के लिए जमा है',
+  profileSubmittedNotice: 'आपकी प्रोफाइल और दस्तावेज सफलतापूर्वक जमा हो गए हैं। ऑर्डर एक्सेस शुरू होने से पहले हमारी एडमिन टीम इनकी जांच करेगी।',
+  checkVerificationStatus: 'सत्यापन स्टेटस जांचें',
+  verificationApproved: 'प्रोफाइल सत्यापित हो गई है। अब ऑर्डर एक्सेस चालू है।',
+  verificationStillPending: 'एडमिन सत्यापन अभी पेंडिंग है।',
+  verificationRejected: 'सत्यापन के लिए सुधार जरूरी है। अपने दस्तावेज जांचकर दोबारा जमा करें।',
   requestAccountDeletion: 'अकाउंट डिलीट अनुरोध',
   requestAccountDeletionBody: 'हम आपका अनुरोध रिव्यू करेंगे और योग्य अकाउंट डेटा हटाएंगे. कुछ ऑर्डर, पेआउट, KYC, धोखाधड़ी रोकथाम, टैक्स या कानूनी रिकॉर्ड जरूरत के अनुसार रखे जा सकते हैं.',
   submitRequest: 'अनुरोध भेजें',
@@ -714,6 +732,29 @@ function useCopy() {
 
 function useLanguage() {
   return useContext(LanguageContext);
+}
+
+function useResponsiveLayout() {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const isShort = height < 640;
+  const isCompact = width <= 400;
+  const isSmall = width <= 375;
+  const horizontalPadding = isSmall ? 12 : isCompact ? 14 : 16;
+  const contentMaxWidth = 680;
+  const tabBarHeight = isSmall ? 58 : isCompact ? 62 : 68;
+
+  return {
+    width,
+    height,
+    isLandscape,
+    isShort,
+    isCompact,
+    isSmall,
+    horizontalPadding,
+    contentMaxWidth,
+    tabBarHeight
+  };
 }
 
 function useAndroidBackHandler(onBack: () => boolean, dependencies: React.DependencyList) {
@@ -885,10 +926,13 @@ async function readDeviceLocation(
     throw new Error(copyFor(language, 'turnOnGps'));
   }
 
+  const recentLocation = await Location.getLastKnownPositionAsync({ maxAge: 45000 }).catch(() => null);
+  if (recentLocation) return recentLocation;
+
   try {
     return await withTimeout(
       Location.getCurrentPositionAsync({ accuracy }),
-      8000,
+      5000,
       copyFor(language, 'gpsTakingTooLong')
     );
   } catch (err) {
@@ -1029,6 +1073,7 @@ type PendingLocationUpdate = {
 
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
+  const responsive = useResponsiveLayout();
   const socketRef = useRef<Socket | null>(null);
   const pushTokenRef = useRef<string | undefined>(undefined);
   const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
@@ -1298,6 +1343,26 @@ export default function App() {
           (error) => pendingLocation.waiters.forEach((waiter) => waiter.reject(error))
         );
       }
+    }
+  }
+
+  async function refreshVerificationStatus() {
+    setBusy(true);
+    try {
+      const bootstrap = await api.partnerBootstrap();
+      setData((current) => current ? bootstrap : current);
+      const status = bootstrap.user.partnerProfile?.kycStatus;
+      showToast(
+        status === 'verified'
+          ? copyFor(language, 'verificationApproved')
+          : status === 'rejected'
+            ? copyFor(language, 'verificationRejected')
+            : copyFor(language, 'verificationStillPending')
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : copyFor(language, 'refreshFailed'));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1635,22 +1700,37 @@ export default function App() {
       <LanguageContext.Provider value={language}>
       <SafeAreaView edges={appSafeAreaEdges} style={styles.shell}>
         <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-        <View style={styles.appHeader}>
-          <View>
-            <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
-            <Text style={styles.headerTitle}>{copyFor(language, 'partnerSetup')}</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable style={styles.panicButton} onPress={openPanicOptions}>
-              <Ionicons name="alert-circle" size={18} color={colors.white} />
-              <Text style={styles.panicButtonText}>{copyFor(language, 'panic')}</Text>
-            </Pressable>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{data.user.initials}</Text>
+        <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
+          <View style={[
+            styles.appHeaderInner,
+            responsive.isCompact && styles.appHeaderInnerCompact,
+            { maxWidth: responsive.contentMaxWidth }
+          ]}>
+            <View style={styles.appHeaderCopy}>
+              <Text style={[styles.eyebrow, responsive.isCompact && styles.eyebrowCompact, responsive.isSmall && styles.eyebrowSmall]}>{copyFor(language, 'appEyebrow')}</Text>
+              <Text
+                style={[
+                  styles.headerTitle,
+                  responsive.isCompact && styles.headerTitleCompact,
+                  responsive.isSmall && styles.headerTitleSmall
+                ]}
+                numberOfLines={2}
+              >
+                {copyFor(language, 'partnerSetup')}
+              </Text>
+            </View>
+            <View style={[styles.headerActions, responsive.isCompact && styles.headerActionsCompact]}>
+              <Pressable style={[styles.panicButton, responsive.isCompact && styles.panicButtonCompact, responsive.isSmall && styles.panicButtonSmall]} onPress={openPanicOptions}>
+                <Ionicons name="alert-circle" size={responsive.isSmall ? 14 : responsive.isCompact ? 16 : 18} color={colors.white} />
+                <Text style={[styles.panicButtonText, responsive.isCompact && styles.panicButtonTextCompact, responsive.isSmall && styles.panicButtonTextSmall]}>{copyFor(language, 'panic')}</Text>
+              </Pressable>
+              <View style={[styles.avatar, responsive.isCompact && styles.avatarCompact, responsive.isSmall && styles.avatarSmall]}>
+                <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact, responsive.isSmall && styles.avatarTextSmall]}>{data.user.initials}</Text>
+              </View>
             </View>
           </View>
         </View>
-        <View style={styles.content}>
+        <View style={[styles.content, { maxWidth: responsive.contentMaxWidth }]}>
           <PartnerOnboardingScreen
             user={data.user}
             vehicles={data.vehicles}
@@ -1679,24 +1759,40 @@ export default function App() {
     <SafeAreaView edges={profileDetailOpen ? appSafeAreaEdges : tabScreenSafeAreaEdges} style={styles.shell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       {tab !== 'profile' ? (
-        <View style={styles.appHeader}>
-          <View>
-            <Text style={styles.eyebrow}>{copyFor(language, 'appEyebrow')}</Text>
-            <Text style={styles.headerTitle}>{data.user.name}</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable style={styles.panicButton} onPress={openPanicOptions}>
-              <Ionicons name="alert-circle" size={18} color={colors.white} />
-              <Text style={styles.panicButtonText}>{copyFor(language, 'panic')}</Text>
-            </Pressable>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{data.user.initials}</Text>
+        <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
+          <View style={[
+            styles.appHeaderInner,
+            responsive.isCompact && styles.appHeaderInnerCompact,
+            { maxWidth: responsive.contentMaxWidth }
+          ]}>
+            <View style={styles.appHeaderCopy}>
+              <Text style={[styles.eyebrow, responsive.isCompact && styles.eyebrowCompact, responsive.isSmall && styles.eyebrowSmall]}>{copyFor(language, 'appEyebrow')}</Text>
+              <Text
+                style={[
+                  styles.headerTitle,
+                  responsive.isCompact && styles.headerTitleCompact,
+                  responsive.isSmall && styles.headerTitleSmall
+                ]}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+              >
+                {data.user.name}
+              </Text>
+            </View>
+            <View style={[styles.headerActions, responsive.isCompact && styles.headerActionsCompact]}>
+              <Pressable style={[styles.panicButton, responsive.isCompact && styles.panicButtonCompact, responsive.isSmall && styles.panicButtonSmall]} onPress={openPanicOptions}>
+                <Ionicons name="alert-circle" size={responsive.isSmall ? 14 : responsive.isCompact ? 16 : 18} color={colors.white} />
+                <Text style={[styles.panicButtonText, responsive.isCompact && styles.panicButtonTextCompact, responsive.isSmall && styles.panicButtonTextSmall]}>{copyFor(language, 'panic')}</Text>
+              </Pressable>
+              <View style={[styles.avatar, responsive.isCompact && styles.avatarCompact, responsive.isSmall && styles.avatarSmall]}>
+                <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact, responsive.isSmall && styles.avatarTextSmall]}>{data.user.initials}</Text>
+              </View>
             </View>
           </View>
         </View>
       ) : null}
 
-      <View style={[styles.content, tab === 'profile' && styles.accountContent]}>
+      <View style={[styles.content, tab === 'profile' && styles.accountContent, { maxWidth: responsive.contentMaxWidth }]}>
         {tab === 'dashboard' && (
           <DashboardScreen
             data={data}
@@ -1705,13 +1801,15 @@ export default function App() {
               withBusy(async () => {
                 const online = !data.user.partnerProfile?.online;
                 if (online) await syncLocation();
-                await api.setAvailability(online);
-                await refresh();
+                const result = await api.setAvailability(online);
+                setData((current) => current ? { ...current, user: result.user } : current);
                 showToast(online ? copyFor(language, 'youAreOnline') : copyFor(language, 'youAreOffline'));
+                scheduleRefresh(250);
               })
             }
             onActive={() => setTab('active')}
             onTopup={(amount) => topUpPartnerWallet(amount)}
+            onRefreshStatus={refreshVerificationStatus}
             onAccept={(orderId) =>
               withBusy(async () => {
                 await syncLocation();
@@ -1863,30 +1961,101 @@ function LoginScreen({
   onVerified: (firebaseIdToken: string) => Promise<void>;
 }) {
   const copy = useCopy();
+  const loginViewport = useWindowDimensions();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const loginScrollRef = useRef<ScrollView | null>(null);
+  const fullLoginViewportRef = useRef({
+    width: loginViewport.width,
+    height: loginViewport.height
+  });
+  if (Math.abs(fullLoginViewportRef.current.width - loginViewport.width) > 1) {
+    fullLoginViewportRef.current = {
+      width: loginViewport.width,
+      height: loginViewport.height
+    };
+  } else if (!keyboardVisible && loginViewport.height > fullLoginViewportRef.current.height) {
+    fullLoginViewportRef.current.height = loginViewport.height;
+  }
+  const loginViewportKeyboardShrink = Math.max(
+    0,
+    fullLoginViewportRef.current.height - loginViewport.height
+  );
+  const keyboardLayoutVisible =
+    keyboardVisible || fullLoginViewportRef.current.height - loginViewport.height > 120;
+  const androidKeyboardPadding =
+    Platform.OS === 'android' && keyboardLayoutVisible
+      ? Math.max(0, keyboardHeight - loginViewportKeyboardShrink)
+      : 0;
+  const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+  const phoneReady = normalizedPhone.length === 10;
+  const otpReady = code.trim().length === 6;
 
   useEffect(() => {
     setError(initialError);
   }, [initialError]);
 
-  useAndroidBackHandler(() => {
-    if (!confirmation) return false;
+  useEffect(() => {
+    if (!confirmation || resendSeconds <= 0) return undefined;
+    const timer = setTimeout(() => {
+      setResendSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [confirmation, resendSeconds]);
+
+  useEffect(() => {
+    if (!confirmation) return undefined;
+    const timer = setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 100);
+    return () => clearTimeout(timer);
+  }, [confirmation]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  function changePhoneNumber() {
+    Keyboard.dismiss();
     setConfirmation(null);
     setCode('');
     setError('');
+    setResendSeconds(0);
+  }
+
+  useAndroidBackHandler(() => {
+    if (!confirmation) return false;
+    changePhoneNumber();
     return true;
   }, [confirmation]);
 
   async function sendOtp() {
+    if (!phoneReady || busy) return;
     setBusy(true);
     setError('');
     try {
-      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone, language));
+      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(normalizedPhone, language));
       setConfirmation(result);
+      setCode('');
+      setResendSeconds(30);
+      Keyboard.dismiss();
     } catch (err) {
       setError(err instanceof Error ? err.message : copy.unableToSendOtp);
     } finally {
@@ -1895,7 +2064,7 @@ function LoginScreen({
   }
 
   async function verifyOtp() {
-    if (!confirmation) return;
+    if (!confirmation || !otpReady || busy) return;
     setBusy(true);
     setError('');
     try {
@@ -1910,91 +2079,634 @@ function LoginScreen({
     }
   }
 
+  if (confirmation) {
+    return (
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+        <KeyboardAvoidingView
+          style={[
+            styles.authKeyboard,
+            androidKeyboardPadding > 0 && { paddingBottom: androidKeyboardPadding }
+          ]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <PartnerLoginOtpStep
+            code={code}
+            phone={normalizedPhone}
+            error={error}
+            busy={busy}
+            otpReady={otpReady}
+            resendSeconds={resendSeconds}
+            keyboardVisible={keyboardLayoutVisible}
+            scrollRef={loginScrollRef}
+            onChangeCode={setCode}
+            onBack={changePhoneNumber}
+            onVerify={verifyOtp}
+            onResend={sendOtp}
+            onKeyboardFocus={() => setKeyboardVisible(true)}
+          />
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.authScroll} keyboardShouldPersistTaps="handled">
-          <LoginHero title={copy.appName} caption={copy.loginHeroCaption} />
-          <View style={styles.authForm}>
-            <Text style={styles.authTitle}>{copy.welcomeBack}</Text>
-            <Text style={styles.loginSubtitle}>{copy.loginSubtitle}</Text>
-            <LanguageSwitcher language={language} onChangeLanguage={onChangeLanguage} compact />
-            <PhoneLoginField value={phone} onChangeText={setPhone} />
-            {confirmation ? (
-              <>
-                <View style={styles.authNotice}>
-                  <Ionicons name="checkmark-circle" size={16} color={colors.partner} />
-                  <Text style={styles.authNoticeText}>{copy.otpSent}</Text>
-                </View>
-                <AuthField label={copy.otpCode} value={code} onChangeText={setCode} keyboardType="numeric" icon="key" maxLength={6} />
-              </>
-            ) : null}
-            {error ? <Text style={styles.loginError}>{error}</Text> : null}
-            <View style={styles.row}>
-              {confirmation ? (
-                <>
-                  <SecondaryButton title={copy.change} icon="create" onPress={() => setConfirmation(null)} />
-                  <AuthActionButton title={busy ? copy.verifying : copy.verify} onPress={verifyOtp} />
-                </>
-              ) : (
-                <AuthActionButton title={busy ? copy.sending : copy.sendOtp} onPress={sendOtp} />
-              )}
-            </View>
-            <AuthDivider />
-            <LoginFeatureRow />
-          </View>
-        </ScrollView>
+      <KeyboardAvoidingView
+        style={[
+          styles.authKeyboard,
+          androidKeyboardPadding > 0 && { paddingBottom: androidKeyboardPadding }
+          ]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <PartnerLoginPhoneStep
+            phone={phone}
+            error={error}
+            busy={busy}
+            phoneReady={phoneReady}
+            language={language}
+            keyboardVisible={keyboardLayoutVisible}
+            compactKeyboardLayout={
+              keyboardLayoutVisible && fullLoginViewportRef.current.height < 750
+            }
+            scrollRef={loginScrollRef}
+            onChangePhone={setPhone}
+            onChangeLanguage={onChangeLanguage}
+            onContinue={sendOtp}
+            onKeyboardFocus={() => setKeyboardVisible(true)}
+          />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-function LoginHero({ title, caption }: { title: string; caption: string }) {
+function PartnerLoginPhoneStep({
+  phone,
+  error,
+  busy,
+  phoneReady,
+  language,
+  keyboardVisible,
+  compactKeyboardLayout,
+  scrollRef,
+  onChangePhone,
+  onChangeLanguage,
+  onContinue,
+  onKeyboardFocus
+}: {
+  phone: string;
+  error: string;
+  busy: boolean;
+  phoneReady: boolean;
+  language: AppLanguage;
+  keyboardVisible: boolean;
+  compactKeyboardLayout: boolean;
+  scrollRef: React.RefObject<ScrollView | null>;
+  onChangePhone: (value: string) => void;
+  onChangeLanguage: (language: AppLanguage) => void;
+  onContinue: () => void;
+  onKeyboardFocus: () => void;
+}) {
+  const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const maxWidth = Math.min(640, responsive.width);
+  const heroWidth = Math.min(responsive.width, maxWidth);
+  const heroHeight = Math.round(heroWidth * 0.75);
+  const heroVisibleHeight = keyboardVisible
+    ? Math.round(heroHeight * (compactKeyboardLayout ? 0.86 : 0.9))
+    : heroHeight;
+
   return (
-    <ImageBackground
-      source={partnerLoginBackgroundImage}
-      style={styles.loginHero}
-      imageStyle={styles.loginHeroImage}
-      resizeMode="cover"
+    <View style={styles.loginPhoneLayout}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.authScrollViewport}
+        contentContainerStyle={[
+          styles.authScroll,
+          keyboardVisible && styles.loginPhoneKeyboardScrollContent
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.authResponsiveFrame, { maxWidth }]}>
+          <LoginHero
+            title={copy.appName}
+            caption={copy.loginHeroCaption}
+            height={heroHeight}
+            visibleHeight={heroVisibleHeight}
+          />
+          <View
+            style={[
+              styles.loginPhoneFormContent,
+              responsive.isCompact && styles.loginPhoneFormContentCompact,
+              responsive.isSmall && styles.loginPhoneFormContentSmall,
+              keyboardVisible && styles.loginPhoneFormContentKeyboard
+            ]}
+          >
+            {!keyboardVisible ? (
+              <View style={[styles.loginPhoneHeadingRow, responsive.isCompact && styles.loginPhoneHeadingRowCompact]}>
+                <View style={styles.loginPhoneHeadingCopy}>
+                  <Text
+                    style={[
+                      styles.authKicker,
+                      styles.loginPhoneKicker,
+                      responsive.isCompact && styles.authKickerCompact,
+                      responsive.isSmall && styles.authKickerSmall
+                    ]}
+                  >
+                    FAST · SECURE · RELIABLE
+                  </Text>
+                  <Text
+                    style={[
+                      styles.authTitle,
+                      styles.loginPhoneTitle,
+                      responsive.isCompact && styles.authTitleCompact,
+                      responsive.isSmall && styles.authTitleSmall
+                    ]}
+                  >
+                    {copy.welcomeBack}
+                  </Text>
+                </View>
+                <LoginLanguageToggle
+                  language={language}
+                  onChangeLanguage={onChangeLanguage}
+                />
+              </View>
+            ) : !compactKeyboardLayout ? (
+              <Text
+                style={[
+                  styles.authTitle,
+                  styles.loginPhoneTitle,
+                  styles.loginPhoneKeyboardTitle,
+                  responsive.isCompact && styles.loginPhoneKeyboardTitleCompact,
+                  responsive.isSmall && styles.loginPhoneKeyboardTitleSmall
+                ]}
+              >
+                {copy.welcomeBack}
+              </Text>
+            ) : null}
+            {!keyboardVisible ? (
+              <Text
+                style={[
+                  styles.loginSubtitle,
+                  responsive.isCompact && styles.loginSubtitleCompact,
+                  responsive.isSmall && styles.loginSubtitleSmall
+                ]}
+              >
+                {copy.loginSubtitle}
+              </Text>
+            ) : null}
+            <PhoneLoginField
+              value={phone}
+              onChangeText={onChangePhone}
+              onFocus={onKeyboardFocus}
+              compact={keyboardVisible}
+            />
+            {error ? <Text style={styles.loginError}>{error}</Text> : null}
+            {!keyboardVisible ? (
+              <>
+                <AuthActionButton
+                  title={busy ? copy.sending : copy.continue}
+                  onPress={onContinue}
+                  disabled={!phoneReady || busy}
+                />
+                <AuthDivider />
+                <LoginFeatureRow />
+              </>
+            ) : null}
+          </View>
+        </View>
+      </ScrollView>
+
+      {keyboardVisible ? (
+        <View
+          style={[
+            styles.loginPhoneKeyboardFooter,
+            responsive.isCompact && styles.loginPhoneKeyboardFooterCompact,
+            responsive.isSmall && styles.loginPhoneKeyboardFooterSmall,
+            Platform.OS === 'android' && styles.androidKeyboardFooter
+          ]}
+        >
+          <View style={[styles.loginPhoneKeyboardFooterInner, { maxWidth }]}>
+            <AuthActionButton
+              title={busy ? copy.sending : copy.continue}
+              onPress={onContinue}
+              disabled={!phoneReady || busy}
+            />
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function PartnerLoginOtpStep({
+  code,
+  phone,
+  error,
+  busy,
+  otpReady,
+  resendSeconds,
+  keyboardVisible,
+  scrollRef,
+  onChangeCode,
+  onBack,
+  onVerify,
+  onResend,
+  onKeyboardFocus
+}: {
+  code: string;
+  phone: string;
+  error: string;
+  busy: boolean;
+  otpReady: boolean;
+  resendSeconds: number;
+  keyboardVisible: boolean;
+  scrollRef: React.RefObject<ScrollView | null>;
+  onChangeCode: (value: string) => void;
+  onBack: () => void;
+  onVerify: () => void;
+  onResend: () => void;
+  onKeyboardFocus: () => void;
+}) {
+  const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const maxWidth = Math.min(640, responsive.width);
+
+  return (
+    <View style={styles.partnerOtpLayout}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.authScrollViewport}
+        contentContainerStyle={[
+          styles.authScroll,
+          styles.partnerOtpScroll,
+          keyboardVisible && styles.partnerOtpKeyboardScroll
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.authResponsiveFrame, { maxWidth }]}>
+          <View
+            style={[
+              styles.authForm,
+              styles.partnerOtpForm,
+              responsive.isCompact && styles.partnerOtpFormCompact,
+              responsive.isSmall && styles.partnerOtpFormSmall
+            ]}
+          >
+            <Pressable
+              style={[
+                styles.partnerOtpBackButton,
+                responsive.isCompact && styles.partnerOtpBackButtonCompact,
+                responsive.isSmall && styles.partnerOtpBackButtonSmall
+              ]}
+              onPress={onBack}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={copy.changeNumber}
+            >
+              <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.ink} />
+            </Pressable>
+
+            <View
+              style={[
+                styles.partnerOtpIcon,
+                responsive.isCompact && styles.partnerOtpIconCompact,
+                responsive.isSmall && styles.partnerOtpIconSmall
+              ]}
+            >
+              <Ionicons name="shield-checkmark" size={responsive.isCompact ? 20 : 24} color={colors.partner} />
+            </View>
+            <Text
+              style={[
+                styles.partnerOtpTitle,
+                responsive.isCompact && styles.partnerOtpTitleCompact,
+                responsive.isSmall && styles.partnerOtpTitleSmall
+              ]}
+            >
+              {copy.otpVerification}
+            </Text>
+            <Text
+              style={[
+                styles.partnerOtpSubtitle,
+                responsive.isCompact && styles.partnerOtpSubtitleCompact,
+                responsive.isSmall && styles.partnerOtpSubtitleSmall
+              ]}
+            >
+              {copy.otpDestination}
+            </Text>
+            <View
+              style={[
+                styles.partnerOtpDestinationRow,
+                responsive.isCompact && styles.partnerOtpDestinationRowCompact,
+                responsive.isSmall && styles.partnerOtpDestinationRowSmall
+              ]}
+            >
+              <Text style={[styles.partnerOtpPhone, responsive.isCompact && styles.partnerOtpPhoneCompact]}>
+                +91 {phone}
+              </Text>
+              <Pressable onPress={onBack} hitSlop={7} accessibilityRole="button">
+                <Text style={[styles.partnerOtpChange, responsive.isCompact && styles.partnerOtpChangeCompact]}>
+                  {copy.change}
+                </Text>
+              </Pressable>
+            </View>
+
+            <PartnerOtpCodeField
+              value={code}
+              onChangeText={onChangeCode}
+              onSubmit={otpReady && !busy ? onVerify : undefined}
+              onFocus={onKeyboardFocus}
+            />
+            <View style={[styles.partnerOtpHintRow, responsive.isCompact && styles.partnerOtpHintRowCompact]}>
+              <Ionicons name="lock-closed-outline" size={responsive.isCompact ? 11 : 13} color={colors.muted} />
+              <Text style={[styles.partnerOtpHint, responsive.isCompact && styles.partnerOtpHintCompact]}>
+                {copy.otpSent}
+              </Text>
+            </View>
+            {error ? <Text style={styles.loginError}>{error}</Text> : null}
+            {!keyboardVisible ? (
+              <AuthActionButton
+                title={busy ? copy.verifying : copy.verifyAndContinue}
+                onPress={onVerify}
+                disabled={!otpReady || busy}
+              />
+            ) : null}
+
+            <View style={[styles.partnerOtpResendBlock, responsive.isCompact && styles.partnerOtpResendBlockCompact]}>
+              <Text style={[styles.partnerOtpResendLabel, responsive.isCompact && styles.partnerOtpResendLabelCompact]}>
+                {resendSeconds > 0
+                  ? `${copy.resendIn} ${resendSeconds}s`
+                  : copy.didNotReceiveCode}
+              </Text>
+              <Pressable
+                style={[
+                  styles.partnerOtpResendButton,
+                  responsive.isCompact && styles.partnerOtpResendButtonCompact,
+                  (resendSeconds > 0 || busy) && styles.partnerOtpResendButtonDisabled
+                ]}
+                onPress={onResend}
+                disabled={resendSeconds > 0 || busy}
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name="refresh-outline"
+                  size={responsive.isCompact ? 13 : 15}
+                  color={resendSeconds > 0 || busy ? colors.muted : colors.partner}
+                />
+                <Text
+                  style={[
+                    styles.partnerOtpResendText,
+                    responsive.isCompact && styles.partnerOtpResendTextCompact,
+                    (resendSeconds > 0 || busy) && styles.partnerOtpResendTextDisabled
+                  ]}
+                >
+                  {copy.resendOtp}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {keyboardVisible ? (
+        <View
+          style={[
+            styles.partnerOtpKeyboardFooter,
+            responsive.isCompact && styles.partnerOtpKeyboardFooterCompact,
+            responsive.isSmall && styles.partnerOtpKeyboardFooterSmall,
+            Platform.OS === 'android' && styles.androidKeyboardFooter
+          ]}
+        >
+          <View style={[styles.loginPhoneKeyboardFooterInner, { maxWidth }]}>
+            <AuthActionButton
+              title={busy ? copy.verifying : copy.verifyAndContinue}
+              onPress={onVerify}
+              disabled={!otpReady || busy}
+            />
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function LoginHero({
+  title,
+  caption,
+  height,
+  visibleHeight
+}: {
+  title: string;
+  caption: string;
+  height: number;
+  visibleHeight: number;
+}) {
+  return (
+    <View
+      style={[
+        styles.loginHero,
+        { height: visibleHeight, minHeight: visibleHeight, maxHeight: visibleHeight }
+      ]}
     >
+      <Image
+        source={partnerLoginBackgroundImage}
+        style={[styles.loginHeroImage, { height }]}
+        resizeMode="contain"
+      />
       <View style={styles.loginHeroWash} />
       <View style={styles.loginBrandPanel}>
         <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
         <Text style={styles.loginHeroCaption}>{caption}</Text>
       </View>
-    </ImageBackground>
+    </View>
   );
 }
 
-function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText: (value: string) => void }) {
+function LoginLanguageToggle({
+  language,
+  onChangeLanguage
+}: {
+  language: AppLanguage;
+  onChangeLanguage: (language: AppLanguage) => void;
+}) {
   const copy = useCopy();
+  const nextLanguage: AppLanguage = language === 'en' ? 'hi' : 'en';
   return (
-    <View style={styles.authFieldGroup}>
-      <Text style={styles.fieldLabel}>{copy.mobileNumber}</Text>
-      <View style={styles.phoneInputShell}>
-        <Ionicons name="phone-portrait-outline" size={18} color={colors.partner} />
-        <Text style={styles.countryCode}>+91</Text>
+    <Pressable
+      style={styles.loginLanguageToggle}
+      onPress={() => onChangeLanguage(nextLanguage)}
+      accessibilityRole="button"
+      accessibilityLabel={copy.changeLanguage}
+    >
+      <Ionicons name="language-outline" size={15} color={colors.partner} />
+      <Text style={styles.loginLanguageToggleText}>
+        {language === 'hi' ? copy.hindiNative : copy.english}
+      </Text>
+      <Ionicons name="chevron-down" size={13} color={colors.partner} />
+    </Pressable>
+  );
+}
+
+function PhoneLoginField({
+  value,
+  onChangeText,
+  onFocus,
+  compact = false
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  onFocus?: () => void;
+  compact?: boolean;
+}) {
+  const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  return (
+    <View
+      style={[
+        styles.authFieldGroup,
+        responsive.isCompact && styles.authFieldGroupCompact,
+        compact && styles.phoneFieldGroupCompact
+      ]}
+    >
+      <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact, responsive.isSmall && styles.fieldLabelSmall]}>{copy.mobileNumber}</Text>
+      <View
+        style={[
+          styles.phoneInputShell,
+          (compact || responsive.isCompact) && styles.phoneInputShellCompact,
+          responsive.isSmall && styles.phoneInputShellSmall
+        ]}
+      >
+        <Ionicons name="phone-portrait-outline" size={responsive.isCompact ? 16 : 18} color={colors.partner} />
+        <Text style={[styles.countryCode, responsive.isCompact && styles.countryCodeCompact]}>+91</Text>
         <Ionicons name="chevron-down" size={14} color={colors.muted} />
         <View style={styles.phoneDivider} />
         <TextInput
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={(nextValue) => onChangeText(nextValue.replace(/\D/g, '').slice(0, 10))}
           keyboardType="phone-pad"
           maxLength={10}
           placeholder={copy.enterMobileNumber}
           placeholderTextColor="#9CA3AF"
-          style={styles.phoneInputText}
+          style={[styles.phoneInputText, responsive.isCompact && styles.phoneInputTextCompact]}
+          onFocus={onFocus}
         />
       </View>
     </View>
   );
 }
 
-function AuthActionButton({ title, onPress }: { title: string; onPress: () => void }) {
+function PartnerOtpCodeField({
+  value,
+  onChangeText,
+  onSubmit,
+  onFocus
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  onSubmit?: () => void;
+  onFocus?: () => void;
+}) {
+  const inputRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
+  const responsive = useResponsiveLayout();
+  const digits = value.replace(/\D/g, '').slice(0, 6);
+
   return (
-    <Pressable style={styles.authPrimaryButton} onPress={onPress}>
-      <Text style={styles.authPrimaryButtonText}>{title}</Text>
+    <Pressable
+      style={styles.partnerOtpField}
+      onPress={() => inputRef.current?.focus()}
+      accessibilityRole="button"
+      accessibilityLabel="Enter 6-digit OTP"
+    >
+      <View
+        style={[
+          styles.partnerOtpBoxes,
+          responsive.isCompact && styles.partnerOtpBoxesCompact,
+          responsive.isSmall && styles.partnerOtpBoxesSmall
+        ]}
+        pointerEvents="none"
+      >
+        {Array.from({ length: 6 }).map((_, index) => {
+          const digit = digits[index] ?? '';
+          const active = index === Math.min(digits.length, 5);
+          return (
+            <View
+              key={index}
+              style={[
+                styles.partnerOtpBox,
+                responsive.isCompact && styles.partnerOtpBoxCompact,
+                responsive.isSmall && styles.partnerOtpBoxSmall,
+                digit && styles.partnerOtpBoxFilled,
+                active && styles.partnerOtpBoxActive
+              ]}
+            >
+              <Text
+                style={[
+                  styles.partnerOtpDigit,
+                  responsive.isCompact && styles.partnerOtpDigitCompact,
+                  responsive.isSmall && styles.partnerOtpDigitSmall
+                ]}
+              >
+                {digit}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      <TextInput
+        ref={inputRef}
+        value={digits}
+        onChangeText={(nextValue) => onChangeText(nextValue.replace(/\D/g, '').slice(0, 6))}
+        onSubmitEditing={onSubmit}
+        onFocus={onFocus}
+        keyboardType="number-pad"
+        textContentType="oneTimeCode"
+        autoComplete="sms-otp"
+        maxLength={6}
+        autoFocus
+        caretHidden
+        allowFontScaling={false}
+        style={styles.partnerOtpHiddenInput}
+      />
+    </Pressable>
+  );
+}
+
+function AuthActionButton({
+  title,
+  onPress,
+  disabled = false
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const responsive = useResponsiveLayout();
+  return (
+    <Pressable
+      style={[
+        styles.authPrimaryButton,
+        responsive.isCompact && styles.authPrimaryButtonCompact,
+        responsive.isSmall && styles.authPrimaryButtonSmall,
+        disabled && styles.authPrimaryButtonDisabled
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text
+        style={[
+          styles.authPrimaryButtonText,
+          responsive.isCompact && styles.authPrimaryButtonTextCompact,
+          responsive.isSmall && styles.authPrimaryButtonTextSmall,
+          disabled && styles.authPrimaryButtonTextDisabled
+        ]}
+      >
+        {title}
+      </Text>
     </Pressable>
   );
 }
@@ -2049,6 +2761,7 @@ function PartnerOnboardingScreen({
   onRootBack: () => boolean;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const docs = user.partnerProfile?.docs;
   const identityDone = Boolean(docs?.pan || docs?.aadhaar);
   const personalDetailsDone = Boolean(user.email && user.name !== 'Indiery Partner' && user.city);
@@ -2065,6 +2778,35 @@ function PartnerOnboardingScreen({
     return 3;
   });
   const [localError, setLocalError] = useState('');
+  const onboardingViewport = useWindowDimensions();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const onboardingScrollRef = useRef<ScrollView | null>(null);
+  const onboardingFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fullOnboardingViewportRef = useRef({
+    width: onboardingViewport.width,
+    height: onboardingViewport.height
+  });
+  if (Math.abs(fullOnboardingViewportRef.current.width - onboardingViewport.width) > 1) {
+    fullOnboardingViewportRef.current = {
+      width: onboardingViewport.width,
+      height: onboardingViewport.height
+    };
+  } else if (!keyboardVisible && onboardingViewport.height > fullOnboardingViewportRef.current.height) {
+    fullOnboardingViewportRef.current.height = onboardingViewport.height;
+  }
+  const onboardingViewportShrink = Math.max(
+    0,
+    fullOnboardingViewportRef.current.height - onboardingViewport.height
+  );
+  const keyboardLayoutVisible =
+    keyboardVisible || fullOnboardingViewportRef.current.height - onboardingViewport.height > 120;
+  const compactOnboardingKeyboard =
+    keyboardLayoutVisible && fullOnboardingViewportRef.current.height < 750;
+  const androidKeyboardPadding =
+    Platform.OS === 'android' && keyboardLayoutVisible
+      ? Math.max(0, keyboardHeight - onboardingViewportShrink)
+      : 0;
 
   const onboardingSteps: { id: OnboardingStepId; label: string; done: boolean }[] = [
     { id: 1, label: copy.personal, done: personalDetailsDone },
@@ -2074,8 +2816,36 @@ function PartnerOnboardingScreen({
   const stepProgress = onboardingSteps.filter((step) => step.done).length;
 
   function goToStep(step: OnboardingStepId) {
+    Keyboard.dismiss();
     setLocalError('');
     setActiveStep(step);
+  }
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+    return () => {
+      if (onboardingFocusTimerRef.current) clearTimeout(onboardingFocusTimerRef.current);
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  function revealOnboardingField(y: number) {
+    setKeyboardVisible(true);
+    if (onboardingFocusTimerRef.current) clearTimeout(onboardingFocusTimerRef.current);
+    onboardingFocusTimerRef.current = setTimeout(() => {
+      onboardingScrollRef.current?.scrollTo({ y, animated: true });
+      onboardingFocusTimerRef.current = null;
+    }, Platform.OS === 'ios' ? 260 : 180);
   }
 
   useAndroidBackHandler(() => {
@@ -2165,26 +2935,59 @@ function PartnerOnboardingScreen({
   }
 
   return (
-    <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.kycHero}>
-          <View style={styles.kycHeroIcon}>
-            <Ionicons name="shield-checkmark" size={26} color={colors.white} />
+    <KeyboardAvoidingView
+      style={[
+        styles.authKeyboard,
+        androidKeyboardPadding > 0 && { paddingBottom: androidKeyboardPadding }
+      ]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View
+        style={[
+          styles.onboardingFixedSection,
+          compactOnboardingKeyboard && styles.onboardingFixedSectionCompact
+        ]}
+      >
+        {!compactOnboardingKeyboard ? (
+          <View style={styles.kycHero}>
+            <View style={styles.kycHeroIcon}>
+              <Ionicons name="shield-checkmark" size={26} color={colors.white} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={[styles.kycHeroTitle, responsive.isCompact && styles.kycHeroTitleCompact, responsive.isSmall && styles.kycHeroTitleSmall]}>{copy.completePartnerSetup}</Text>
+              <Text style={[styles.kycHeroText, responsive.isCompact && styles.kycHeroTextCompact, responsive.isSmall && styles.kycHeroTextSmall]}>{copy.completePartnerSetupText}</Text>
+            </View>
           </View>
-          <View style={styles.flex}>
-            <Text style={styles.kycHeroTitle}>{copy.completePartnerSetup}</Text>
-            <Text style={styles.kycHeroText}>{copy.completePartnerSetupText}</Text>
-          </View>
-        </View>
+        ) : null}
 
-        <View style={styles.onboardingStepperCard}>
+        <View
+          style={[
+            styles.onboardingStepperCard,
+            styles.onboardingFixedStepperCard,
+            compactOnboardingKeyboard && styles.onboardingFixedStepperCardCompact
+          ]}
+        >
           <View style={styles.between}>
-            <Text style={styles.cardTitle}>{copy.setupProgress}</Text>
-            <Text style={styles.priceText}>{stepProgress}/3</Text>
+            <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.setupProgress}</Text>
+            <Text style={[styles.priceText, responsive.isCompact && styles.priceTextCompact, responsive.isSmall && styles.priceTextSmall]}>{stepProgress}/3</Text>
           </View>
           <OnboardingStepper steps={onboardingSteps} activeStep={activeStep} onSelect={goToStep} />
         </View>
+      </View>
 
+      <ScrollView
+        ref={onboardingScrollRef}
+        style={styles.authScrollViewport}
+        contentContainerStyle={[
+          styles.scroll,
+          (activeStep === 1 || activeStep === 3) &&
+            keyboardLayoutVisible &&
+            styles.onboardingPersonalKeyboardScroll
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="none"
+        showsVerticalScrollIndicator={false}
+      >
         {activeStep === 1 ? (
           <View style={styles.onboardingStepCard}>
             <View style={styles.onboardingStepHeader}>
@@ -2192,24 +2995,50 @@ function PartnerOnboardingScreen({
                 <Ionicons name={personalDetailsDone ? 'checkmark' : 'person'} size={20} color={personalDetailsDone ? colors.white : colors.partner} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{copy.personalDetails}</Text>
-                <Text style={styles.mutedSmall}>{copy.personalDetailsSubtitle}</Text>
+                <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.personalDetails}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.personalDetailsSubtitle}</Text>
               </View>
             </View>
-            <AuthField label={copy.fullName} value={name} onChangeText={setName} icon="person" />
-            <AuthField label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" icon="mail" autoCapitalize="none" />
-            <AuthField label={copy.city} value={city} onChangeText={setCity} icon="location" />
+            <AuthField
+              label={copy.fullName}
+              value={name}
+              onChangeText={setName}
+              icon="person"
+              onFocus={() => revealOnboardingField(0)}
+            />
+            <AuthField
+              label={copy.email}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              icon="mail"
+              autoCapitalize="none"
+              onFocus={() => revealOnboardingField(90)}
+            />
+            <AuthField
+              label={copy.city}
+              value={city}
+              onChangeText={setCity}
+              icon="location"
+              onFocus={() => revealOnboardingField(170)}
+            />
             <AuthField label={copy.loginMobileNumber} value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
             {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
-            <PrimaryButton title={busy ? copy.saving : copy.saveAndNext} icon="arrow-forward" onPress={savePersonalDetails} />
+            {!keyboardLayoutVisible ? (
+              <PrimaryButton
+                title={busy ? copy.saving : copy.saveAndNext}
+                icon="arrow-forward"
+                onPress={savePersonalDetails}
+              />
+            ) : null}
           </View>
         ) : null}
 
         {activeStep === 2 ? (
           <>
             <View style={styles.onboardingStepIntro}>
-              <Text style={styles.cardTitle}>{copy.uploadDetails}</Text>
-              <Text style={styles.mutedSmall}>{copy.uploadDetailsSubtitle}</Text>
+              <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.uploadDetails}</Text>
+              <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.uploadDetailsSubtitle}</Text>
             </View>
             <KycStepCard
               icon="person-circle"
@@ -2222,8 +3051,8 @@ function PartnerOnboardingScreen({
             <View style={styles.kycGroupCard}>
               <View style={styles.between}>
                 <View style={styles.flex}>
-                  <Text style={styles.cardTitle}>{copy.panOrAadhaar}</Text>
-                  <Text style={styles.mutedSmall}>{copy.oneIdentityProofRequired}</Text>
+                  <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.panOrAadhaar}</Text>
+                  <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.oneIdentityProofRequired}</Text>
                 </View>
                 <Ionicons name={identityDone ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={identityDone ? colors.green : colors.muted} />
               </View>
@@ -2255,21 +3084,67 @@ function PartnerOnboardingScreen({
                 <Ionicons name={vehicleDetailsDone ? 'checkmark' : 'car'} size={20} color={vehicleDetailsDone ? colors.white : colors.partner} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{copy.vehicleDetails}</Text>
-                <Text style={styles.mutedSmall}>{copy.vehicleDetailsSubtitle}</Text>
+                <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.vehicleDetails}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.vehicleDetailsSubtitle}</Text>
               </View>
             </View>
             <VehiclePicker vehicles={vehicles} selectedId={vehicleId} onSelect={setVehicleId} />
-            <AuthField label={copy.vehicleNumber} value={vehicleNumber} onChangeText={setVehicleNumber} icon="bicycle" autoCapitalize="characters" />
+            <AuthField
+              label={copy.vehicleNumber}
+              value={vehicleNumber}
+              onChangeText={setVehicleNumber}
+              icon="bicycle"
+              autoCapitalize="characters"
+              onFocus={() => revealOnboardingField(340)}
+            />
             <PrimaryButton title={docs?.rc ? copy.rcCaptured : copy.captureRc} icon="camera" onPress={() => onCapture('rc')} />
             {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
-            <View style={styles.onboardingNavRow}>
-              <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => goToStep(2)} />
-              <PrimaryButton title={busy ? copy.saving : copy.saveVehicle} icon="checkmark" onPress={saveVehicleDetails} />
-            </View>
+            {!keyboardLayoutVisible ? (
+              <View style={styles.onboardingNavRow}>
+                <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => goToStep(2)} />
+                <PrimaryButton title={busy ? copy.saving : copy.saveVehicle} icon="checkmark" onPress={saveVehicleDetails} />
+              </View>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
+
+      {activeStep === 1 && keyboardLayoutVisible ? (
+        <View
+          style={[
+            styles.onboardingPersonalKeyboardFooter,
+            Platform.OS === 'android' && styles.androidKeyboardFooter,
+            Platform.OS === 'android' && { bottom: androidKeyboardPadding }
+          ]}
+        >
+          <View style={styles.onboardingPersonalKeyboardFooterInner}>
+            <PrimaryButton
+              title={busy ? copy.saving : copy.saveAndNext}
+              icon="arrow-forward"
+              onPress={savePersonalDetails}
+            />
+          </View>
+        </View>
+      ) : null}
+
+      {activeStep === 3 && keyboardLayoutVisible ? (
+        <View
+          style={[
+            styles.onboardingPersonalKeyboardFooter,
+            Platform.OS === 'android' && styles.androidKeyboardFooter,
+            Platform.OS === 'android' && { bottom: androidKeyboardPadding }
+          ]}
+        >
+          <View style={styles.onboardingPersonalKeyboardFooterInner}>
+            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => goToStep(2)} />
+            <PrimaryButton
+              title={busy ? copy.saving : copy.saveVehicle}
+              icon="checkmark"
+              onPress={saveVehicleDetails}
+            />
+          </View>
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -2283,6 +3158,7 @@ function OnboardingStepper({
   activeStep: OnboardingStepId;
   onSelect: (step: OnboardingStepId) => void;
 }) {
+  const responsive = useResponsiveLayout();
   return (
     <View style={styles.onboardingStepperRow}>
       {steps.map((step, index) => {
@@ -2301,10 +3177,10 @@ function OnboardingStepper({
                 {step.done ? (
                   <Ionicons name="checkmark" size={16} color={colors.white} />
                 ) : (
-                  <Text style={[styles.onboardingStepperNumber, active && styles.onboardingStepperNumberActive]}>{step.id}</Text>
+                  <Text style={[styles.onboardingStepperNumber, responsive.isSmall && styles.onboardingStepperNumberSmall, active && styles.onboardingStepperNumberActive]}>{step.id}</Text>
                 )}
               </View>
-              <Text style={[styles.onboardingStepperLabel, active && styles.onboardingStepperLabelActive]}>{step.label}</Text>
+              <Text style={[styles.onboardingStepperLabel, responsive.isCompact && styles.onboardingStepperLabelCompact, responsive.isSmall && styles.onboardingStepperLabelSmall, active && styles.onboardingStepperLabelActive]}>{step.label}</Text>
             </Pressable>
           </React.Fragment>
         );
@@ -2398,22 +3274,23 @@ function VehiclePicker({
   onSelect: (vehicleId: string) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.authFieldGroup}>
-      <Text style={styles.fieldLabel}>{copy.vehicleType}</Text>
-      <View style={styles.vehicleChoiceList}>
+    <View style={[styles.authFieldGroup, responsive.isCompact && styles.authFieldGroupCompact]}>
+      <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact, responsive.isSmall && styles.fieldLabelSmall]}>{copy.vehicleType}</Text>
+      <View style={[styles.vehicleChoiceList, responsive.isCompact && styles.vehicleChoiceListCompact]}>
         {vehicles.map((vehicle) => {
           const selected = vehicle.id === selectedId;
           return (
             <Pressable
               key={vehicle.id}
-              style={[styles.vehicleChoice, selected && styles.vehicleChoiceSelected]}
+              style={[styles.vehicleChoice, responsive.isCompact && styles.vehicleChoiceCompact, selected && styles.vehicleChoiceSelected]}
               onPress={() => onSelect(vehicle.id)}
             >
-              <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={selected ? colors.partner : colors.muted} />
+              <Ionicons name={selected ? 'checkmark-circle' : 'ellipse-outline'} size={responsive.isCompact ? 16 : 18} color={selected ? colors.partner : colors.muted} />
               <View style={styles.flex}>
-                <Text style={styles.vehicleChoiceTitle}>{vehicle.shortName}</Text>
-                <Text style={styles.vehicleChoiceMeta}>{copy.upToKg} {vehicle.capacityKg} kg</Text>
+                <Text style={[styles.vehicleChoiceTitle, responsive.isCompact && styles.vehicleChoiceTitleCompact, responsive.isSmall && styles.vehicleChoiceTitleSmall]}>{vehicle.shortName}</Text>
+                <Text style={[styles.vehicleChoiceMeta, responsive.isCompact && styles.vehicleChoiceMetaCompact, responsive.isSmall && styles.vehicleChoiceMetaSmall]}>{copy.upToKg} {vehicle.capacityKg} kg</Text>
               </View>
             </Pressable>
           );
@@ -2431,7 +3308,9 @@ function AuthField({
   editable = true,
   autoCapitalize = 'words',
   icon,
-  maxLength
+  maxLength,
+  autoFocus = false,
+  onFocus
 }: {
   label: string;
   value: string;
@@ -2441,12 +3320,15 @@ function AuthField({
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   icon: keyof typeof Ionicons.glyphMap;
   maxLength?: number;
+  autoFocus?: boolean;
+  onFocus?: () => void;
 }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.authFieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={[styles.authInputShell, !editable && styles.authInputReadonly]}>
-        <Ionicons name={icon} size={18} color={editable ? colors.partner : colors.muted} />
+    <View style={[styles.authFieldGroup, responsive.isCompact && styles.authFieldGroupCompact]}>
+      <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact, responsive.isSmall && styles.fieldLabelSmall]}>{label}</Text>
+      <View style={[styles.authInputShell, responsive.isCompact && styles.authInputShellCompact, !editable && styles.authInputReadonly]}>
+        <Ionicons name={icon} size={responsive.isCompact ? 16 : 18} color={editable ? colors.partner : colors.muted} />
         <TextInput
           value={value}
           editable={editable}
@@ -2454,8 +3336,10 @@ function AuthField({
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           maxLength={maxLength}
+          autoFocus={autoFocus}
+          onFocus={onFocus}
           placeholderTextColor={colors.muted}
-          style={styles.authInputText}
+          style={[styles.authInputText, responsive.isCompact && styles.authInputTextCompact, responsive.isSmall && styles.authInputTextSmall]}
         />
       </View>
     </View>
@@ -2481,6 +3365,7 @@ function DashboardScreen({
   onToggle,
   onActive,
   onTopup,
+  onRefreshStatus,
   onAccept,
   onReject
 }: {
@@ -2489,37 +3374,88 @@ function DashboardScreen({
   onToggle: () => void;
   onActive: () => void;
   onTopup: (amount: number) => void;
+  onRefreshStatus: () => void;
   onAccept: (orderId: string) => void;
   onReject: (orderId: string) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const profile = data.user.partnerProfile;
   const online = Boolean(profile?.online);
   const balance = profile?.walletBalance ?? 0;
   const walletReady = balance >= minPartnerWalletBalance;
   const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      {!walletReady ? (
-        <View style={styles.walletBlockCard}>
-          <View style={styles.walletBlockHeader}>
-            <Ionicons name="wallet-outline" size={22} color={colors.amber} />
+    <ScrollView
+      contentContainerStyle={[
+        styles.scroll,
+        styles.responsiveScreenContent,
+        responsive.isCompact && styles.scrollCompact,
+        responsive.isSmall && styles.scrollSmall,
+        {
+          maxWidth: responsive.contentMaxWidth,
+          paddingHorizontal: responsive.horizontalPadding
+        }
+      ]}
+    >
+      {profile?.kycStatus === 'pending' ? (
+        <View style={[styles.verificationPendingCard, responsive.isCompact && styles.verificationPendingCardCompact]}>
+          <View style={[styles.verificationPendingHeader, responsive.isCompact && styles.verificationPendingHeaderCompact]}>
+            <View style={[styles.verificationPendingIcon, responsive.isCompact && styles.verificationPendingIconCompact]}>
+              <Ionicons name="shield-checkmark-outline" size={responsive.isCompact ? 20 : 24} color={colors.partner} />
+            </View>
             <View style={styles.flex}>
-              <Text style={styles.cardTitle}>{copy.rechargeDriverWallet}</Text>
-              <Text style={styles.mutedSmall}>{fillCopy(copy.minimumBalanceRequired, { amount: money(minPartnerWalletBalance) })}</Text>
+              <Text style={[styles.verificationPendingTitle, responsive.isCompact && styles.verificationPendingTitleCompact]}>{copy.profileUnderReview}</Text>
+              <View style={styles.verificationPendingStatus}>
+                <View style={styles.verificationPendingDot} />
+                <Text style={[styles.verificationPendingStatusText, responsive.isCompact && styles.verificationPendingStatusTextCompact]}>{copy.submittedForReview}</Text>
+              </View>
             </View>
           </View>
-          <Text style={styles.walletBlockBalance}>{copy.currentBalance}: {money(balance)}</Text>
+          <Text style={[styles.verificationPendingText, responsive.isCompact && styles.verificationPendingTextCompact]}>{copy.profileSubmittedNotice}</Text>
+          <Pressable
+            style={[styles.verificationPendingButton, responsive.isCompact && styles.verificationPendingButtonCompact]}
+            onPress={onRefreshStatus}
+            disabled={busy}
+            accessibilityRole="button"
+          >
+            <Ionicons name="refresh-outline" size={16} color={colors.partner} />
+            <Text style={styles.verificationPendingButtonText}>
+              {busy ? copy.syncing : copy.checkVerificationStatus}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {!walletReady ? (
+        <View style={[styles.walletBlockCard, responsive.isCompact && styles.walletBlockCardCompact]}>
+          <View style={styles.walletBlockHeader}>
+            <Ionicons name="wallet-outline" size={responsive.isCompact ? 19 : 22} color={colors.amber} />
+            <View style={styles.flex}>
+              <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact]}>{copy.rechargeDriverWallet}</Text>
+              <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{fillCopy(copy.minimumBalanceRequired, { amount: money(minPartnerWalletBalance) })}</Text>
+            </View>
+          </View>
+          <Text style={[styles.walletBlockBalance, responsive.isCompact && styles.walletBlockBalanceCompact]}>{copy.currentBalance}: {money(balance)}</Text>
           <PrimaryButton title={`${copy.recharge} ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
         </View>
       ) : null}
 
-      <Pressable style={[styles.onlineCard, online && styles.onlineCardActive, !walletReady && styles.onlineCardDisabled]} onPress={walletReady ? onToggle : () => onTopup(rechargeAmount)}>
-        <Text style={[styles.onlineText, online && styles.onlineTextActive]}>{busy ? copy.syncing : online ? copy.online : walletReady ? copy.offline : copy.rechargeStatus}</Text>
-        <Text style={styles.muted}>{walletReady ? (online ? copy.receivingNearbyOrders : copy.tapToStartReceivingOrders) : copy.walletBelowMinimum}</Text>
+      <Pressable
+        style={[
+          styles.onlineCard,
+          responsive.isCompact && styles.onlineCardCompact,
+          responsive.isSmall && styles.onlineCardSmall,
+          online && styles.onlineCardActive,
+          !walletReady && styles.onlineCardDisabled
+        ]}
+        onPress={walletReady ? onToggle : () => onTopup(rechargeAmount)}
+      >
+        <Text style={[styles.onlineText, responsive.isCompact && styles.onlineTextCompact, responsive.isSmall && styles.onlineTextSmall, online && styles.onlineTextActive]}>{busy ? copy.syncing : online ? copy.online : walletReady ? copy.offline : copy.rechargeStatus}</Text>
+        <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact, responsive.isSmall && styles.mutedSmallScreen]}>{walletReady ? (online ? copy.receivingNearbyOrders : copy.tapToStartReceivingOrders) : copy.walletBelowMinimum}</Text>
       </Pressable>
 
-      <View style={styles.statRow}>
+      <View style={[styles.statRow, responsive.isCompact && styles.statRowCompact]}>
         <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
         <StatCard title={copy.orders} value={String(data.stats.completedCount)} tone="blue" />
         <StatCard title={copy.rating} value={`${profile?.rating ?? 5}`} tone="amber" />
@@ -2555,6 +3491,7 @@ function AvailableOrdersList({
   onReject: (orderId: string) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
     <>
       {orders.length === 0 ? (
@@ -2563,23 +3500,23 @@ function AvailableOrdersList({
       {orders.map((order) => {
         const distanceToPickup = pickupDistanceKm(driverLocation, order.pickup);
         return (
-          <View key={order.id} style={styles.orderCard}>
+          <View key={order.id} style={[styles.orderCard, responsive.isCompact && styles.orderCardCompact]}>
             <OrderHeader order={order} />
             <RouteBlock order={order} />
-            <View style={styles.pickupDistanceBanner}>
-              <Ionicons name="navigate-circle" size={22} color={colors.partner} />
-              <Text style={styles.pickupDistanceText}>
+            <View style={[styles.pickupDistanceBanner, responsive.isCompact && styles.pickupDistanceBannerCompact]}>
+              <Ionicons name="navigate-circle" size={responsive.isCompact ? 19 : 22} color={colors.partner} />
+              <Text style={[styles.pickupDistanceText, responsive.isCompact && styles.pickupDistanceTextCompact, responsive.isSmall && styles.pickupDistanceTextSmall]}>
                 {distanceToPickup === undefined
                   ? copy.waitingForGpsDistance
                   : fillCopy(copy.pickupDistance, { distance: formatPickupDistance(distanceToPickup) })}
               </Text>
             </View>
-            <View style={styles.chips}>
+            <View style={[styles.chips, responsive.isCompact && styles.chipsCompact]}>
               <Chip label={`${copy.tripDistance}: ${order.distanceKm} km`} />
               <Chip label={`${order.weightKg} kg`} />
               <Chip label={order.goodsType} />
             </View>
-            <View style={styles.row}>
+            <View style={[styles.row, responsive.isCompact && styles.rowCompact]}>
               <SecondaryButton title={copy.skip} icon="close" onPress={() => onReject(order.id)} />
               <PrimaryButton title={busy ? copy.wait : `${copy.accept} ${money(order.fare.partnerNet)}`} icon="checkmark" onPress={() => onAccept(order.id)} />
             </View>
@@ -2619,6 +3556,7 @@ function ActiveScreen({
 }) {
   const copy = useCopy();
   const language = useLanguage();
+  const responsive = useResponsiveLayout();
   const [otp, setOtp] = useState('');
   const order = orders.find((item) => item.id === selectedOrderId) ?? orders[0];
   const nextActions = order ? getNextActions(order, copy) : [];
@@ -2626,7 +3564,19 @@ function ActiveScreen({
   const needsDropOtp = order?.status === 'in_transit' && !order.pod.dropOtpVerified;
   const canCancelOrder = Boolean(order && ['accepted', 'arrived_pickup'].includes(order.status));
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
+    <ScrollView
+      contentContainerStyle={[
+        styles.scroll,
+        styles.responsiveScreenContent,
+        responsive.isCompact && styles.scrollCompact,
+        responsive.isSmall && styles.scrollSmall,
+        {
+          maxWidth: responsive.contentMaxWidth,
+          paddingHorizontal: responsive.horizontalPadding
+        }
+      ]}
+      keyboardShouldPersistTaps="handled"
+    >
       <SectionTitle title={`${copy.activeOrders} (${orders.length})`} />
       {!order ? (
         <>
@@ -2636,20 +3586,25 @@ function ActiveScreen({
       ) : (
         <>
       {orders.length > 1 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeTripSwitchRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.activeTripSwitchRow, responsive.isCompact && styles.activeTripSwitchRowCompact]}>
             {orders.map((item) => {
               const selected = item.id === order.id;
               return (
                 <Pressable
                   key={item.id}
-                  style={[styles.activeTripSwitchCard, selected && styles.activeTripSwitchCardSelected]}
+                  style={[
+                    styles.activeTripSwitchCard,
+                    responsive.isCompact && styles.activeTripSwitchCardCompact,
+                    responsive.isSmall && styles.activeTripSwitchCardSmall,
+                    selected && styles.activeTripSwitchCardSelected
+                  ]}
                   onPress={() => onSelectOrder(item.id)}
                 >
-                  <Text style={[styles.activeTripSwitchTitle, selected && styles.activeTripSwitchTitleSelected]}>{item.orderNo}</Text>
-                  <Text style={styles.activeTripSwitchMeta} numberOfLines={1}>
+                  <Text style={[styles.activeTripSwitchTitle, responsive.isCompact && styles.activeTripSwitchTitleCompact, responsive.isSmall && styles.activeTripSwitchTitleSmall, selected && styles.activeTripSwitchTitleSelected]}>{item.orderNo}</Text>
+                  <Text style={[styles.activeTripSwitchMeta, responsive.isCompact && styles.activeTripSwitchMetaCompact, responsive.isSmall && styles.activeTripSwitchMetaSmall]} numberOfLines={1}>
                     {item.pickup.label} {copy.to} {item.drop.label}
                   </Text>
-                  <Text style={styles.activeTripSwitchMeta}>{orderStatusLabel(language, item.status)}</Text>
+                  <Text style={[styles.activeTripSwitchMeta, responsive.isCompact && styles.activeTripSwitchMetaCompact, responsive.isSmall && styles.activeTripSwitchMetaSmall]}>{orderStatusLabel(language, item.status)}</Text>
                 </Pressable>
               );
             })}
@@ -2664,7 +3619,7 @@ function ActiveScreen({
         eta={order.etaMinutes}
         partnerLocation={order.partnerLocation}
       />
-      <View style={styles.orderCard}>
+      <View style={[styles.orderCard, responsive.isCompact && styles.orderCardCompact]}>
         <OrderHeader order={order} />
         <ActiveOrderContacts order={order} />
         <RouteBlock order={order} />
@@ -2672,7 +3627,7 @@ function ActiveScreen({
 
       <Timeline order={order} />
 
-      <View style={styles.payoutCard}>
+      <View style={[styles.payoutCard, responsive.isCompact && styles.payoutCardCompact]}>
         <FareLine label={copy.orderValue} value={money(order.fare.orderValue)} />
         <FareLine label={copy.driverCommission} value={money(order.fare.driverCommission)} />
         <FareLine label={copy.reserveReward} value={money(order.fare.reserveAmount)} />
@@ -2683,15 +3638,15 @@ function ActiveScreen({
 
       <SectionTitle title={copy.tripActions} />
       {needsPickupOtp || needsDropOtp ? (
-        <View style={styles.otpPanel}>
-          <Text style={styles.fieldLabel}>{needsPickupOtp ? copy.pickupOtp : copy.dropOtp}</Text>
-          <View style={styles.otpRow}>
+        <View style={[styles.otpPanel, responsive.isCompact && styles.otpPanelCompact]}>
+          <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact, responsive.isSmall && styles.fieldLabelSmall]}>{needsPickupOtp ? copy.pickupOtp : copy.dropOtp}</Text>
+          <View style={[styles.otpRow, responsive.isSmall && styles.otpRowSmall]}>
             <TextInput
               value={otp}
               onChangeText={setOtp}
               keyboardType="numeric"
               placeholder={copy.enter6DigitCode}
-              style={styles.otpInput}
+              style={[styles.otpInput, responsive.isCompact && styles.otpInputCompact, responsive.isSmall && styles.otpInputSmall]}
             />
             <PrimaryButton
               title={copy.verify}
@@ -2726,10 +3681,10 @@ function ActiveScreen({
         >
           <Ionicons name="close-circle-outline" size={20} color={colors.red} />
           <View style={styles.flex}>
-            <Text style={styles.cancelOrderButtonText}>
+            <Text style={[styles.cancelOrderButtonText, responsive.isCompact && styles.cancelOrderButtonTextCompact, responsive.isSmall && styles.cancelOrderButtonTextSmall]}>
               {cancellationsRemaining > 0 ? copy.cancelDelivery : copy.dailyCancellationLimit}
             </Text>
-            <Text style={styles.cancelOrderButtonMeta}>
+            <Text style={[styles.cancelOrderButtonMeta, responsive.isCompact && styles.cancelOrderButtonMetaCompact, responsive.isSmall && styles.cancelOrderButtonMetaSmall]}>
               {fillCopy(copy.cancellationsRemaining, { remaining: cancellationsRemaining })}
             </Text>
           </View>
@@ -2762,16 +3717,28 @@ function EarningsScreen({
   onTopup: (amount: number) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const profile = data.user.partnerProfile;
   const balance = profile?.walletBalance ?? 0;
   const walletReady = balance >= minPartnerWalletBalance;
   const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.walletCard}>
-        <Text style={styles.eyebrowDark}>{copy.walletBalance}</Text>
-        <Text style={styles.walletValue}>{money(balance)}</Text>
-        <Text style={styles.muted}>
+    <ScrollView
+      contentContainerStyle={[
+        styles.scroll,
+        styles.responsiveScreenContent,
+        responsive.isCompact && styles.scrollCompact,
+        responsive.isSmall && styles.scrollSmall,
+        {
+          maxWidth: responsive.contentMaxWidth,
+          paddingHorizontal: responsive.horizontalPadding
+        }
+      ]}
+    >
+      <View style={[styles.walletCard, responsive.isCompact && styles.walletCardCompact]}>
+        <Text style={[styles.eyebrowDark, responsive.isCompact && styles.eyebrowDarkCompact, responsive.isSmall && styles.eyebrowDarkSmall]}>{copy.walletBalance}</Text>
+        <Text style={[styles.walletValue, responsive.isCompact && styles.walletValueCompact, responsive.isSmall && styles.walletValueSmall]}>{money(balance)}</Text>
+        <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact, responsive.isSmall && styles.mutedSmallScreen]}>
           {walletReady
             ? `${profile?.weeklyOrders ?? 0} ${copy.tripsThisWeek}`
             : fillCopy(copy.rechargeToUnlock, { amount: money(rechargeAmount) })}
@@ -2781,21 +3748,21 @@ function EarningsScreen({
         ) : null}
         <PrimaryButton title={busy ? copy.requesting : copy.requestPayout} icon="send" onPress={onPayout} />
       </View>
-      <View style={styles.statRow}>
+      <View style={[styles.statRow, responsive.isCompact && styles.statRowCompact]}>
         <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
         <StatCard title={copy.done} value={String(data.stats.completedCount)} tone="blue" />
       </View>
       <SectionTitle title={copy.recentTransactions} />
       {data.stats.ledger.map((item) => (
-        <View key={item.id} style={styles.ledgerRow}>
-          <View style={[styles.ledgerIcon, item.kind === 'credit' ? styles.ledgerCredit : styles.ledgerDebit]}>
-            <Ionicons name={item.kind === 'credit' ? 'arrow-down' : 'arrow-up'} size={16} color={colors.white} />
+        <View key={item.id} style={[styles.ledgerRow, responsive.isCompact && styles.ledgerRowCompact]}>
+          <View style={[styles.ledgerIcon, responsive.isCompact && styles.ledgerIconCompact, item.kind === 'credit' ? styles.ledgerCredit : styles.ledgerDebit]}>
+            <Ionicons name={item.kind === 'credit' ? 'arrow-down' : 'arrow-up'} size={responsive.isCompact ? 14 : 16} color={colors.white} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.cardTitle}>{item.title}</Text>
-            <Text style={styles.mutedSmall}>{item.reference || copy.wallet}</Text>
+            <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{item.title}</Text>
+            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{item.reference || copy.wallet}</Text>
           </View>
-          <Text style={[styles.amount, item.kind === 'credit' ? styles.amountGreen : styles.amountRed]}>
+          <Text style={[styles.amount, responsive.isCompact && styles.amountCompact, responsive.isSmall && styles.amountSmall, item.kind === 'credit' ? styles.amountGreen : styles.amountRed]}>
             {item.kind === 'credit' ? '+' : '-'}{money(item.amount)}
           </Text>
         </View>
@@ -2832,6 +3799,7 @@ function ProfileScreen({
   onChangeLanguage: (language: AppLanguage) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const docs = user.partnerProfile?.docs;
   const bankDetails = user.partnerProfile?.bankDetails;
   const progress = partnerSetupProgress(user);
@@ -2849,10 +3817,42 @@ function ProfileScreen({
   const [profileError, setProfileError] = useState('');
   const [vehicleError, setVehicleError] = useState('');
   const [bankError, setBankError] = useState('');
+  const [detailKeyboardVisible, setDetailKeyboardVisible] = useState(false);
+  const [detailKeyboardHeight, setDetailKeyboardHeight] = useState(0);
 
   const accountCompleted = progress.completed + (docs?.bank ? 1 : 0);
   const accountTotal = progress.total + 1;
   const documentsVerified = progress.complete && user.partnerProfile?.kycStatus === 'verified';
+  const showDetailKeyboardAction =
+    detailKeyboardVisible && (page === 'personal' || page === 'vehicle' || page === 'bank');
+  const detailKeyboardOverlayInset = Platform.OS === 'android'
+    ? Math.max(0, detailKeyboardHeight + 16)
+    : 0;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setDetailKeyboardVisible(true);
+      setDetailKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setDetailKeyboardVisible(false);
+      setDetailKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  function markDetailFieldFocused() {
+    setDetailKeyboardVisible(true);
+    setTimeout(() => {
+      const metrics = Keyboard.metrics();
+      if (metrics?.height) setDetailKeyboardHeight(metrics.height);
+    }, 50);
+  }
 
   function openPage(nextPage: ProfilePage) {
     setProfileError('');
@@ -2944,40 +3944,51 @@ function ProfileScreen({
 
   if (page === 'overview') {
     return (
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.accountHero}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          styles.responsiveScreenContent,
+          responsive.isCompact && styles.scrollCompact,
+          responsive.isSmall && styles.scrollSmall,
+          {
+            maxWidth: responsive.contentMaxWidth,
+            paddingHorizontal: responsive.horizontalPadding
+          }
+        ]}
+      >
+        <View style={[styles.accountHero, responsive.isCompact && styles.accountHeroCompact, responsive.isSmall && styles.accountHeroSmall]}>
           <View style={styles.accountHeroGlow} />
-          <Text style={styles.accountEyebrow}>{copy.account}</Text>
-          <Text style={styles.accountHeroSubtitle}>{copy.accountSubtitle}</Text>
-          <View style={styles.accountIdentityCard}>
-            <View style={styles.accountAvatar}>
-              <Text style={styles.accountAvatarText}>{user.initials}</Text>
+          <Text style={[styles.accountEyebrow, responsive.isCompact && styles.accountEyebrowCompact, responsive.isSmall && styles.accountEyebrowSmall]}>{copy.account}</Text>
+          <Text style={[styles.accountHeroSubtitle, responsive.isCompact && styles.accountHeroSubtitleCompact, responsive.isSmall && styles.accountHeroSubtitleSmall]}>{copy.accountSubtitle}</Text>
+          <View style={[styles.accountIdentityCard, responsive.isCompact && styles.accountIdentityCardCompact, responsive.isSmall && styles.accountIdentityCardSmall]}>
+            <View style={[styles.accountAvatar, responsive.isCompact && styles.accountAvatarCompact, responsive.isSmall && styles.accountAvatarSmall]}>
+              <Text style={[styles.accountAvatarText, responsive.isCompact && styles.accountAvatarTextCompact, responsive.isSmall && styles.accountAvatarTextSmall]}>{user.initials}</Text>
             </View>
             <View style={styles.flex}>
-              <Text style={styles.accountName}>{user.name}</Text>
-              <Text style={styles.accountPhone}>{user.phone}</Text>
-              <View style={styles.accountVerifiedBadge}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.partner} />
-                <Text style={styles.accountVerifiedText}>{kycStatusLabel(language, user.partnerProfile?.kycStatus)} {copy.verification}</Text>
+              <Text style={[styles.accountName, responsive.isCompact && styles.accountNameCompact, responsive.isSmall && styles.accountNameSmall]} numberOfLines={1}>{user.name}</Text>
+              <Text style={[styles.accountPhone, responsive.isCompact && styles.accountPhoneCompact, responsive.isSmall && styles.accountPhoneSmall]}>{user.phone}</Text>
+              <View style={[styles.accountVerifiedBadge, responsive.isCompact && styles.accountVerifiedBadgeCompact]}>
+                <Ionicons name="checkmark-circle" size={responsive.isCompact ? 12 : 14} color={colors.partner} />
+                <Text style={[styles.accountVerifiedText, responsive.isCompact && styles.accountVerifiedTextCompact, responsive.isSmall && styles.accountVerifiedTextSmall]} numberOfLines={1}>{kycStatusLabel(language, user.partnerProfile?.kycStatus)} {copy.verification}</Text>
               </View>
             </View>
-            <Pressable style={styles.accountEditButton} onPress={() => openPage('personal')}>
-              <Ionicons name="create-outline" size={18} color={colors.partner} />
+            <Pressable style={[styles.accountEditButton, responsive.isCompact && styles.accountEditButtonCompact]} onPress={() => openPage('personal')}>
+              <Ionicons name="create-outline" size={responsive.isCompact ? 16 : 18} color={colors.partner} />
             </Pressable>
           </View>
         </View>
 
-        <View style={styles.accountProgressCard}>
+        <View style={[styles.accountProgressCard, responsive.isCompact && styles.accountProgressCardCompact]}>
           <View style={styles.between}>
-            <Text style={styles.cardTitle}>{copy.profileComplete}</Text>
-            <Text style={styles.priceText}>{accountCompleted}/{accountTotal}</Text>
+            <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.profileComplete}</Text>
+            <Text style={[styles.priceText, responsive.isCompact && styles.priceTextCompact, responsive.isSmall && styles.priceTextSmall]}>{accountCompleted}/{accountTotal}</Text>
           </View>
           <View style={styles.kycProgressTrack}>
             <View style={[styles.kycProgressFill, { width: `${(accountCompleted / accountTotal) * 100}%` }]} />
           </View>
         </View>
 
-        <View style={styles.accountMenuCard}>
+        <View style={[styles.accountMenuCard, responsive.isCompact && styles.accountMenuCardCompact]}>
           <AccountMenuRow
             icon="school-outline"
             title={copy.driverTraining}
@@ -3020,17 +4031,17 @@ function ProfileScreen({
         {progress.complete && user.partnerProfile?.kycStatus !== 'verified' ? (
           <View style={styles.notice}>
             <Ionicons name="time" size={18} color={colors.partner} />
-            <Text style={styles.noticeText}>{copy.profileSubmittedNotice}</Text>
+            <Text style={[styles.noticeText, responsive.isCompact && styles.noticeTextCompact, responsive.isSmall && styles.noticeTextSmall]}>{copy.profileSubmittedNotice}</Text>
           </View>
         ) : null}
 
         <Pressable style={styles.deleteAccountButton} onPress={onRequestAccountDeletion}>
           <Ionicons name="trash-outline" size={18} color={colors.red} />
-          <Text style={styles.deleteAccountButtonText}>{copy.requestAccountDeletion}</Text>
+          <Text style={[styles.deleteAccountButtonText, responsive.isCompact && styles.accountActionTextCompact, responsive.isSmall && styles.accountActionTextSmall]}>{copy.requestAccountDeletion}</Text>
         </Pressable>
         <Pressable style={styles.logoutButton} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={18} color={colors.red} />
-          <Text style={styles.logoutButtonText}>{copy.logout}</Text>
+          <Text style={[styles.logoutButtonText, responsive.isCompact && styles.accountActionTextCompact, responsive.isSmall && styles.accountActionTextSmall]}>{copy.logout}</Text>
         </Pressable>
       </ScrollView>
     );
@@ -3038,7 +4049,21 @@ function ProfileScreen({
 
   return (
     <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          styles.responsiveScreenContent,
+          responsive.isCompact && styles.scrollCompact,
+          responsive.isSmall && styles.scrollSmall,
+          showDetailKeyboardAction && styles.profileDetailKeyboardScroll,
+          {
+            maxWidth: responsive.contentMaxWidth,
+            paddingHorizontal: responsive.horizontalPadding
+          }
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <AccountDetailHeader
           title={
             page === 'personal' ? copy.personalInformation
@@ -3062,29 +4087,31 @@ function ProfileScreen({
         />
 
         {page === 'personal' ? (
-          <View style={styles.accountDetailCard}>
-            <AuthField label={copy.fullName} value={name} onChangeText={setName} icon="person" />
+          <View style={[styles.accountDetailCard, responsive.isCompact && styles.accountDetailCardCompact]}>
+            <AuthField label={copy.fullName} value={name} onChangeText={setName} icon="person" onFocus={markDetailFieldFocused} />
             <AuthField label={copy.loginMobileNumber} value={user.phone} editable={false} keyboardType="phone-pad" icon="lock-closed" />
-            <AuthField label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" icon="mail" />
-            <AuthField label={copy.city} value={city} onChangeText={setCity} icon="location" />
+            <AuthField label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" icon="mail" onFocus={markDetailFieldFocused} />
+            <AuthField label={copy.city} value={city} onChangeText={setCity} icon="location" onFocus={markDetailFieldFocused} />
             <View style={styles.accountInfoStrip}>
               <Ionicons name="shield-checkmark" size={20} color={colors.partner} />
-              <Text style={styles.accountInfoText}>{copy.mobileLinkedToAccount}</Text>
+              <Text style={[styles.accountInfoText, responsive.isCompact && styles.accountInfoTextCompact, responsive.isSmall && styles.accountInfoTextSmall]}>{copy.mobileLinkedToAccount}</Text>
             </View>
             {profileError ? <Text style={styles.loginError}>{profileError}</Text> : null}
-            <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitPersonalDetails} />
+            {!showDetailKeyboardAction ? (
+              <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitPersonalDetails} />
+            ) : null}
           </View>
         ) : null}
 
         {page === 'training' ? (
-          <View style={styles.trainingPage}>
-            <View style={styles.trainingHeroCard}>
-              <View style={styles.trainingHeroIcon}>
-                <Ionicons name="school" size={26} color={colors.white} />
+          <View style={[styles.trainingPage, responsive.isCompact && styles.trainingPageCompact]}>
+            <View style={[styles.trainingHeroCard, responsive.isCompact && styles.trainingHeroCardCompact]}>
+              <View style={[styles.trainingHeroIcon, responsive.isCompact && styles.trainingHeroIconCompact]}>
+                <Ionicons name="school" size={responsive.isCompact ? 22 : 26} color={colors.white} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.trainingHeroTitle}>{copy.trainingIntro}</Text>
-                <Text style={styles.trainingHeroText}>{copy.trainingIntroText}</Text>
+                <Text style={[styles.trainingHeroTitle, responsive.isCompact && styles.trainingHeroTitleCompact, responsive.isSmall && styles.trainingHeroTitleSmall]}>{copy.trainingIntro}</Text>
+                <Text style={[styles.trainingHeroText, responsive.isCompact && styles.trainingHeroTextCompact, responsive.isSmall && styles.trainingHeroTextSmall]}>{copy.trainingIntroText}</Text>
               </View>
             </View>
 
@@ -3098,16 +4125,16 @@ function ProfileScreen({
               { icon: 'camera-outline' as const, title: copy.trainingDropPhotoTitle, text: copy.trainingDropPhotoText },
               { icon: 'checkmark-done-outline' as const, title: copy.trainingDropOtpTitle, text: copy.trainingDropOtpText }
             ].map((item, index) => (
-              <View key={item.title} style={styles.trainingStepCard}>
-                <View style={styles.trainingStepRail}>
-                  <View style={styles.trainingStepIcon}>
-                    <Ionicons name={item.icon} size={20} color={colors.partner} />
+              <View key={item.title} style={[styles.trainingStepCard, responsive.isCompact && styles.trainingStepCardCompact]}>
+                <View style={[styles.trainingStepRail, responsive.isCompact && styles.trainingStepRailCompact]}>
+                  <View style={[styles.trainingStepIcon, responsive.isCompact && styles.trainingStepIconCompact]}>
+                    <Ionicons name={item.icon} size={responsive.isCompact ? 17 : 20} color={colors.partner} />
                   </View>
                   {index < 7 ? <View style={styles.trainingStepLine} /> : null}
                 </View>
                 <View style={styles.trainingStepContent}>
-                  <Text style={styles.trainingStepTitle}>{item.title}</Text>
-                  <Text style={styles.trainingStepText}>{item.text}</Text>
+                  <Text style={[styles.trainingStepTitle, responsive.isCompact && styles.trainingStepTitleCompact, responsive.isSmall && styles.trainingStepTitleSmall]}>{item.title}</Text>
+                  <Text style={[styles.trainingStepText, responsive.isCompact && styles.trainingStepTextCompact, responsive.isSmall && styles.trainingStepTextSmall]}>{item.text}</Text>
                 </View>
               </View>
             ))}
@@ -3115,24 +4142,24 @@ function ProfileScreen({
             <View style={styles.trainingSafetyCard}>
               <Ionicons name="shield-checkmark" size={22} color={colors.green} />
               <View style={styles.flex}>
-                <Text style={styles.trainingSafetyTitle}>{copy.trainingSafetyTitle}</Text>
-                <Text style={styles.trainingSafetyText}>{copy.trainingSafetyText}</Text>
+                <Text style={[styles.trainingSafetyTitle, responsive.isCompact && styles.trainingSafetyTitleCompact, responsive.isSmall && styles.trainingSafetyTitleSmall]}>{copy.trainingSafetyTitle}</Text>
+                <Text style={[styles.trainingSafetyText, responsive.isCompact && styles.trainingSafetyTextCompact, responsive.isSmall && styles.trainingSafetyTextSmall]}>{copy.trainingSafetyText}</Text>
               </View>
             </View>
             <View style={styles.trainingHelpCard}>
               <Ionicons name="headset" size={22} color={colors.partner} />
               <View style={styles.flex}>
-                <Text style={styles.trainingSafetyTitle}>{copy.trainingHelpTitle}</Text>
-                <Text style={styles.trainingSafetyText}>{copy.trainingHelpText}</Text>
+                <Text style={[styles.trainingSafetyTitle, responsive.isCompact && styles.trainingSafetyTitleCompact, responsive.isSmall && styles.trainingSafetyTitleSmall]}>{copy.trainingHelpTitle}</Text>
+                <Text style={[styles.trainingSafetyText, responsive.isCompact && styles.trainingSafetyTextCompact, responsive.isSmall && styles.trainingSafetyTextSmall]}>{copy.trainingHelpText}</Text>
               </View>
             </View>
           </View>
         ) : null}
 
         {page === 'vehicle' ? (
-          <View style={styles.accountDetailCard}>
+          <View style={[styles.accountDetailCard, responsive.isCompact && styles.accountDetailCardCompact]}>
             <VehiclePicker vehicles={vehicles} selectedId={vehicleId} onSelect={setVehicleId} />
-            <AuthField label={copy.vehicleNumber} value={vehicleNumber} onChangeText={setVehicleNumber} icon="car" autoCapitalize="characters" />
+            <AuthField label={copy.vehicleNumber} value={vehicleNumber} onChangeText={setVehicleNumber} icon="car" autoCapitalize="characters" onFocus={markDetailFieldFocused} />
             <KycStepCard
               icon="document-text"
               title={copy.vehicleRc}
@@ -3142,7 +4169,9 @@ function ProfileScreen({
               onPress={() => onCapture('rc')}
             />
             {vehicleError ? <Text style={styles.loginError}>{vehicleError}</Text> : null}
-            <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitVehicleDetails} />
+            {!showDetailKeyboardAction ? (
+              <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitVehicleDetails} />
+            ) : null}
           </View>
         ) : null}
 
@@ -3150,20 +4179,20 @@ function ProfileScreen({
           <>
             <View style={styles.kycProgressCard}>
               <View style={styles.between}>
-                <Text style={styles.cardTitle}>{copy.documentProgress}</Text>
-                <Text style={styles.priceText}>{progress.completed}/{progress.total}</Text>
+                <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.documentProgress}</Text>
+                <Text style={[styles.priceText, responsive.isCompact && styles.priceTextCompact, responsive.isSmall && styles.priceTextSmall]}>{progress.completed}/{progress.total}</Text>
               </View>
               <View style={styles.kycProgressTrack}>
                 <View style={[styles.kycProgressFill, { width: `${(progress.completed / progress.total) * 100}%` }]} />
               </View>
-              <Text style={styles.mutedSmall}>{copy.status}: {kycStatusLabel(language, user.partnerProfile?.kycStatus)}</Text>
+              <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.status}: {kycStatusLabel(language, user.partnerProfile?.kycStatus)}</Text>
             </View>
             <KycStepCard icon="person-circle" title={copy.liveSelfie} subtitle={copy.captureClearFacePhoto} done={Boolean(docs?.selfie)} busy={busy} onPress={() => onCapture('selfie')} />
             <View style={styles.kycGroupCard}>
               <View style={styles.between}>
                 <View style={styles.flex}>
-                  <Text style={styles.cardTitle}>{copy.identityProof}</Text>
-                  <Text style={styles.mutedSmall}>{copy.capturePanOrAadhaarRequired}</Text>
+                  <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.identityProof}</Text>
+                  <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.capturePanOrAadhaarRequired}</Text>
                 </View>
                 <Ionicons name={identityDone ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={identityDone ? colors.green : colors.muted} />
               </View>
@@ -3178,36 +4207,64 @@ function ProfileScreen({
         ) : null}
 
         {page === 'bank' ? (
-          <View style={[styles.accountDetailCard, docs?.bank && styles.accountDetailCardComplete]}>
+          <View style={[styles.accountDetailCard, responsive.isCompact && styles.accountDetailCardCompact, docs?.bank && styles.accountDetailCardComplete]}>
             <View style={styles.accountBankStatus}>
               <View style={[styles.accountMenuIcon, docs?.bank && styles.accountMenuIconComplete]}>
                 <Ionicons name={docs?.bank ? 'checkmark' : 'wallet-outline'} size={20} color={docs?.bank ? colors.white : colors.partner} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{docs?.bank ? copy.accountSaved : copy.bankAccount}</Text>
-                <Text style={styles.mutedSmall}>{docs?.bank ? `${bankDetails?.accountNumberMasked || ''} • ${bankDetails?.ifsc || ''}` : copy.usedForPayouts}</Text>
+                <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{docs?.bank ? copy.accountSaved : copy.bankAccount}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{docs?.bank ? `${bankDetails?.accountNumberMasked || ''} • ${bankDetails?.ifsc || ''}` : copy.usedForPayouts}</Text>
               </View>
             </View>
             <View style={styles.kycInputGroup}>
-              <Text style={styles.fieldLabel}>{copy.accountHolder}</Text>
-              <TextInput value={accountHolder} onChangeText={setAccountHolder} style={styles.kycInput} placeholder={copy.nameAsPerBank} />
+              <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact, responsive.isSmall && styles.fieldLabelSmall]}>{copy.accountHolder}</Text>
+              <TextInput value={accountHolder} onChangeText={setAccountHolder} onFocus={markDetailFieldFocused} style={[styles.kycInput, responsive.isCompact && styles.kycInputCompact, responsive.isSmall && styles.kycInputSmall]} placeholder={copy.nameAsPerBank} />
             </View>
             <View style={styles.kycInputGroup}>
-              <Text style={styles.fieldLabel}>{copy.accountNumber}</Text>
-              <TextInput value={accountNumber} onChangeText={setAccountNumber} style={styles.kycInput} placeholder={bankDetails?.accountNumberMasked || copy.enterAccountNumber} keyboardType="numeric" secureTextEntry />
+              <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact, responsive.isSmall && styles.fieldLabelSmall]}>{copy.accountNumber}</Text>
+              <TextInput value={accountNumber} onChangeText={setAccountNumber} onFocus={markDetailFieldFocused} style={[styles.kycInput, responsive.isCompact && styles.kycInputCompact, responsive.isSmall && styles.kycInputSmall]} placeholder={bankDetails?.accountNumberMasked || copy.enterAccountNumber} keyboardType="numeric" secureTextEntry />
             </View>
             <View style={styles.kycInputGroup}>
-              <Text style={styles.fieldLabel}>{copy.ifscCode}</Text>
-              <TextInput value={ifsc} onChangeText={setIfsc} style={styles.kycInput} autoCapitalize="characters" placeholder="ABCD0123456" />
+              <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact, responsive.isSmall && styles.fieldLabelSmall]}>{copy.ifscCode}</Text>
+              <TextInput value={ifsc} onChangeText={setIfsc} onFocus={markDetailFieldFocused} style={[styles.kycInput, responsive.isCompact && styles.kycInputCompact, responsive.isSmall && styles.kycInputSmall]} autoCapitalize="characters" placeholder="ABCD0123456" />
             </View>
             {bankError ? <Text style={styles.loginError}>{bankError}</Text> : null}
-            <PrimaryButton title={busy ? copy.saving : docs?.bank ? copy.updateBank : copy.saveBank} icon="checkmark" onPress={submitBank} />
+            {!showDetailKeyboardAction ? (
+              <PrimaryButton title={busy ? copy.saving : docs?.bank ? copy.updateBank : copy.saveBank} icon="checkmark" onPress={submitBank} />
+            ) : null}
           </View>
         ) : null}
 
         {page === 'language' ? <LanguageSwitcher language={language} onChangeLanguage={onChangeLanguage} /> : null}
         {page === 'legal' ? <PolicyList /> : null}
       </ScrollView>
+      {showDetailKeyboardAction ? (
+        <View
+          style={[
+            styles.profileDetailKeyboardFooter,
+            responsive.isCompact && styles.profileDetailKeyboardFooterCompact,
+            detailKeyboardOverlayInset > 0 && {
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: detailKeyboardOverlayInset
+            }
+          ]}
+        >
+          <View style={[styles.profileDetailKeyboardFooterInner, { maxWidth: responsive.contentMaxWidth }]}>
+            {page === 'personal' ? (
+              <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitPersonalDetails} />
+            ) : null}
+            {page === 'vehicle' ? (
+              <PrimaryButton title={busy ? copy.saving : copy.saveChanges} icon="checkmark" onPress={submitVehicleDetails} />
+            ) : null}
+            {page === 'bank' ? (
+              <PrimaryButton title={busy ? copy.saving : docs?.bank ? copy.updateBank : copy.saveBank} icon="checkmark" onPress={submitBank} />
+            ) : null}
+          </View>
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -3225,29 +4282,31 @@ function AccountMenuRow({
   onPress: () => void;
   last?: boolean;
 }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.accountMenuRow, last && styles.accountMenuRowLast]} onPress={onPress}>
-      <View style={styles.accountMenuIcon}>
-        <Ionicons name={icon} size={20} color={colors.partner} />
+    <Pressable style={[styles.accountMenuRow, responsive.isCompact && styles.accountMenuRowCompact, last && styles.accountMenuRowLast]} onPress={onPress}>
+      <View style={[styles.accountMenuIcon, responsive.isCompact && styles.accountMenuIconCompact]}>
+        <Ionicons name={icon} size={responsive.isCompact ? 17 : 20} color={colors.partner} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={styles.mutedSmall}>{subtitle}</Text>
+        <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{title}</Text>
+        <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]} numberOfLines={2}>{subtitle}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+      <Ionicons name="chevron-forward" size={responsive.isCompact ? 16 : 18} color={colors.muted} />
     </Pressable>
   );
 }
 
 function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.accountDetailHeader}>
-      <Pressable style={styles.accountBackButton} onPress={onBack}>
-        <Ionicons name="arrow-back" size={21} color={colors.white} />
+    <View style={[styles.accountDetailHeader, responsive.isCompact && styles.accountDetailHeaderCompact]}>
+      <Pressable style={[styles.accountBackButton, responsive.isCompact && styles.accountBackButtonCompact]} onPress={onBack}>
+        <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.white} />
       </Pressable>
       <View style={styles.flex}>
-        <Text style={styles.accountDetailTitle}>{title}</Text>
-        <Text style={styles.accountDetailSubtitle}>{subtitle}</Text>
+        <Text style={[styles.accountDetailTitle, responsive.isCompact && styles.accountDetailTitleCompact, responsive.isSmall && styles.accountDetailTitleSmall]}>{title}</Text>
+        <Text style={[styles.accountDetailSubtitle, responsive.isCompact && styles.accountDetailSubtitleCompact, responsive.isSmall && styles.accountDetailSubtitleSmall]} numberOfLines={2}>{subtitle}</Text>
       </View>
     </View>
   );
@@ -3263,13 +4322,14 @@ function LanguageSwitcher({
   compact?: boolean;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
-    <View style={[styles.languageCard, compact && styles.languageCardCompact]}>
+    <View style={[styles.languageCard, (compact || responsive.isCompact) && styles.languageCardCompact]}>
       <View style={styles.languageHeader}>
         <Ionicons name="language-outline" size={18} color={colors.partner} />
         <View style={styles.flex}>
-          <Text style={styles.cardTitle}>{copy.changeLanguage}</Text>
-          <Text style={styles.mutedSmall}>{languageNativeLabel(language)}</Text>
+          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{copy.changeLanguage}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{languageNativeLabel(language)}</Text>
         </View>
       </View>
       <View style={styles.languageOptionRow}>
@@ -3281,7 +4341,7 @@ function LanguageSwitcher({
               style={[styles.languagePill, active && styles.languagePillActive]}
               onPress={() => onChangeLanguage(option)}
             >
-              <Text style={[styles.languagePillText, active && styles.languagePillTextActive]}>
+              <Text style={[styles.languagePillText, responsive.isCompact && styles.languagePillTextCompact, responsive.isSmall && styles.languagePillTextSmall, active && styles.languagePillTextActive]}>
                 {option === 'hi' ? copy.hindiNative : copy.english}
               </Text>
             </Pressable>
@@ -3308,16 +4368,17 @@ function KycStepCard({
   onPress: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.kycStepCard, done && styles.kycStepDone]} onPress={onPress}>
-      <View style={[styles.kycStepIcon, done && styles.kycStepIconDone]}>
-        <Ionicons name={done ? 'checkmark' : icon} size={20} color={done ? colors.white : colors.partner} />
+    <Pressable style={[styles.kycStepCard, responsive.isCompact && styles.kycStepCardCompact, done && styles.kycStepDone]} onPress={onPress}>
+      <View style={[styles.kycStepIcon, responsive.isCompact && styles.kycStepIconCompact, done && styles.kycStepIconDone]}>
+        <Ionicons name={done ? 'checkmark' : icon} size={responsive.isCompact ? 17 : 20} color={done ? colors.white : colors.partner} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={styles.mutedSmall}>{subtitle}</Text>
+        <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{title}</Text>
+        <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{subtitle}</Text>
       </View>
-      <Text style={[styles.kycActionText, done && styles.docDoneText]}>
+      <Text style={[styles.kycActionText, responsive.isCompact && styles.kycActionTextCompact, responsive.isSmall && styles.kycActionTextSmall, done && styles.docDoneText]}>
         {done ? copy.done : busy ? copy.opening : copy.capture}
       </Text>
     </Pressable>
@@ -3353,6 +4414,7 @@ function PolicyCard({
   onToggle: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const icons: Record<LegalPolicy['id'], keyof typeof Ionicons.glyphMap> = {
     privacy: 'lock-closed',
     terms: 'document-text',
@@ -3360,15 +4422,15 @@ function PolicyCard({
   };
 
   return (
-    <View style={styles.policyCard}>
-      <Pressable style={styles.policyHeader} onPress={onToggle}>
-        <View style={styles.policyIcon}>
-          <Ionicons name={icons[policy.id]} size={18} color={colors.partner} />
+    <View style={[styles.policyCard, responsive.isCompact && styles.policyCardCompact]}>
+      <Pressable style={[styles.policyHeader, responsive.isCompact && styles.policyHeaderCompact]} onPress={onToggle}>
+        <View style={[styles.policyIcon, responsive.isCompact && styles.policyIconCompact]}>
+          <Ionicons name={icons[policy.id]} size={responsive.isSmall ? 14 : responsive.isCompact ? 16 : 18} color={colors.partner} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.cardTitle}>{policy.title}</Text>
-          <Text style={styles.mutedSmall}>{copy.updated} {policy.updatedAt}</Text>
-          <Text style={styles.policySummary}>{policy.summary}</Text>
+          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{policy.title}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.updated} {policy.updatedAt}</Text>
+          <Text style={[styles.policySummary, responsive.isCompact && styles.policySummaryCompact, responsive.isSmall && styles.policySummarySmall]}>{policy.summary}</Text>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
       </Pressable>
@@ -3376,9 +4438,9 @@ function PolicyCard({
         <View style={styles.policyBody}>
           {policy.sections.map((section) => (
             <View key={section.heading} style={styles.policySection}>
-              <Text style={styles.policyHeading}>{section.heading}</Text>
+              <Text style={[styles.policyHeading, responsive.isCompact && styles.policyHeadingCompact, responsive.isSmall && styles.policyHeadingSmall]}>{section.heading}</Text>
               {section.body.map((line) => (
-                <Text key={line} style={styles.policyText}>{line}</Text>
+                <Text key={line} style={[styles.policyText, responsive.isCompact && styles.policyTextCompact, responsive.isSmall && styles.policyTextSmall]}>{line}</Text>
               ))}
             </View>
           ))}
@@ -3398,6 +4460,8 @@ function BottomTabs({
   activeCount: number;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  const compact = responsive.isCompact;
   const { bottom: bottomInset } = useSafeAreaInsets();
   const tabs: Array<[Tab, keyof typeof Ionicons.glyphMap, string, number?]> = [
     ['dashboard', 'home', copy.home],
@@ -3406,23 +4470,36 @@ function BottomTabs({
     ['profile', 'person', copy.profile]
   ];
   return (
-    <View style={[styles.tabs, { height: 68 + bottomInset, paddingBottom: bottomInset }]}>
-      {tabs.map(([key, icon, label, count]) => {
-        const selected = active === key;
-        return (
-          <Pressable key={key} style={styles.tab} onPress={() => onChange(key)}>
-            <View>
-              <Ionicons name={icon} size={22} color={selected ? colors.partner : colors.muted} />
-              {count ? (
-                <View style={styles.tabBadge}>
-                  <Text style={styles.tabBadgeText}>{count}</Text>
-                </View>
-              ) : null}
-            </View>
-            <Text style={[styles.tabText, selected && styles.tabTextActive]}>{label}</Text>
-          </Pressable>
-        );
-      })}
+    <View style={[
+      styles.tabs,
+      compact && styles.tabsCompact,
+      { height: responsive.tabBarHeight + bottomInset, paddingBottom: bottomInset }
+    ]}>
+      <View style={[styles.tabsInner, { maxWidth: Math.min(720, responsive.contentMaxWidth) }]}>
+        {tabs.map(([key, icon, label, count]) => {
+          const selected = active === key;
+          return (
+            <Pressable
+              key={key}
+              style={[styles.tab, compact && styles.tabCompact]}
+              onPress={() => onChange(key)}
+              accessibilityRole="tab"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+            >
+              <View>
+                <Ionicons name={icon} size={responsive.isSmall ? 17 : compact ? 19 : 22} color={selected ? colors.partner : colors.muted} />
+                {count ? (
+                  <View style={[styles.tabBadge, compact && styles.tabBadgeCompact]}>
+                    <Text style={styles.tabBadgeText}>{count}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text numberOfLines={2} style={[styles.tabText, compact && styles.tabTextCompact, responsive.isSmall && styles.tabTextSmall, selected && styles.tabTextActive]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -3454,49 +4531,54 @@ function getNextActions(order: Order, copy: Record<CopyKey, string>) {
 }
 
 function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={styles.primaryButton} onPress={onPress}>
-      <Ionicons name={icon} size={17} color={colors.white} />
-      <Text style={styles.primaryButtonText}>{title}</Text>
+    <Pressable style={[styles.primaryButton, responsive.isCompact && styles.primaryButtonCompact, responsive.isSmall && styles.primaryButtonSmall]} onPress={onPress}>
+      <Ionicons name={icon} size={responsive.isSmall ? 13 : responsive.isCompact ? 15 : 17} color={colors.white} />
+      <Text style={[styles.primaryButtonText, responsive.isCompact && styles.primaryButtonTextCompact, responsive.isSmall && styles.primaryButtonTextSmall]}>{title}</Text>
     </Pressable>
   );
 }
 
 function SecondaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={styles.secondaryButton} onPress={onPress}>
-      <Ionicons name={icon} size={17} color={colors.ink} />
-      <Text style={styles.secondaryButtonText}>{title}</Text>
+    <Pressable style={[styles.secondaryButton, responsive.isCompact && styles.secondaryButtonCompact, responsive.isSmall && styles.secondaryButtonSmall]} onPress={onPress}>
+      <Ionicons name={icon} size={responsive.isSmall ? 13 : responsive.isCompact ? 15 : 17} color={colors.ink} />
+      <Text style={[styles.secondaryButtonText, responsive.isCompact && styles.secondaryButtonTextCompact, responsive.isSmall && styles.secondaryButtonTextSmall]}>{title}</Text>
     </Pressable>
   );
 }
 
 function SectionTitle({ title }: { title: string }) {
-  return <Text style={styles.sectionTitle}>{title}</Text>;
+  const responsive = useResponsiveLayout();
+  return <Text style={[styles.sectionTitle, responsive.isCompact && styles.sectionTitleCompact, responsive.isSmall && styles.sectionTitleSmall]}>{title}</Text>;
 }
 
 function StatCard({ title, value, tone }: { title: string; value: string; tone: 'green' | 'blue' | 'amber' }) {
+  const responsive = useResponsiveLayout();
   const palette = {
     green: [colors.partnerLight, colors.partner],
     blue: ['#DBEAFE', colors.blue],
     amber: ['#FEF3C7', colors.amber]
   }[tone];
   return (
-    <View style={[styles.statCard, { backgroundColor: palette[0] }]}>
-      <Text style={[styles.statValue, { color: palette[1] }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: palette[1] }]}>{title}</Text>
+    <View style={[styles.statCard, responsive.isCompact && styles.statCardCompact, responsive.isSmall && styles.statCardSmall, { backgroundColor: palette[0] }]}>
+      <Text style={[styles.statValue, responsive.isCompact && styles.statValueCompact, responsive.isSmall && styles.statValueSmall, { color: palette[1] }]}>{value}</Text>
+      <Text style={[styles.statLabel, responsive.isCompact && styles.statLabelCompact, responsive.isSmall && styles.statLabelSmall, { color: palette[1] }]} numberOfLines={2}>{title}</Text>
     </View>
   );
 }
 
 function OrderCard({ order }: { order: Order }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.orderCard}>
+    <View style={[styles.orderCard, responsive.isCompact && styles.orderCardCompact]}>
       <OrderHeader order={order} />
       <RouteBlock order={order} />
       <View style={styles.between}>
-        <Text style={styles.mutedSmall}>{order.vehicle.shortName} - {order.distanceKm} km</Text>
-        <Text style={styles.priceText}>{money(order.fare.partnerNet)}</Text>
+        <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{order.vehicle.shortName} - {order.distanceKm} km</Text>
+        <Text style={[styles.priceText, responsive.isCompact && styles.priceTextCompact, responsive.isSmall && styles.priceTextSmall]}>{money(order.fare.partnerNet)}</Text>
       </View>
     </View>
   );
@@ -3505,11 +4587,12 @@ function OrderCard({ order }: { order: Order }) {
 function OrderHeader({ order }: { order: Order }) {
   const copy = useCopy();
   const language = useLanguage();
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.between}>
-      <View>
-        <Text style={styles.orderNo}>{order.orderNo}</Text>
-        <Text style={styles.cardTitle}>{order.customer?.name || copy.customer}</Text>
+    <View style={[styles.between, responsive.isCompact && styles.betweenCompact]}>
+      <View style={styles.flex}>
+        <Text style={[styles.orderNo, responsive.isCompact && styles.orderNoCompact, responsive.isSmall && styles.orderNoSmall]}>{order.orderNo}</Text>
+        <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]} numberOfLines={1}>{order.customer?.name || copy.customer}</Text>
       </View>
       <Badge label={orderStatusLabel(language, order.status)} />
     </View>
@@ -3518,6 +4601,7 @@ function OrderHeader({ order }: { order: Order }) {
 
 function ActiveOrderContacts({ order }: { order: Order }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const customerName = order.customer?.name || copy.customer;
   const customerPhone = order.customer?.phone;
   const contactRows = [
@@ -3529,13 +4613,13 @@ function ActiveOrderContacts({ order }: { order: Order }) {
   if (!contactRows.length) return null;
 
   return (
-    <View style={styles.activeContactCard}>
+    <View style={[styles.activeContactCard, responsive.isCompact && styles.activeContactCardCompact]}>
       {contactRows.map((row) => (
-        <View key={row.key} style={styles.activeContactRow}>
-          <Ionicons name={row.icon} size={18} color={colors.partner} />
+        <View key={row.key} style={[styles.activeContactRow, responsive.isCompact && styles.activeContactRowCompact]}>
+          <Ionicons name={row.icon} size={responsive.isCompact ? 16 : 18} color={colors.partner} />
           <View style={styles.flex}>
-            <Text style={styles.activeContactLabel}>{row.label}</Text>
-            <Text style={styles.activeContactValue} numberOfLines={1}>
+            <Text style={[styles.activeContactLabel, responsive.isCompact && styles.activeContactLabelCompact, responsive.isSmall && styles.activeContactLabelSmall]}>{row.label}</Text>
+            <Text style={[styles.activeContactValue, responsive.isCompact && styles.activeContactValueCompact, responsive.isSmall && styles.activeContactValueSmall]} numberOfLines={1}>
               {[row.name, row.phone].filter(Boolean).join(' - ')}
             </Text>
           </View>
@@ -3547,20 +4631,21 @@ function ActiveOrderContacts({ order }: { order: Order }) {
 
 function RouteBlock({ order }: { order: Order }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
     <View>
-      <View style={styles.route}>
-        <View style={styles.routeDot} />
+      <View style={[styles.route, responsive.isCompact && styles.routeCompact]}>
+        <View style={[styles.routeDot, responsive.isCompact && styles.routeDotCompact]} />
         <View style={styles.flex}>
-          <Text style={styles.routeText}>{order.pickup.label}</Text>
-          <Text style={styles.mutedSmall}>{copy.pickup}</Text>
+          <Text style={[styles.routeText, responsive.isCompact && styles.routeTextCompact, responsive.isSmall && styles.routeTextSmall]} numberOfLines={2}>{order.pickup.label}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.pickup}</Text>
         </View>
       </View>
-      <View style={styles.route}>
-        <View style={[styles.routeDot, styles.routeDotGreen]} />
+      <View style={[styles.route, responsive.isCompact && styles.routeCompact]}>
+        <View style={[styles.routeDot, responsive.isCompact && styles.routeDotCompact, styles.routeDotGreen]} />
         <View style={styles.flex}>
-          <Text style={styles.routeText}>{order.drop.label}</Text>
-          <Text style={styles.mutedSmall}>{copy.drop}</Text>
+          <Text style={[styles.routeText, responsive.isCompact && styles.routeTextCompact, responsive.isSmall && styles.routeTextSmall]} numberOfLines={2}>{order.drop.label}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.drop}</Text>
         </View>
       </View>
     </View>
@@ -3568,17 +4653,19 @@ function RouteBlock({ order }: { order: Order }) {
 }
 
 function Badge({ label }: { label: string }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.badge}>
-      <Text style={styles.badgeText}>{label}</Text>
+    <View style={[styles.badge, responsive.isCompact && styles.badgeCompact]}>
+      <Text style={[styles.badgeText, responsive.isCompact && styles.badgeTextCompact, responsive.isSmall && styles.badgeTextSmall]} numberOfLines={2}>{label}</Text>
     </View>
   );
 }
 
 function Chip({ label }: { label: string }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.chip}>
-      <Text style={styles.chipText}>{label}</Text>
+    <View style={[styles.chip, responsive.isCompact && styles.chipCompact]}>
+      <Text style={[styles.chipText, responsive.isCompact && styles.chipTextCompact, responsive.isSmall && styles.chipTextSmall]}>{label}</Text>
     </View>
   );
 }
@@ -3677,6 +4764,7 @@ function MapPreview({
   partnerLocation?: Order['partnerLocation'];
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const [expanded, setExpanded] = useState(false);
   const [exactRoute, setExactRoute] = useState<PartnerRoutePath | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -3809,7 +4897,7 @@ function MapPreview({
 
   return (
     <>
-    <View style={styles.map}>
+    <View style={[styles.map, responsive.isCompact && styles.mapCompact, responsive.isSmall && styles.mapSmall]}>
       {canRenderNativeMap ? (
         <MapView
           ref={mapRef}
@@ -3940,10 +5028,11 @@ function MapPreview({
 
 function Timeline({ order }: { order: Order }) {
   const language = useLanguage();
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.orderCard}>
+    <View style={[styles.orderCard, responsive.isCompact && styles.orderCardCompact]}>
       {order.timeline.map((item) => (
-        <View key={item.key} style={styles.timelineItem}>
+        <View key={item.key} style={[styles.timelineItem, responsive.isCompact && styles.timelineItemCompact]}>
           <View
             style={[
               styles.timelineDot,
@@ -3954,8 +5043,8 @@ function Timeline({ order }: { order: Order }) {
             {item.state === 'done' ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
           </View>
           <View style={styles.flex}>
-            <Text style={styles.timelineTitle}>{timelineTitle(language, item.key, item.title)}</Text>
-            {item.note ? <Text style={styles.mutedSmall}>{timelineNote(language, item.key, item.note)}</Text> : null}
+            <Text style={[styles.timelineTitle, responsive.isCompact && styles.timelineTitleCompact, responsive.isSmall && styles.timelineTitleSmall]}>{timelineTitle(language, item.key, item.title)}</Text>
+            {item.note ? <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{timelineNote(language, item.key, item.note)}</Text> : null}
           </View>
         </View>
       ))}
@@ -3964,20 +5053,22 @@ function Timeline({ order }: { order: Order }) {
 }
 
 function FareLine({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.between}>
-      <Text style={[styles.fareLabel, bold && styles.bold]}>{label}</Text>
-      <Text style={[styles.fareValue, bold && styles.bold]}>{value}</Text>
+    <View style={[styles.between, responsive.isCompact && styles.betweenCompact]}>
+      <Text style={[styles.fareLabel, bold && styles.bold, responsive.isCompact && styles.fareLabelCompact, responsive.isSmall && styles.fareLabelSmall]}>{label}</Text>
+      <Text style={[styles.fareValue, bold && styles.bold, responsive.isCompact && styles.fareValueCompact, responsive.isSmall && styles.fareValueSmall]}>{value}</Text>
     </View>
   );
 }
 
 function Empty({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.empty}>
-      <Ionicons name={icon} size={42} color={colors.muted} />
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.muted}>{subtitle}</Text>
+    <View style={[styles.empty, responsive.isCompact && styles.emptyCompact, responsive.isSmall && styles.emptySmall]}>
+      <Ionicons name={icon} size={responsive.isSmall ? 30 : responsive.isCompact ? 34 : 42} color={colors.muted} />
+      <Text style={[styles.emptyTitle, responsive.isCompact && styles.emptyTitleCompact, responsive.isSmall && styles.emptyTitleSmall]}>{title}</Text>
+      <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact, responsive.isSmall && styles.mutedSmallScreen]}>{subtitle}</Text>
     </View>
   );
 }
@@ -3986,32 +5077,114 @@ const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
   loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
   authKeyboard: { flex: 1 },
+  androidKeyboardFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30
+  },
+  authScrollViewport: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
+  authResponsiveFrame: { width: '100%', alignSelf: 'center', flexGrow: 1 },
+  loginPhoneLayout: { flex: 1, backgroundColor: colors.white },
+  loginPhoneKeyboardScrollContent: { paddingBottom: 88 },
+  loginPhoneFormContent: {
+    width: '100%',
+    alignSelf: 'center',
+    flexGrow: 1,
+    backgroundColor: colors.white,
+    paddingHorizontal: 22,
+    paddingTop: 30,
+    paddingBottom: 26
+  },
+  loginPhoneFormContentCompact: { paddingHorizontal: 16, paddingTop: 22, paddingBottom: 20 },
+  loginPhoneFormContentSmall: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 18 },
+  loginPhoneFormContentKeyboard: { paddingTop: 6, paddingBottom: 6 },
+  loginPhoneHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  loginPhoneHeadingRowCompact: { gap: 8 },
+  loginPhoneHeadingCopy: { flex: 1, minWidth: 0 },
+  loginPhoneKicker: { fontWeight: '600' },
+  loginPhoneTitle: { fontWeight: '700' },
+  loginPhoneKeyboardTitle: { fontSize: 22, lineHeight: 26, marginBottom: 4 },
+  loginPhoneKeyboardTitleCompact: { fontSize: 19, lineHeight: 23 },
+  loginPhoneKeyboardTitleSmall: { fontSize: 18, lineHeight: 22 },
+  loginPhoneKeyboardFooter: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 22,
+    paddingTop: 10,
+    paddingBottom: 8,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8,
+    zIndex: 30
+  },
+  loginPhoneKeyboardFooterCompact: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 7 },
+  loginPhoneKeyboardFooterSmall: { paddingHorizontal: 14, paddingTop: 7, paddingBottom: 6 },
+  loginPhoneKeyboardFooterInner: { width: '100%', alignSelf: 'center' },
+  loginLanguageToggle: {
+    minHeight: 32,
+    maxWidth: 124,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 9,
+    backgroundColor: '#F0FDF4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    marginTop: -2
+  },
+  loginLanguageToggleText: {
+    flexShrink: 1,
+    color: colors.partner,
+    fontSize: 11,
+    fontWeight: '700'
+  },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white },
   loginHero: {
+    width: '100%',
     minHeight: 360,
     backgroundColor: '#F1EDFF',
     justifyContent: 'flex-start',
     overflow: 'hidden'
   },
-  loginHeroImage: { width: '100%', height: '100%' },
+  loginHeroImage: { position: 'absolute', top: 0, left: 0, width: '100%' },
   loginHeroWash: {
     position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: 'rgba(255,255,255,0.16)'
+    backgroundColor: 'rgba(255,255,255,0.06)'
   },
   loginBrandPanel: {
     alignSelf: 'flex-start',
     alignItems: 'flex-start',
     paddingHorizontal: 18,
-    paddingTop: 24,
-    maxWidth: 190
+    paddingTop: 18,
+    maxWidth: 160
   },
-  loginBrandLogo: { width: 172, height: 54 },
-  loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '800', lineHeight: 19, marginTop: 10, maxWidth: 145 },
+  loginBrandLogo: { width: 140, height: 43 },
+  loginHeroCaption: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+    marginTop: 5,
+    maxWidth: 140
+  },
   authHero: {
     minHeight: 350,
     backgroundColor: colors.partnerLight,
@@ -4057,14 +5230,22 @@ const styles = StyleSheet.create({
   },
   authForm: {
     flexGrow: 1,
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
     backgroundColor: colors.white,
     paddingHorizontal: 22,
     paddingTop: 26,
     paddingBottom: 26
   },
   authKicker: { color: colors.partner, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 8 },
+  authKickerCompact: { fontSize: 10, marginBottom: 6 },
+  authKickerSmall: { fontSize: 9, marginBottom: 5 },
   authTitle: { color: colors.ink, fontSize: 32, fontWeight: '900', marginBottom: 6 },
+  authTitleCompact: { fontSize: 26, lineHeight: 31, marginBottom: 5 },
+  authTitleSmall: { fontSize: 24, lineHeight: 29, marginBottom: 4 },
   authFieldGroup: { marginBottom: 14 },
+  authFieldGroupCompact: { marginBottom: 10 },
   authInputShell: {
     minHeight: 54,
     borderWidth: 1,
@@ -4076,9 +5257,13 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 14
   },
+  authInputShellCompact: { minHeight: 46, borderRadius: 13, gap: 8, paddingHorizontal: 11 },
   authInputReadonly: { backgroundColor: colors.faint },
   authInputText: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: '800', paddingVertical: 12 },
+  authInputTextCompact: { fontSize: 13, paddingVertical: 9 },
+  authInputTextSmall: { fontSize: 12, paddingVertical: 8 },
   vehicleChoiceList: { gap: 8 },
+  vehicleChoiceListCompact: { gap: 6 },
   vehicleChoice: {
     minHeight: 54,
     borderWidth: 1,
@@ -4092,17 +5277,42 @@ const styles = StyleSheet.create({
     paddingVertical: 10
   },
   vehicleChoiceSelected: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
+  vehicleChoiceCompact: { minHeight: 46, borderRadius: 12, gap: 8, paddingHorizontal: 10, paddingVertical: 8 },
   vehicleChoiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  vehicleChoiceTitleCompact: { fontSize: 12 },
+  vehicleChoiceTitleSmall: { fontSize: 10 },
   vehicleChoiceMeta: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 2 },
-  onboardingStepperCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
-  onboardingStepperRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 },
-  onboardingStepperItem: { width: 76, alignItems: 'center' },
-  onboardingStepperLine: { flex: 1, borderTopWidth: 1, borderStyle: 'dashed', borderColor: colors.line, marginTop: 17 },
+  vehicleChoiceMetaCompact: { fontSize: 9, marginTop: 1 },
+  vehicleChoiceMetaSmall: { fontSize: 8 },
+  onboardingStepperCard: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    marginBottom: 10
+  },
+  onboardingFixedSection: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line
+  },
+  onboardingFixedSectionCompact: { paddingTop: 6, paddingBottom: 6 },
+  onboardingFixedStepperCard: { marginBottom: 0 },
+  onboardingFixedStepperCardCompact: { paddingVertical: 7 },
+  onboardingStepperRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 2 },
+  onboardingStepperItem: { width: 72, alignItems: 'center' },
+  onboardingStepperLine: { flex: 1, borderTopWidth: 1, borderStyle: 'dashed', borderColor: colors.line, marginTop: 14 },
   onboardingStepperLineDone: { borderColor: colors.partner },
   onboardingStepperCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.faint,
@@ -4111,14 +5321,38 @@ const styles = StyleSheet.create({
   },
   onboardingStepperCircleActive: { borderColor: colors.partner, backgroundColor: colors.white },
   onboardingStepperCircleDone: { borderColor: colors.partner, backgroundColor: colors.partner },
-  onboardingStepperNumber: { color: colors.muted, fontSize: 12, fontWeight: '900' },
+  onboardingStepperNumber: { color: colors.muted, fontSize: 11, fontWeight: '900' },
+  onboardingStepperNumberSmall: { fontSize: 9 },
   onboardingStepperNumberActive: { color: colors.partner },
-  onboardingStepperLabel: { color: colors.muted, fontSize: 11, fontWeight: '900', marginTop: 6, textAlign: 'center' },
+  onboardingStepperLabel: { color: colors.muted, fontSize: 10, fontWeight: '900', marginTop: 3, textAlign: 'center' },
+  onboardingStepperLabelCompact: { fontSize: 9, marginTop: 2 },
+  onboardingStepperLabelSmall: { fontSize: 8, marginTop: 1 },
   onboardingStepperLabelActive: { color: colors.partner },
   onboardingStepCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
   onboardingStepHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   onboardingStepIntro: { marginBottom: 12 },
   onboardingNavRow: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 2 },
+  onboardingPersonalKeyboardScroll: { paddingBottom: 96 },
+  onboardingPersonalKeyboardFooter: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8
+  },
+  onboardingPersonalKeyboardFooterInner: {
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 10
+  },
   phoneInputShell: {
     minHeight: 54,
     borderWidth: 1,
@@ -4129,11 +5363,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12
   },
-  countryCode: { color: colors.ink, fontSize: 14, fontWeight: '800', marginLeft: 7 },
+  phoneFieldGroupCompact: { marginBottom: 0 },
+  phoneInputShellCompact: { minHeight: 48 },
+  phoneInputShellSmall: { minHeight: 48, paddingHorizontal: 10 },
+  countryCode: { color: colors.ink, fontSize: 14, fontWeight: '600', marginLeft: 7 },
+  countryCodeCompact: { fontSize: 12, marginLeft: 5 },
   phoneDivider: { width: 1, height: 24, backgroundColor: colors.line, marginHorizontal: 10 },
-  phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700', paddingVertical: 12 },
-  authPrimaryButton: { flex: 1, minHeight: 50, borderRadius: 8, backgroundColor: colors.partner, alignItems: 'center', justifyContent: 'center' },
-  authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '900' },
+  phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 12 },
+  phoneInputTextCompact: { fontSize: 12, paddingVertical: 10 },
+  authPrimaryButton: {
+    width: '100%',
+    minHeight: 50,
+    borderRadius: 8,
+    backgroundColor: colors.partner,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16
+  },
+  authPrimaryButtonCompact: { minHeight: 44, paddingHorizontal: 14 },
+  authPrimaryButtonSmall: { minHeight: 44, paddingHorizontal: 12 },
+  authPrimaryButtonDisabled: { backgroundColor: '#A7DCC9' },
+  authPrimaryButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
+  authPrimaryButtonTextCompact: { fontSize: 12 },
+  authPrimaryButtonTextSmall: { fontSize: 11 },
+  authPrimaryButtonTextDisabled: { color: 'rgba(255,255,255,0.86)' },
   authDividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 18 },
   authDividerLine: { flex: 1, height: 1, backgroundColor: colors.line },
   loginFeatureRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6 },
@@ -4152,6 +5405,155 @@ const styles = StyleSheet.create({
     marginBottom: 12
   },
   authNoticeText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '800' },
+  partnerOtpLayout: { flex: 1, backgroundColor: colors.white },
+  partnerOtpScroll: { paddingBottom: 24 },
+  partnerOtpKeyboardScroll: { paddingBottom: 88 },
+  partnerOtpForm: { paddingTop: 18 },
+  partnerOtpFormCompact: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 },
+  partnerOtpFormSmall: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 18 },
+  partnerOtpBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: colors.faint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 22
+  },
+  partnerOtpBackButtonCompact: { width: 35, height: 35, borderRadius: 11, marginBottom: 15 },
+  partnerOtpBackButtonSmall: { width: 33, height: 33, marginBottom: 13 },
+  partnerOtpIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: colors.partnerLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14
+  },
+  partnerOtpIconCompact: { width: 42, height: 42, borderRadius: 14, marginBottom: 11 },
+  partnerOtpIconSmall: { width: 40, height: 40, borderRadius: 13, marginBottom: 10 },
+  partnerOtpTitle: { color: colors.ink, fontSize: 28, fontWeight: '700', marginBottom: 7 },
+  partnerOtpTitleCompact: { fontSize: 23, lineHeight: 28, marginBottom: 5 },
+  partnerOtpTitleSmall: { fontSize: 21, lineHeight: 26, marginBottom: 4 },
+  partnerOtpSubtitle: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 19
+  },
+  partnerOtpSubtitleCompact: { fontSize: 11, lineHeight: 16 },
+  partnerOtpSubtitleSmall: { fontSize: 10, lineHeight: 15 },
+  partnerOtpDestinationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 3,
+    marginBottom: 24
+  },
+  partnerOtpDestinationRowCompact: { gap: 6, marginTop: 2, marginBottom: 17 },
+  partnerOtpDestinationRowSmall: { marginBottom: 15 },
+  partnerOtpPhone: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  partnerOtpPhoneCompact: { fontSize: 11 },
+  partnerOtpChange: { color: colors.partner, fontSize: 12, fontWeight: '700' },
+  partnerOtpChangeCompact: { fontSize: 10 },
+  partnerOtpField: { position: 'relative', marginBottom: 13 },
+  partnerOtpBoxes: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 0
+  },
+  partnerOtpBoxesCompact: { gap: 0 },
+  partnerOtpBoxesSmall: { gap: 0 },
+  partnerOtpBox: {
+    width: '15%',
+    flexGrow: 0,
+    flexShrink: 0,
+    maxWidth: 52,
+    height: 54,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  partnerOtpBoxCompact: { height: 50, borderRadius: 9 },
+  partnerOtpBoxSmall: { height: 48, borderRadius: 8 },
+  partnerOtpBoxFilled: { borderColor: '#86E6C3', backgroundColor: colors.white },
+  partnerOtpBoxActive: {
+    borderWidth: 1.5,
+    borderColor: colors.partner,
+    backgroundColor: colors.partnerLight
+  },
+  partnerOtpDigit: { color: colors.ink, fontSize: 20, fontWeight: '700' },
+  partnerOtpDigitCompact: { fontSize: 17 },
+  partnerOtpDigitSmall: { fontSize: 16 },
+  partnerOtpHiddenInput: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 0,
+    color: 'transparent'
+  },
+  partnerOtpHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 18
+  },
+  partnerOtpHintRowCompact: { gap: 5, marginBottom: 14 },
+  partnerOtpHint: {
+    flex: 1,
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: '500',
+    lineHeight: 15
+  },
+  partnerOtpHintCompact: { fontSize: 9, lineHeight: 13 },
+  partnerOtpKeyboardFooter: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 22,
+    paddingTop: 10,
+    paddingBottom: 8,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8
+  },
+  partnerOtpKeyboardFooterCompact: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 7 },
+  partnerOtpKeyboardFooterSmall: { paddingHorizontal: 14, paddingTop: 7, paddingBottom: 6 },
+  partnerOtpResendBlock: { alignItems: 'center', gap: 9, marginTop: 22 },
+  partnerOtpResendBlockCompact: { gap: 7, marginTop: 16 },
+  partnerOtpResendLabel: { color: colors.muted, fontSize: 11, fontWeight: '500' },
+  partnerOtpResendLabelCompact: { fontSize: 9 },
+  partnerOtpResendButton: {
+    minHeight: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 15
+  },
+  partnerOtpResendButtonCompact: { minHeight: 34, borderRadius: 9, gap: 5, paddingHorizontal: 12 },
+  partnerOtpResendButtonDisabled: { borderColor: colors.line, backgroundColor: colors.faint },
+  partnerOtpResendText: { color: colors.partner, fontSize: 12, fontWeight: '700' },
+  partnerOtpResendTextCompact: { fontSize: 10 },
+  partnerOtpResendTextDisabled: { color: colors.muted },
   authFootnote: { color: colors.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', lineHeight: 16, marginTop: 4 },
   loginPanel: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 18 },
   brandLogo: { alignItems: 'center' },
@@ -4171,6 +5573,8 @@ const styles = StyleSheet.create({
   taglineRule: { width: 42, height: 2, borderRadius: 2 },
   tagline: { color: colors.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1, textAlign: 'center' },
   loginSubtitle: { color: colors.muted, fontSize: 14, fontWeight: '700', marginBottom: 22 },
+  loginSubtitleCompact: { fontSize: 11, marginBottom: 17 },
+  loginSubtitleSmall: { fontSize: 10, marginBottom: 15 },
   loginInput: {
     borderWidth: 1,
     borderColor: colors.line,
@@ -4187,19 +5591,38 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
     backgroundColor: colors.partner,
-    paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 24,
+    paddingBottom: 22
+  },
+  appHeaderCompact: { paddingTop: 10, paddingBottom: 16 },
+  appHeaderSmall: { paddingTop: 8, paddingBottom: 14 },
+  appHeaderInner: {
+    width: '100%',
+    alignSelf: 'center',
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between'
   },
+  appHeaderInnerCompact: { paddingHorizontal: 16 },
+  appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 10 },
   eyebrow: { color: '#D1FAE5', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  eyebrowCompact: { fontSize: 9, letterSpacing: 0.8 },
+  eyebrowSmall: { fontSize: 8, letterSpacing: 0.6 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
+  eyebrowDarkCompact: { fontSize: 9, letterSpacing: 0.8 },
+  eyebrowDarkSmall: { fontSize: 8, letterSpacing: 0.6 },
   headerTitle: { color: colors.white, fontSize: 21, fontWeight: '800' },
+  headerTitleCompact: { fontSize: 18 },
+  headerTitleSmall: { fontSize: 15 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerActionsCompact: { gap: 7 },
   panicButton: { minHeight: 42, borderRadius: 14, backgroundColor: colors.red, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' },
+  panicButtonCompact: { minHeight: 36, borderRadius: 12, paddingHorizontal: 8, gap: 4 },
+  panicButtonSmall: { minHeight: 33, borderRadius: 11, paddingHorizontal: 7 },
   panicButtonText: { color: colors.white, fontSize: 12, fontWeight: '900' },
+  panicButtonTextCompact: { fontSize: 10 },
+  panicButtonTextSmall: { fontSize: 9 },
   panicOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.48)' },
   panicSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.white, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 24, gap: 12 },
   panicHandle: { width: 48, height: 5, borderRadius: 999, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 4 },
@@ -4227,65 +5650,212 @@ const styles = StyleSheet.create({
   panicCancelButton: { minHeight: 46, borderRadius: 15, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   panicCancelText: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  avatarCompact: { width: 38, height: 38, borderRadius: 12 },
+  avatarSmall: { width: 34, height: 34, borderRadius: 11 },
   avatarText: { color: colors.white, fontWeight: '800' },
-  content: { flex: 1, marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22 },
+  avatarTextCompact: { fontSize: 13 },
+  avatarTextSmall: { fontSize: 11 },
+  content: { flex: 1, width: '100%', alignSelf: 'center', marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
   accountContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
   scroll: { padding: 16, paddingBottom: 96 },
+  responsiveScreenContent: { width: '100%', alignSelf: 'center' },
+  scrollCompact: { paddingTop: 12, paddingBottom: 78 },
+  scrollSmall: { paddingTop: 10, paddingBottom: 72 },
   onlineCard: { borderRadius: 80, borderWidth: 4, borderColor: colors.line, width: 124, height: 124, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
+  onlineCardCompact: { width: 108, height: 108, borderRadius: 54, borderWidth: 3, marginVertical: 5 },
+  onlineCardSmall: { width: 100, height: 100, borderRadius: 50 },
   onlineCardActive: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
   onlineCardDisabled: { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' },
   onlineText: { color: colors.muted, fontWeight: '900', fontSize: 16 },
+  onlineTextCompact: { fontSize: 13 },
+  onlineTextSmall: { fontSize: 11 },
   onlineTextActive: { color: colors.partner },
+  verificationPendingCard: {
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 18,
+    backgroundColor: '#FFFBEB',
+    padding: 15,
+    marginBottom: 12
+  },
+  verificationPendingCardCompact: { borderRadius: 15, padding: 11, marginBottom: 9 },
+  verificationPendingHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  verificationPendingHeaderCompact: { gap: 9 },
+  verificationPendingIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  verificationPendingIconCompact: { width: 38, height: 38, borderRadius: 12 },
+  verificationPendingTitle: { color: colors.ink, fontSize: 16, fontWeight: '900' },
+  verificationPendingTitleCompact: { fontSize: 13 },
+  verificationPendingStatus: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4
+  },
+  verificationPendingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.amber
+  },
+  verificationPendingStatusText: {
+    color: '#92400E',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase'
+  },
+  verificationPendingStatusTextCompact: { fontSize: 9 },
+  verificationPendingText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    marginTop: 11
+  },
+  verificationPendingTextCompact: { fontSize: 10, lineHeight: 15, marginTop: 8 },
+  verificationPendingButton: {
+    minHeight: 40,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 11,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 12,
+    paddingHorizontal: 12
+  },
+  verificationPendingButtonCompact: { minHeight: 36, borderRadius: 10, marginTop: 9 },
+  verificationPendingButtonText: {
+    color: colors.partner,
+    fontSize: 12,
+    fontWeight: '900'
+  },
   walletBlockCard: { borderWidth: 1, borderColor: '#FDE68A', backgroundColor: '#FFFBEB', borderRadius: 16, padding: 14, marginBottom: 12 },
+  walletBlockCardCompact: { borderRadius: 14, padding: 11, marginBottom: 9 },
   walletBlockHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   walletBlockBalance: { color: '#92400E', fontSize: 13, fontWeight: '900', marginBottom: 10 },
+  walletBlockBalanceCompact: { fontSize: 11, marginBottom: 8 },
   statRow: { flexDirection: 'row', gap: 10, marginTop: 16, marginBottom: 16 },
+  statRowCompact: { gap: 7, marginTop: 11, marginBottom: 11 },
   statCard: { flex: 1, borderRadius: 14, padding: 14 },
+  statCardCompact: { borderRadius: 12, paddingHorizontal: 9, paddingVertical: 10 },
+  statCardSmall: { borderRadius: 11, paddingHorizontal: 8, paddingVertical: 8 },
   statValue: { fontSize: 17, fontWeight: '900' },
+  statValueCompact: { fontSize: 14 },
+  statValueSmall: { fontSize: 12 },
   statLabel: { fontSize: 11, fontWeight: '800', marginTop: 4 },
+  statLabelCompact: { fontSize: 9, marginTop: 2 },
+  statLabelSmall: { fontSize: 8, marginTop: 1 },
   row: { flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 12 },
+  rowCompact: { gap: 7, marginBottom: 8 },
   sectionTitle: { fontSize: 16, fontWeight: '900', color: colors.ink, marginTop: 18, marginBottom: 10 },
+  sectionTitleCompact: { fontSize: 14, marginTop: 13, marginBottom: 8 },
+  sectionTitleSmall: { fontSize: 12, marginTop: 11, marginBottom: 7 },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
+  orderCardCompact: { borderRadius: 14, padding: 10, marginBottom: 8 },
   activeTripSwitchRow: { gap: 10, paddingBottom: 10 },
+  activeTripSwitchRowCompact: { gap: 8, paddingBottom: 8 },
   activeTripSwitchCard: { width: 190, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12 },
+  activeTripSwitchCardCompact: { width: 168, borderRadius: 12, padding: 10 },
+  activeTripSwitchCardSmall: { width: 154 },
   activeTripSwitchCardSelected: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
   activeTripSwitchTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  activeTripSwitchTitleCompact: { fontSize: 11 },
+  activeTripSwitchTitleSmall: { fontSize: 10 },
   activeTripSwitchTitleSelected: { color: colors.partner },
   activeTripSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '800', marginTop: 5 },
+  activeTripSwitchMetaCompact: { fontSize: 9, marginTop: 3 },
+  activeTripSwitchMetaSmall: { fontSize: 8, marginTop: 2 },
   activeContactCard: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.line, marginVertical: 10, paddingVertical: 4 },
+  activeContactCardCompact: { marginVertical: 7, paddingVertical: 3 },
   activeContactRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  activeContactRowCompact: { gap: 8, paddingVertical: 4 },
   activeContactLabel: { color: colors.muted, fontSize: 10, fontWeight: '800' },
+  activeContactLabelCompact: { fontSize: 9 },
+  activeContactLabelSmall: { fontSize: 8 },
   activeContactValue: { color: colors.ink, fontSize: 13, fontWeight: '800', marginTop: 2 },
+  activeContactValueCompact: { fontSize: 11, marginTop: 1 },
+  activeContactValueSmall: { fontSize: 10 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
+  betweenCompact: { gap: 8, marginBottom: 6 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '900' },
+  orderNoCompact: { fontSize: 9 },
+  orderNoSmall: { fontSize: 8 },
   cardTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  cardTitleCompact: { fontSize: 12 },
+  cardTitleSmall: { fontSize: 11 },
   badge: { backgroundColor: colors.partnerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
+  badgeCompact: { maxWidth: '48%', paddingVertical: 3, paddingHorizontal: 8 },
   badgeText: { color: colors.partner, fontSize: 11, fontWeight: '900' },
+  badgeTextCompact: { fontSize: 9, textAlign: 'center' },
+  badgeTextSmall: { fontSize: 8 },
   route: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  routeCompact: { gap: 8, paddingVertical: 4 },
   routeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.partner },
+  routeDotCompact: { width: 8, height: 8, borderRadius: 4 },
   routeDotGreen: { backgroundColor: colors.green },
   routeText: { color: colors.ink, fontSize: 14, fontWeight: '800' },
+  routeTextCompact: { fontSize: 12 },
+  routeTextSmall: { fontSize: 10 },
   pickupDistanceBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, backgroundColor: colors.partnerLight, paddingVertical: 9, paddingHorizontal: 11, marginTop: 8 },
+  pickupDistanceBannerCompact: { gap: 7, borderRadius: 10, paddingVertical: 7, paddingHorizontal: 9, marginTop: 6 },
   pickupDistanceText: { flex: 1, color: colors.partner, fontSize: 12, fontWeight: '800' },
+  pickupDistanceTextCompact: { fontSize: 10 },
+  pickupDistanceTextSmall: { fontSize: 9 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 8 },
+  chipsCompact: { gap: 5, marginVertical: 6 },
   chip: { backgroundColor: colors.faint, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999 },
+  chipCompact: { paddingVertical: 4, paddingHorizontal: 8 },
   chipText: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  chipTextCompact: { fontSize: 9 },
+  chipTextSmall: { fontSize: 8 },
   muted: { color: colors.muted, marginTop: 8, textAlign: 'center' },
+  mutedCompact: { fontSize: 11, lineHeight: 15, marginTop: 5 },
+  mutedSmallScreen: { fontSize: 10, lineHeight: 14, marginTop: 4 },
   mutedSmall: { color: colors.muted, fontSize: 12 },
+  mutedSmallCompact: { fontSize: 10, lineHeight: 14 },
+  mutedSmallScreenText: { fontSize: 9, lineHeight: 13 },
   priceText: { color: colors.partner, fontSize: 14, fontWeight: '900' },
+  priceTextCompact: { fontSize: 12 },
+  priceTextSmall: { fontSize: 10 },
   primaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.partner, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12, marginBottom: 10 },
-  primaryButtonText: { color: colors.white, fontWeight: '900' },
+  primaryButtonCompact: { minHeight: 40, borderRadius: 12, gap: 5, paddingHorizontal: 9, marginBottom: 8 },
+  primaryButtonSmall: { minHeight: 37, borderRadius: 11, gap: 4, paddingHorizontal: 8, marginBottom: 7 },
+  primaryButtonText: { flexShrink: 1, color: colors.white, fontWeight: '900', textAlign: 'center' },
+  primaryButtonTextCompact: { fontSize: 12 },
+  primaryButtonTextSmall: { fontSize: 10 },
   secondaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12, marginBottom: 10 },
-  secondaryButtonText: { color: colors.ink, fontWeight: '900' },
+  secondaryButtonCompact: { minHeight: 40, borderRadius: 12, gap: 5, paddingHorizontal: 9, marginBottom: 8 },
+  secondaryButtonSmall: { minHeight: 37, borderRadius: 11, gap: 4, paddingHorizontal: 8, marginBottom: 7 },
+  secondaryButtonText: { flexShrink: 1, color: colors.ink, fontWeight: '900', textAlign: 'center' },
+  secondaryButtonTextCompact: { fontSize: 12 },
+  secondaryButtonTextSmall: { fontSize: 10 },
   deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 10 },
   deleteAccountButtonText: { color: colors.red, fontWeight: '900' },
   logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 12 },
   logoutButtonText: { color: colors.red, fontWeight: '900' },
+  accountActionTextCompact: { fontSize: 12 },
+  accountActionTextSmall: { fontSize: 10 },
   cancelOrderButton: { minHeight: 58, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13, paddingVertical: 9, marginBottom: 12 },
   cancelOrderButtonDisabled: { opacity: 0.5 },
   cancelOrderButtonText: { color: colors.red, fontSize: 13, fontWeight: '900' },
+  cancelOrderButtonTextCompact: { fontSize: 11 },
+  cancelOrderButtonTextSmall: { fontSize: 10 },
   cancelOrderButtonMeta: { color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 2 },
+  cancelOrderButtonMetaCompact: { fontSize: 9 },
+  cancelOrderButtonMetaSmall: { fontSize: 8 },
   map: { height: 170, borderRadius: 18, backgroundColor: '#ECFDF5', overflow: 'hidden', marginBottom: 14 },
+  mapCompact: { height: 148, borderRadius: 15, marginBottom: 10 },
+  mapSmall: { height: 136 },
   mapNativeView: { flex: 1 },
   mapRoad: { position: 'absolute', top: 72, left: -20, right: -20, height: 20, backgroundColor: '#BBF7D0', transform: [{ rotate: '-8deg' }] },
   mapRoadTwo: { top: 30, transform: [{ rotate: '12deg' }], opacity: 0.7 },
@@ -4322,73 +5892,187 @@ const styles = StyleSheet.create({
   expandedRouteError: { color: '#B45309', fontSize: 10, fontWeight: '800', lineHeight: 14, marginTop: 4 },
   expandedRouteMinimizeButton: { position: 'absolute', right: 16, bottom: 20, width: 50, height: 50, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   payoutCard: { backgroundColor: colors.partnerLight, borderRadius: 16, padding: 14, marginBottom: 14 },
+  payoutCardCompact: { borderRadius: 14, padding: 10, marginBottom: 10 },
   fareLabel: { color: colors.partner, fontSize: 13 },
+  fareLabelCompact: { flexShrink: 1, fontSize: 11 },
+  fareLabelSmall: { fontSize: 10 },
   fareValue: { color: colors.partner, fontSize: 13, fontWeight: '800' },
+  fareValueCompact: { fontSize: 11 },
+  fareValueSmall: { fontSize: 10 },
   bold: { fontWeight: '900', fontSize: 15 },
   timelineItem: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
+  timelineItemCompact: { gap: 8, paddingVertical: 6 },
   timelineDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   timelineDone: { backgroundColor: colors.green },
   timelineActive: { backgroundColor: colors.partner },
   timelineTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  timelineTitleCompact: { fontSize: 11 },
+  timelineTitleSmall: { fontSize: 10 },
   walletCard: { borderRadius: 18, padding: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', gap: 10 },
+  walletCardCompact: { borderRadius: 15, padding: 14, gap: 7 },
   walletValue: { color: colors.partner, fontSize: 36, fontWeight: '900' },
+  walletValueCompact: { fontSize: 30 },
+  walletValueSmall: { fontSize: 27 },
   ledgerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
+  ledgerRowCompact: { gap: 9, paddingVertical: 9 },
   ledgerIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  ledgerIconCompact: { width: 32, height: 32, borderRadius: 10 },
   ledgerCredit: { backgroundColor: colors.partner },
   ledgerDebit: { backgroundColor: colors.red },
   amount: { fontWeight: '900', fontSize: 13 },
+  amountCompact: { fontSize: 11 },
+  amountSmall: { fontSize: 10 },
   amountGreen: { color: colors.partner },
   amountRed: { color: colors.red },
   notice: { flexDirection: 'row', gap: 10, backgroundColor: colors.partnerLight, borderRadius: 14, padding: 14, alignItems: 'center' },
   noticeText: { flex: 1, color: colors.partner, fontSize: 13, fontWeight: '900' },
+  noticeTextCompact: { fontSize: 11 },
+  noticeTextSmall: { fontSize: 10 },
   fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', marginBottom: 6 },
+  fieldLabelCompact: { fontSize: 9, marginBottom: 4 },
+  fieldLabelSmall: { fontSize: 8, marginBottom: 3 },
   accountHero: { backgroundColor: colors.partner, borderRadius: 22, padding: 18, paddingBottom: 72, marginBottom: 68 },
+  accountHeroCompact: { borderRadius: 18, padding: 14, paddingBottom: 62, marginBottom: 58 },
+  accountHeroSmall: { paddingHorizontal: 12 },
   accountHeroGlow: { position: 'absolute', width: 130, height: 130, borderRadius: 65, right: 0, top: 0, backgroundColor: 'rgba(255,255,255,0.10)' },
   accountEyebrow: { color: colors.white, fontSize: 22, fontWeight: '900' },
+  accountEyebrowCompact: { fontSize: 18 },
+  accountEyebrowSmall: { fontSize: 16 },
   accountHeroSubtitle: { color: '#D1FAE5', fontSize: 13, fontWeight: '700', marginTop: 3 },
+  accountHeroSubtitleCompact: { fontSize: 11, marginTop: 2 },
+  accountHeroSubtitleSmall: { fontSize: 9, marginTop: 1 },
   accountIdentityCard: { position: 'absolute', left: 14, right: 14, top: 82, minHeight: 112, borderRadius: 18, backgroundColor: colors.white, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: '#0F172A', shadowOpacity: 0.13, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
+  accountIdentityCardCompact: { left: 10, right: 10, top: 68, minHeight: 96, borderRadius: 15, padding: 11, gap: 9 },
+  accountIdentityCardSmall: { left: 8, right: 8, paddingHorizontal: 9 },
   accountAvatar: { width: 62, height: 62, borderRadius: 31, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  accountAvatarCompact: { width: 50, height: 50, borderRadius: 25 },
+  accountAvatarSmall: { width: 44, height: 44, borderRadius: 22 },
   accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '900' },
+  accountAvatarTextCompact: { fontSize: 17 },
+  accountAvatarTextSmall: { fontSize: 14 },
   accountName: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  accountNameCompact: { fontSize: 15 },
+  accountNameSmall: { fontSize: 13 },
   accountPhone: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  accountPhoneCompact: { fontSize: 10, marginTop: 1 },
+  accountPhoneSmall: { fontSize: 9 },
   accountVerifiedBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8, marginTop: 7 },
+  accountVerifiedBadgeCompact: { gap: 3, paddingVertical: 3, paddingHorizontal: 6, marginTop: 5, maxWidth: '100%' },
   accountVerifiedText: { color: colors.partner, fontSize: 10, fontWeight: '900', textTransform: 'capitalize' },
+  accountVerifiedTextCompact: { flexShrink: 1, fontSize: 8 },
+  accountVerifiedTextSmall: { fontSize: 7 },
   accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  accountEditButtonCompact: { width: 33, height: 33, borderRadius: 11 },
   accountProgressCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
+  accountProgressCardCompact: { borderRadius: 14, padding: 11, marginBottom: 9 },
   accountMenuCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, paddingHorizontal: 12, marginBottom: 14, overflow: 'hidden' },
+  accountMenuCardCompact: { borderRadius: 15, paddingHorizontal: 10, marginBottom: 10 },
   accountMenuRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: colors.line, paddingVertical: 12 },
+  accountMenuRowCompact: { minHeight: 62, gap: 9, paddingVertical: 9 },
   accountMenuRowLast: { borderBottomWidth: 0 },
   accountMenuIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  accountMenuIconCompact: { width: 35, height: 35, borderRadius: 11 },
   accountMenuIconComplete: { backgroundColor: colors.partner },
   accountDetailHeader: { minHeight: 82, borderRadius: 18, backgroundColor: colors.partner, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, overflow: 'hidden' },
+  accountDetailHeaderCompact: { minHeight: 68, borderRadius: 15, padding: 11, gap: 9, marginBottom: 10 },
   accountBackButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  accountBackButtonCompact: { width: 34, height: 34, borderRadius: 11 },
   accountDetailTitle: { color: colors.white, fontSize: 18, fontWeight: '900' },
+  accountDetailTitleCompact: { fontSize: 15 },
+  accountDetailTitleSmall: { fontSize: 13 },
   accountDetailSubtitle: { color: '#D1FAE5', fontSize: 11, fontWeight: '700', marginTop: 3 },
+  accountDetailSubtitleCompact: { fontSize: 9, lineHeight: 12, marginTop: 2 },
+  accountDetailSubtitleSmall: { fontSize: 8, lineHeight: 11, marginTop: 1 },
   accountDetailCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14 },
+  accountDetailCardCompact: { borderRadius: 15, padding: 11 },
   accountDetailCardComplete: { borderColor: colors.partner, backgroundColor: '#FAFFFD' },
   accountInfoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: colors.partnerLight, padding: 12, marginBottom: 14 },
   accountInfoText: { flex: 1, color: colors.partner, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  accountInfoTextCompact: { fontSize: 10, lineHeight: 14 },
+  accountInfoTextSmall: { fontSize: 9, lineHeight: 13 },
+  profileDetailKeyboardScroll: { paddingBottom: 92 },
+  profileDetailKeyboardFooter: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 0,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8,
+    zIndex: 30
+  },
+  profileDetailKeyboardFooterCompact: { paddingHorizontal: 12, paddingTop: 8 },
+  profileDetailKeyboardFooterInner: { width: '100%', alignSelf: 'center' },
   trainingPage: { gap: 10, paddingBottom: 8 },
+  trainingPageCompact: { gap: 8, paddingBottom: 5 },
   trainingHeroCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: colors.partner, padding: 16 },
+  trainingHeroCardCompact: { gap: 9, borderRadius: 15, padding: 12 },
   trainingHeroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  trainingHeroIconCompact: { width: 40, height: 40, borderRadius: 13 },
   trainingHeroTitle: { color: colors.white, fontSize: 17, fontWeight: '900' },
+  trainingHeroTitleCompact: { fontSize: 14 },
+  trainingHeroTitleSmall: { fontSize: 12 },
   trainingHeroText: { color: '#D1FAE5', fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 3 },
+  trainingHeroTextCompact: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  trainingHeroTextSmall: { fontSize: 8, lineHeight: 12, marginTop: 1 },
   trainingStepCard: { flexDirection: 'row', alignItems: 'stretch', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 13 },
+  trainingStepCardCompact: { gap: 9, borderRadius: 14, padding: 10 },
   trainingStepRail: { width: 40, alignItems: 'center' },
+  trainingStepRailCompact: { width: 34 },
   trainingStepIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  trainingStepIconCompact: { width: 33, height: 33, borderRadius: 11 },
   trainingStepLine: { flex: 1, width: 2, minHeight: 18, borderRadius: 2, backgroundColor: '#A7F3D0', marginTop: 6, marginBottom: -24 },
   trainingStepContent: { flex: 1, paddingVertical: 1 },
   trainingStepTitle: { color: colors.ink, fontSize: 14, fontWeight: '900' },
+  trainingStepTitleCompact: { fontSize: 12 },
+  trainingStepTitleSmall: { fontSize: 10 },
   trainingStepText: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 17, marginTop: 4 },
+  trainingStepTextCompact: { fontSize: 9, lineHeight: 14, marginTop: 3 },
+  trainingStepTextSmall: { fontSize: 8, lineHeight: 13, marginTop: 2 },
   trainingSafetyCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 16, backgroundColor: '#F0FDF4', padding: 14 },
   trainingHelpCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 16, backgroundColor: colors.partnerLight, padding: 14 },
   trainingSafetyTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  trainingSafetyTitleCompact: { fontSize: 11 },
+  trainingSafetyTitleSmall: { fontSize: 10 },
   trainingSafetyText: { color: colors.muted, fontSize: 11, fontWeight: '700', lineHeight: 16, marginTop: 3 },
+  trainingSafetyTextCompact: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  trainingSafetyTextSmall: { fontSize: 8, lineHeight: 12, marginTop: 1 },
   accountBankStatus: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  kycHero: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.partner, borderRadius: 18, padding: 16, marginBottom: 14 },
-  kycHeroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
-  kycHeroTitle: { color: colors.white, fontSize: 18, fontWeight: '900' },
-  kycHeroText: { color: '#D1FAE5', fontSize: 12, fontWeight: '800', marginTop: 3, lineHeight: 17 },
+  kycHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.partner,
+    borderRadius: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8
+  },
+  kycHeroIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  kycHeroTitle: { color: colors.white, fontSize: 16, fontWeight: '900' },
+  kycHeroTitleCompact: { fontSize: 13 },
+  kycHeroTitleSmall: { fontSize: 11 },
+  kycHeroText: {
+    color: '#D1FAE5',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+    lineHeight: 14
+  },
+  kycHeroTextCompact: { fontSize: 9, lineHeight: 12 },
+  kycHeroTextSmall: { fontSize: 8, lineHeight: 11 },
   profileInfoCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
   profileInfoHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   avatarDark: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
@@ -4403,21 +6087,33 @@ const styles = StyleSheet.create({
   languagePill: { flex: 1, minHeight: 38, borderRadius: 12, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   languagePillActive: { backgroundColor: colors.partnerLight, borderWidth: 1, borderColor: colors.partner },
   languagePillText: { color: colors.muted, fontSize: 12, fontWeight: '900' },
+  languagePillTextCompact: { fontSize: 10 },
+  languagePillTextSmall: { fontSize: 9 },
   languagePillTextActive: { color: colors.partner },
   kycProgressCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
   kycProgressTrack: { height: 8, borderRadius: 8, backgroundColor: colors.faint, overflow: 'hidden', marginBottom: 8 },
   kycProgressFill: { height: 8, borderRadius: 8, backgroundColor: colors.partner },
   kycStepCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
+  kycStepCardCompact: { gap: 9, borderRadius: 14, padding: 10, marginBottom: 8 },
   kycStepDone: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
   kycStepIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  kycStepIconCompact: { width: 33, height: 33, borderRadius: 11 },
   kycStepIconDone: { backgroundColor: colors.partner },
   kycActionText: { color: colors.partner, fontSize: 12, fontWeight: '900' },
+  kycActionTextCompact: { fontSize: 10 },
+  kycActionTextSmall: { fontSize: 9 },
   kycGroupCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
   kycInputGroup: { marginBottom: 10 },
   kycInput: { minHeight: 46, borderWidth: 1, borderColor: colors.line, borderRadius: 12, color: colors.ink, fontWeight: '800', paddingHorizontal: 12, backgroundColor: colors.white },
+  kycInputCompact: { minHeight: 42, borderRadius: 10, paddingHorizontal: 10, fontSize: 12 },
+  kycInputSmall: { minHeight: 39, paddingHorizontal: 9, fontSize: 11 },
   otpPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 12, marginBottom: 12 },
+  otpPanelCompact: { borderRadius: 14, padding: 10, marginBottom: 9 },
   otpRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  otpRowSmall: { flexDirection: 'column', alignItems: 'stretch', gap: 7 },
   otpInput: { flex: 1, borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 12, minHeight: 46, color: colors.ink, fontWeight: '800' },
+  otpInputCompact: { minHeight: 42, borderRadius: 10, paddingHorizontal: 10, fontSize: 12 },
+  otpInputSmall: { minHeight: 39, paddingHorizontal: 9, fontSize: 11 },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   docCard: { width: '48%', borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, alignItems: 'center', gap: 6 },
   docCardDone: { backgroundColor: colors.partnerLight, borderColor: colors.partner },
@@ -4425,24 +6121,43 @@ const styles = StyleSheet.create({
   docDoneText: { color: colors.partner },
   policyList: { marginTop: 4, marginBottom: 12 },
   policyCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginBottom: 10, overflow: 'hidden' },
+  policyCardCompact: { borderRadius: 12, marginBottom: 8 },
   policyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  policyHeaderCompact: { gap: 9, padding: 10 },
   policyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
+  policyIconCompact: { width: 32, height: 32, borderRadius: 10 },
   policySummary: { color: colors.ink, fontSize: 12, fontWeight: '700', marginTop: 5, lineHeight: 17 },
+  policySummaryCompact: { fontSize: 10, lineHeight: 14, marginTop: 3 },
+  policySummarySmall: { fontSize: 9, lineHeight: 13, marginTop: 2 },
   policyBody: { borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 14, paddingBottom: 12, backgroundColor: '#F8FFFC' },
   policySection: { marginTop: 12 },
   policyHeading: { color: colors.partner, fontSize: 13, fontWeight: '900', marginBottom: 4 },
+  policyHeadingCompact: { fontSize: 11, marginBottom: 3 },
+  policyHeadingSmall: { fontSize: 10, marginBottom: 2 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
+  policyTextCompact: { fontSize: 10, lineHeight: 15, marginBottom: 3 },
+  policyTextSmall: { fontSize: 9, lineHeight: 14, marginBottom: 2 },
   flex: { flex: 1 },
-  tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', backgroundColor: colors.white },
+  tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.white },
+  tabsCompact: { height: 62 },
+  tabsInner: { flex: 1, width: '100%', alignSelf: 'center', flexDirection: 'row' },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  tabText: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  tabCompact: { gap: 2 },
+  tabText: { color: colors.muted, fontSize: 11, fontWeight: '800', textAlign: 'center' },
+  tabTextCompact: { fontSize: 9 },
+  tabTextSmall: { fontSize: 8 },
   tabTextActive: { color: colors.partner },
   tabBadge: { position: 'absolute', right: -8, top: -8, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: colors.red, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  tabBadgeCompact: { right: -7, top: -7, minWidth: 16, height: 16 },
   tabBadgeText: { color: colors.white, fontSize: 9, fontWeight: '900' },
   toast: { position: 'absolute', left: 16, right: 16, bottom: 88, backgroundColor: colors.ink, borderRadius: 14, padding: 14 },
   toastText: { color: colors.white, fontWeight: '900' },
   empty: { alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
+  emptyCompact: { gap: 6, padding: 17 },
+  emptySmall: { gap: 5, padding: 14 },
   emptyFull: { flex: 1, padding: 24, justifyContent: 'center' },
   emptyTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
+  emptyTitleCompact: { fontSize: 15 },
+  emptyTitleSmall: { fontSize: 13 },
   errorTitle: { color: colors.red, fontSize: 18, fontWeight: '900', marginBottom: 6 }
 });

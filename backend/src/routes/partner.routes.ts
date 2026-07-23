@@ -295,7 +295,7 @@ partnerRouter.post(
     );
     if (!partner) throw new ApiError(404, 'Partner not found');
     if (body.online) {
-      await advanceExpiredOrderOffers(idOf(partner.partnerProfile?.vehicleId)).catch(() => undefined);
+      void advanceExpiredOrderOffers(idOf(partner.partnerProfile?.vehicleId)).catch(() => undefined);
     }
     emitPartnerQueueChanged();
     res.json({ user: serializeUser(partner) });
@@ -341,7 +341,7 @@ partnerRouter.post(
     );
     if (!partner) throw new ApiError(404, 'Partner not found');
     if (partner.partnerProfile?.online) {
-      await advanceExpiredOrderOffers(idOf(partner.partnerProfile?.vehicleId)).catch(() => undefined);
+      void advanceExpiredOrderOffers(idOf(partner.partnerProfile?.vehicleId)).catch(() => undefined);
     }
 
     const activeOrders = await Order.find({

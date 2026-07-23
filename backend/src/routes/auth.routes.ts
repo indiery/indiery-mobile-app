@@ -7,6 +7,7 @@ import { asyncRoute, ApiError } from '../middleware/error';
 import { serializeUser } from '../services/serialize.service';
 import { verifyFirebasePhoneToken } from '../services/firebase.service';
 import { initialsFromName } from '../services/profile.service';
+import { normalizePhone } from '../services/phone.service';
 import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
 
 export const authRouter = Router();
@@ -24,15 +25,6 @@ const FirebaseLoginSchema = z.object({
 const CustomerOnboardingStatusSchema = z.object({
   phone: z.string().trim().min(10).max(20)
 });
-
-function normalizeCustomerPhone(phoneInput: string) {
-  const trimmed = phoneInput.trim();
-  if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
-  const digits = trimmed.replace(/\D/g, '');
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
-  throw new ApiError(400, 'Enter a valid mobile number');
-}
 
 async function ensureUser(phone: string, role: 'customer' | 'partner') {
   const existing = await User.findOne({ phone, role });
@@ -86,7 +78,7 @@ authRouter.post(
   '/customer-onboarding-status',
   asyncRoute(async (req, res) => {
     const body = CustomerOnboardingStatusSchema.parse(req.body);
-    const phone = normalizeCustomerPhone(body.phone);
+    const phone = normalizePhone(body.phone);
     const customer = await User.findOne({ phone, role: 'customer' }).select('name email');
     const needsProfile = !customer || !customer.email || customer.name === 'Indiery Customer';
     res.json({ needsProfile });

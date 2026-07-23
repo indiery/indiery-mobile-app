@@ -2,7 +2,7 @@
   "expo": {
     "name": "Indiery",
     "slug": "indiery-customer",
-    "owner": "amitsharma7300",
+    "owner": "qmit9627",
     "scheme": "indierycustomer",
     "version": "1.0.0",
     "orientation": "default",
@@ -34,7 +34,7 @@
       "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
       "googleMapsApiKey": "AIzaSyAY5D6K2WhkSGAzQnjuQPdnJ8lF0H6uszE",
       "eas": {
-        "projectId": "08d17edb-9730-4ff0-a798-b6bd0156fc3e"
+        "projectId": "0e831c07-3e7f-4430-be30-59df033b2be1"
       }
     },
     "ios": {

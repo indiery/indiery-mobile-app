@@ -30,7 +30,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
-import customerLoginBackgroundImage from './assets/bg.png';
+import customerLoginBackgroundImage from './assets/bg1.png';
 import bikeVehicleImage from './assets/bike.png';
 import loaderVehicleImage from './assets/loader.png';
 import mini500VehicleImage from './assets/mini500.png';
@@ -785,15 +785,19 @@ function useResponsiveLayout() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const isShort = height < 640;
-  const horizontalPadding = 16;
+  const isCompact = width <= 400;
+  const isSmall = width <= 375;
+  const horizontalPadding = isSmall ? 12 : isCompact ? 14 : 16;
   const contentMaxWidth = 680;
-  const tabBarHeight = 68;
+  const tabBarHeight = isSmall ? 58 : isCompact ? 62 : 68;
 
   return {
     width,
     height,
     isLandscape,
     isShort,
+    isCompact,
+    isSmall,
     horizontalPadding,
     contentMaxWidth,
     tabBarHeight
@@ -1908,16 +1912,28 @@ export default function App() {
     <LanguageContext.Provider value={language}>
     <SafeAreaView edges={tabScreenSafeAreaEdges} style={styles.shell}>
       <AppStatusBar variant="brand" />
-      <View style={styles.appHeader}>
-        <View style={[styles.appHeaderInner, { maxWidth: responsive.contentMaxWidth }]}>
+      <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
+        <View style={[
+          styles.appHeaderInner,
+          responsive.isCompact && styles.appHeaderInnerCompact,
+          { maxWidth: responsive.contentMaxWidth }
+        ]}>
           <View style={styles.appHeaderCopy}>
-            <Text style={styles.eyebrow}>INDIERY</Text>
-            <Text style={styles.headerTitle} numberOfLines={2} ellipsizeMode="tail">
+            <Text style={[styles.eyebrow, responsive.isCompact && styles.eyebrowCompact]}>INDIERY</Text>
+            <Text
+              style={[
+                styles.headerTitle,
+                responsive.isCompact && styles.headerTitleCompact,
+                responsive.isSmall && styles.headerTitleSmall
+              ]}
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
               {copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}
             </Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{data.user.initials}</Text>
+          <View style={[styles.avatar, responsive.isCompact && styles.avatarCompact]}>
+            <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact]}>{data.user.initials}</Text>
           </View>
         </View>
       </View>
@@ -2088,8 +2104,22 @@ function LoginScreen({
   const [error, setError] = useState(initialError);
   const [resendSeconds, setResendSeconds] = useState(0);
   const [loginPolicy, setLoginPolicy] = useState<LegalPolicy | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const loginScrollRef = useRef<ScrollView | null>(null);
-  const loginKeyboardScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fullLoginViewportRef = useRef({ width: responsive.width, height: responsive.height });
+  if (Math.abs(fullLoginViewportRef.current.width - responsive.width) > 1) {
+    fullLoginViewportRef.current = { width: responsive.width, height: responsive.height };
+  } else if (!keyboardVisible && responsive.height > fullLoginViewportRef.current.height) {
+    fullLoginViewportRef.current.height = responsive.height;
+  }
+  const keyboardLayoutVisible =
+    keyboardVisible || fullLoginViewportRef.current.height - responsive.height > 120;
+  const viewportKeyboardShrink = Math.max(0, fullLoginViewportRef.current.height - responsive.height);
+  const androidKeyboardPadding =
+    Platform.OS === 'android' && keyboardLayoutVisible
+      ? Math.max(0, keyboardHeight - viewportKeyboardShrink)
+      : 0;
   const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
   const phoneReady = normalizedPhone.length === 10;
   const otpReady = code.trim().length === 6;
@@ -2113,21 +2143,15 @@ function LoginScreen({
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSubscription = Keyboard.addListener(showEvent, () => {
-      if (loginKeyboardScrollTimerRef.current) clearTimeout(loginKeyboardScrollTimerRef.current);
-      loginKeyboardScrollTimerRef.current = setTimeout(() => {
-        loginScrollRef.current?.scrollToEnd({ animated: true });
-        loginKeyboardScrollTimerRef.current = null;
-      }, Platform.OS === 'ios' ? 280 : 140);
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
     });
     const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      if (loginKeyboardScrollTimerRef.current) {
-        clearTimeout(loginKeyboardScrollTimerRef.current);
-        loginKeyboardScrollTimerRef.current = null;
-      }
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
     });
     return () => {
-      if (loginKeyboardScrollTimerRef.current) clearTimeout(loginKeyboardScrollTimerRef.current);
       showSubscription.remove();
       hideSubscription.remove();
     };
@@ -2286,16 +2310,55 @@ function LoginScreen({
 
   return (
     <>
-    <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
+    <SafeAreaView
+      edges={appSafeAreaEdges}
+      style={styles.loginShell}
+    >
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView
+        style={[styles.authKeyboard, androidKeyboardPadding > 0 && { paddingBottom: androidKeyboardPadding }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {loginStep === 'profile' ? (
+          <LoginProfileStep
+            profileName={profileName}
+            profileEmail={profileEmail}
+            profileCity={profileCity}
+            phone={normalizedPhone}
+            error={error}
+            busy={busy}
+            keyboardVisible={keyboardLayoutVisible}
+            scrollRef={loginScrollRef}
+            onChangeName={setProfileName}
+            onChangeEmail={setProfileEmail}
+            onChangeCity={setProfileCity}
+            onBack={changePhoneNumber}
+            onContinue={continueFromProfile}
+            onKeyboardFocus={() => setKeyboardVisible(true)}
+          />
+        ) : loginStep === 'phone' ? (
+          <LoginPhoneStep
+            phone={phone}
+            error={error}
+            busy={busy}
+            phoneReady={phoneReady}
+            keyboardVisible={keyboardLayoutVisible}
+            compactKeyboardLayout={
+              keyboardLayoutVisible && fullLoginViewportRef.current.height < 750
+            }
+            scrollRef={loginScrollRef}
+            onChangePhone={setPhone}
+            onContinue={continueFromPhone}
+            onOpenPolicy={openLoginPolicy}
+            onKeyboardFocus={() => setKeyboardVisible(true)}
+          />
+        ) : (
         <ScrollView
           ref={loginScrollRef}
           style={styles.authScrollViewport}
-          contentContainerStyle={[styles.authScroll, loginStep !== 'phone' && styles.authScrollOtp]}
+          contentContainerStyle={[styles.authScroll, styles.authScrollOtp]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
           <View
             style={[
@@ -2303,14 +2366,7 @@ function LoginScreen({
               { maxWidth: Math.min(640, responsive.contentMaxWidth) }
             ]}
           >
-            {loginStep === 'phone' ? (
-              <LoginHero
-                title="Indiery"
-                caption="Delivering trust, every mile."
-              />
-            ) : null}
-            <View style={[styles.authForm, loginStep !== 'phone' && styles.authFormOtp]}>
-            {loginStep === 'otp' ? (
+            <View style={[styles.authForm, styles.authFormOtp]}>
               <>
                 <Pressable
                   style={styles.loginOtpBackButton}
@@ -2364,91 +2420,10 @@ function LoginScreen({
                   </Pressable>
                 </View>
               </>
-            ) : loginStep === 'profile' ? (
-              <>
-                <Pressable
-                  style={styles.loginOtpBackButton}
-                  onPress={changePhoneNumber}
-                  hitSlop={7}
-                  accessibilityRole="button"
-                  accessibilityLabel="Go back to mobile number"
-                >
-                  <Ionicons name="arrow-back" size={21} color={colors.ink} />
-                </Pressable>
-                <View style={styles.loginOtpIcon}>
-                  <Ionicons name="person-add-outline" size={24} color={colors.customer} />
-                </View>
-                <Text style={styles.authKicker}>Almost there</Text>
-                <Text style={styles.loginProfileTitle}>Complete your profile</Text>
-                <Text style={styles.loginProfileSubtitle}>Add your details before we verify your mobile number.</Text>
-                <AuthField
-                  label="Full name"
-                  value={profileName}
-                  onChangeText={setProfileName}
-                  icon="person"
-                  autoFocus
-                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 160)}
-                />
-                <AuthField
-                  label="Email"
-                  value={profileEmail}
-                  onChangeText={setProfileEmail}
-                  keyboardType="email-address"
-                  icon="mail"
-                  autoCapitalize="none"
-                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 160)}
-                />
-                <AuthField
-                  label="City"
-                  value={profileCity}
-                  onChangeText={setProfileCity}
-                  icon="location"
-                  onFocus={() => setTimeout(() => loginScrollRef.current?.scrollToEnd({ animated: true }), 160)}
-                />
-                <AuthField
-                  label="Mobile number"
-                  value={`+91 ${normalizedPhone}`}
-                  editable={false}
-                  keyboardType="phone-pad"
-                  icon="call"
-                />
-                {error ? <Text style={styles.loginError}>{error}</Text> : null}
-                <AuthActionButton
-                  title={busy ? 'Sending OTP…' : 'Continue to OTP'}
-                  onPress={continueFromProfile}
-                  disabled={busy}
-                />
-              </>
-            ) : (
-              <>
-                <Text style={styles.authKicker}>Fast · Secure · Reliable</Text>
-                <Text style={styles.authTitle}>Let’s get moving</Text>
-                <Text style={styles.loginSubtitle}>Enter your mobile number to book and track deliveries.</Text>
-                <PhoneLoginField value={phone} onChangeText={setPhone} />
-                {error ? <Text style={styles.loginError}>{error}</Text> : null}
-                <AuthActionButton
-                  title={busy ? 'Checking…' : 'Continue'}
-                  onPress={continueFromPhone}
-                  disabled={!phoneReady || busy}
-                />
-                <View style={styles.loginConsent}>
-                  <Text style={styles.loginConsentText}>By continuing, you agree to the</Text>
-                  <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('terms')}>
-                    <Text style={styles.loginConsentLink}>Terms & Conditions</Text>
-                  </Pressable>
-                  <Text style={styles.loginConsentText}>and</Text>
-                  <Pressable accessibilityRole="link" hitSlop={5} onPress={() => openLoginPolicy('privacy')}>
-                    <Text style={styles.loginConsentLink}>Privacy Policy</Text>
-                  </Pressable>
-                  <Text style={styles.loginConsentText}>.</Text>
-                </View>
-                <AuthDivider />
-                <LoginFeatureRow />
-              </>
-            )}
             </View>
           </View>
         </ScrollView>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
     <Modal
@@ -2466,24 +2441,456 @@ function LoginScreen({
   );
 }
 
-function LoginHero({ title, caption }: { title: string; caption: string }) {
+function LoginPhoneStep({
+  phone,
+  error,
+  busy,
+  phoneReady,
+  keyboardVisible,
+  compactKeyboardLayout,
+  scrollRef,
+  onChangePhone,
+  onContinue,
+  onOpenPolicy,
+  onKeyboardFocus
+}: {
+  phone: string;
+  error: string;
+  busy: boolean;
+  phoneReady: boolean;
+  keyboardVisible: boolean;
+  compactKeyboardLayout: boolean;
+  scrollRef: React.RefObject<ScrollView | null>;
+  onChangePhone: (value: string) => void;
+  onContinue: () => void;
+  onOpenPolicy: (policyId: LegalPolicy['id']) => void;
+  onKeyboardFocus: () => void;
+}) {
+  const responsive = useResponsiveLayout();
+  const maxWidth = Math.min(640, responsive.contentMaxWidth);
+  const heroWidth = Math.min(responsive.width, maxWidth);
+  // bg1 is 4:3. Matching its natural ratio prevents a white/empty strip and
+  // keeps both sides of the artwork visible.
+  const heroHeight = Math.round(heroWidth * (1086 / 1448));
+  // Clip only the empty lower portion of the artwork while preserving the
+  // original image scale and its top position.
+  const heroVisibleHeight = keyboardVisible
+    ? Math.round(heroHeight * (compactKeyboardLayout ? 0.86 : 0.9))
+    : heroHeight;
+  const consent = (
+    <View style={[styles.loginConsent, keyboardVisible && styles.loginPhoneKeyboardConsent]}>
+      <Text style={styles.loginConsentText}>By continuing, you agree to the</Text>
+      <Pressable accessibilityRole="link" hitSlop={5} onPress={() => onOpenPolicy('terms')}>
+        <Text style={styles.loginConsentLink}>Terms & Conditions</Text>
+      </Pressable>
+      <Text style={styles.loginConsentText}>and</Text>
+      <Pressable accessibilityRole="link" hitSlop={5} onPress={() => onOpenPolicy('privacy')}>
+        <Text style={styles.loginConsentLink}>Privacy Policy</Text>
+      </Pressable>
+      <Text style={styles.loginConsentText}>.</Text>
+    </View>
+  );
+
   return (
-    <View style={styles.loginHero}>
-      <Image source={customerLoginBackgroundImage} style={styles.loginHeroImage} resizeMode="cover" />
+    <View style={styles.loginPhoneLayout}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.authScrollViewport}
+        contentContainerStyle={[
+          styles.authScroll,
+          keyboardVisible && styles.loginPhoneKeyboardScrollContent
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.authResponsiveFrame, { maxWidth }]}>
+          <LoginHero
+            title="Indiery"
+            caption="Delivering trust, every mile."
+            height={heroHeight}
+            visibleHeight={heroVisibleHeight}
+          />
+          <View style={[styles.loginPhoneFormContent, keyboardVisible && styles.loginPhoneFormContentKeyboard]}>
+            {!keyboardVisible ? <Text style={styles.authKicker}>Fast · Secure · Reliable</Text> : null}
+            {!compactKeyboardLayout ? (
+              <Text style={[styles.authTitle, keyboardVisible && styles.loginPhoneKeyboardTitle]}>
+                Welcome to Indiery
+              </Text>
+            ) : null}
+            {!keyboardVisible ? (
+              <Text style={styles.loginSubtitle}>Enter your mobile number to book and track deliveries.</Text>
+            ) : null}
+            <PhoneLoginField
+              value={phone}
+              onChangeText={onChangePhone}
+              onFocus={onKeyboardFocus}
+              compact={keyboardVisible}
+            />
+            {error ? <Text style={styles.loginError}>{error}</Text> : null}
+            {!keyboardVisible ? (
+              <>
+                <AuthActionButton
+                  title={busy ? 'Checking…' : 'Continue'}
+                  onPress={onContinue}
+                  disabled={!phoneReady || busy}
+                />
+                {consent}
+                <AuthDivider />
+                <LoginFeatureRow />
+              </>
+            ) : null}
+          </View>
+        </View>
+      </ScrollView>
+
+      {keyboardVisible ? (
+        <View
+          style={[
+            styles.loginPhoneKeyboardFooter,
+            Platform.OS === 'android' && styles.androidKeyboardFooter
+          ]}
+        >
+          <View style={[styles.loginPhoneKeyboardFooterInner, { maxWidth }]}>
+            <AuthActionButton
+              title={busy ? 'Checking…' : 'Continue'}
+              onPress={onContinue}
+              disabled={!phoneReady || busy}
+            />
+            {!compactKeyboardLayout ? consent : null}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function LoginProfileStep({
+  profileName,
+  profileEmail,
+  profileCity,
+  phone,
+  error,
+  busy,
+  keyboardVisible,
+  scrollRef,
+  onChangeName,
+  onChangeEmail,
+  onChangeCity,
+  onBack,
+  onContinue,
+  onKeyboardFocus
+}: {
+  profileName: string;
+  profileEmail: string;
+  profileCity: string;
+  phone: string;
+  error: string;
+  busy: boolean;
+  keyboardVisible: boolean;
+  scrollRef: React.RefObject<ScrollView | null>;
+  onChangeName: (value: string) => void;
+  onChangeEmail: (value: string) => void;
+  onChangeCity: (value: string) => void;
+  onBack: () => void;
+  onContinue: () => void;
+  onKeyboardFocus: () => void;
+}) {
+  const responsive = useResponsiveLayout();
+  const profileSmall = responsive.width <= 375;
+  const profileCompact = responsive.width <= 400;
+  const profileTitleSize = profileSmall ? 18 : profileCompact ? 19 : 20;
+  const profileTitleLineHeight = profileSmall ? 22 : profileCompact ? 23 : 24;
+  const profileBodyScale = profileSmall ? 0.86 : profileCompact ? 0.9 : 0.94;
+  const revealField = (y: number) => {
+    onKeyboardFocus();
+    setTimeout(() => scrollRef.current?.scrollTo({ y, animated: true }), Platform.OS === 'ios' ? 220 : 140);
+  };
+
+  return (
+    <View style={styles.loginProfileLayout}>
+      <View
+        style={[
+          styles.loginProfileFixedHeader,
+          profileCompact && styles.loginProfileFixedHeaderCompact,
+          { maxWidth: Math.min(640, responsive.contentMaxWidth) }
+        ]}
+      >
+        <View
+          style={[
+            styles.loginProfileHeaderTopRow,
+            profileCompact && styles.loginProfileHeaderTopRowCompact
+          ]}
+        >
+          <Pressable
+            style={[
+              styles.loginOtpBackButton,
+              styles.loginProfileFixedBackButton,
+              profileCompact && styles.loginProfileFixedBackButtonCompact
+            ]}
+            onPress={onBack}
+            hitSlop={7}
+            accessibilityRole="button"
+            accessibilityLabel="Go back to mobile number"
+          >
+            <Ionicons name="arrow-back" size={19} color={colors.ink} />
+          </Pressable>
+          <View
+            style={[
+              styles.loginProfileProgressPill,
+              profileCompact && styles.loginProfileProgressPillCompact
+            ]}
+          >
+            <Ionicons
+              name="shield-checkmark"
+              size={profileCompact ? 12 : 13}
+              color={colors.customer}
+            />
+            <Text
+              style={[
+                styles.loginProfileProgressText,
+                { fontSize: 9 * profileBodyScale }
+              ]}
+            >
+              Profile setup
+            </Text>
+          </View>
+        </View>
+        <View
+          style={[
+            styles.loginProfileHeadingRow,
+            profileCompact && styles.loginProfileHeadingRowCompact
+          ]}
+        >
+          <View
+            style={[
+              styles.loginOtpIcon,
+              styles.loginProfileFixedIcon,
+              profileCompact && styles.loginProfileFixedIconCompact
+            ]}
+          >
+            <Ionicons
+              name="person-add-outline"
+              size={profileCompact ? 19 : 21}
+              color={colors.customer}
+            />
+          </View>
+          <View style={styles.loginProfileHeadingCopy}>
+            <Text
+              style={[
+                styles.authKicker,
+                styles.loginProfileFixedKicker,
+                {
+                  fontSize: 9 * profileBodyScale,
+                  lineHeight: 11 * profileBodyScale
+                }
+              ]}
+            >
+              Almost there
+            </Text>
+            <Text
+              style={[
+                styles.loginProfileTitle,
+                styles.loginProfileFixedTitle,
+                {
+                  fontSize: profileTitleSize,
+                  lineHeight: profileTitleLineHeight
+                }
+              ]}
+            >
+              Complete your profile
+            </Text>
+            <Text
+              style={[
+                styles.loginProfileSubtitle,
+                styles.loginProfileFixedSubtitle,
+                {
+                  fontSize: 11 * profileBodyScale,
+                  lineHeight: 16 * profileBodyScale
+                }
+              ]}
+            >
+              Add your details before we verify your mobile number.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <ScrollView
+        ref={scrollRef}
+        style={styles.loginProfileFieldsViewport}
+        contentContainerStyle={[
+          styles.loginProfileFieldsContent,
+          profileCompact && styles.loginProfileFieldsContentCompact,
+          keyboardVisible && styles.loginProfileFieldsContentKeyboard,
+          { maxWidth: Math.min(640, responsive.contentMaxWidth) }
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          style={[
+            styles.loginProfileFormCard,
+            profileCompact && styles.loginProfileFormCardCompact
+          ]}
+        >
+          <Text
+            style={[
+              styles.loginProfileFormTitle,
+              { fontSize: 15 * profileBodyScale }
+            ]}
+          >
+            Personal details
+          </Text>
+          <Text
+            style={[
+              styles.loginProfileFormHint,
+              {
+                fontSize: 10 * profileBodyScale,
+                lineHeight: 15 * profileBodyScale
+              }
+            ]}
+          >
+            Please enter accurate information for your bookings.
+          </Text>
+          <AuthField
+            label="Full name"
+            value={profileName}
+            onChangeText={onChangeName}
+            icon="person"
+            autoFocus
+            onFocus={() => revealField(0)}
+            profile
+            profileFontScale={profileBodyScale}
+            profileCompact={profileCompact}
+          />
+          <AuthField
+            label="Email"
+            value={profileEmail}
+            onChangeText={onChangeEmail}
+            keyboardType="email-address"
+            icon="mail"
+            autoCapitalize="none"
+            onFocus={() => revealField(72)}
+            profile
+            profileFontScale={profileBodyScale}
+            profileCompact={profileCompact}
+          />
+          <AuthField
+            label="Mobile number"
+            value={`+91 ${phone}`}
+            editable={false}
+            keyboardType="phone-pad"
+            icon="call"
+            profile
+            profileFontScale={profileBodyScale}
+            profileCompact={profileCompact}
+          />
+          <AuthField
+            label="City"
+            value={profileCity}
+            onChangeText={onChangeCity}
+            icon="location"
+            onFocus={() => revealField(240)}
+            profile
+            profileFontScale={profileBodyScale}
+            profileCompact={profileCompact}
+          />
+          {error ? <Text style={styles.loginError}>{error}</Text> : null}
+        </View>
+        {!keyboardVisible ? (
+          <View
+            style={[
+              styles.loginProfileInlineAction,
+              profileCompact && styles.loginProfileInlineActionCompact
+            ]}
+          >
+            <AuthActionButton
+              title={busy ? 'Sending OTP…' : 'Continue'}
+              onPress={onContinue}
+              disabled={busy}
+            />
+            <View
+              style={[
+                styles.loginProfilePrivacyRow,
+                profileCompact && styles.loginProfilePrivacyRowCompact
+              ]}
+            >
+              <Ionicons name="lock-closed-outline" size={12} color={colors.muted} />
+              <Text style={styles.loginProfilePrivacyText}>Your details are private and securely protected.</Text>
+            </View>
+          </View>
+        ) : null}
+      </ScrollView>
+
+      {keyboardVisible ? (
+        <View
+          style={[
+            styles.authKeyboardFooter,
+            Platform.OS === 'android' && styles.androidKeyboardFooter,
+            Platform.OS === 'android' && styles.loginProfileAndroidKeyboardFooter
+          ]}
+        >
+          <AuthActionButton
+            title={busy ? 'Sending OTP…' : 'Continue'}
+            onPress={onContinue}
+            disabled={busy}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function LoginHero({
+  title,
+  caption,
+  height,
+  visibleHeight
+}: {
+  title: string;
+  caption: string;
+  height: number;
+  visibleHeight: number;
+}) {
+  return (
+    <View style={[styles.loginHero, { height: visibleHeight, minHeight: visibleHeight, maxHeight: visibleHeight }]}>
+      <Image
+        source={customerLoginBackgroundImage}
+        style={[styles.loginHeroImage, { height }]}
+        resizeMode="contain"
+      />
       <View style={styles.loginHeroWash} />
       <View style={styles.loginBrandPanel}>
-        <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
+        <Image
+          source={indieryLogoImage}
+          style={styles.loginBrandLogo}
+          resizeMode="contain"
+          accessibilityLabel={title}
+        />
         <Text style={styles.loginHeroCaption}>{caption}</Text>
       </View>
     </View>
   );
 }
 
-function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText: (value: string) => void }) {
+function PhoneLoginField({
+  value,
+  onChangeText,
+  onFocus,
+  compact = false
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  onFocus?: () => void;
+  compact?: boolean;
+}) {
   return (
-    <View style={styles.authFieldGroup}>
+    <View style={[styles.authFieldGroup, compact && styles.phoneFieldGroupCompact]}>
       <Text style={styles.fieldLabel}>Mobile Number</Text>
-      <View style={styles.phoneInputShell}>
+      <View style={[styles.phoneInputShell, compact && styles.phoneInputShellCompact]}>
         <Ionicons name="phone-portrait-outline" size={18} color={colors.customer} />
         <Text style={styles.countryCode}>+91</Text>
         <Ionicons name="chevron-down" size={14} color={colors.muted} />
@@ -2496,6 +2903,7 @@ function PhoneLoginField({ value, onChangeText }: { value: string; onChangeText:
           placeholder="Enter your mobile number"
           placeholderTextColor="#9CA3AF"
           style={styles.phoneInputText}
+          onFocus={onFocus}
         />
       </View>
     </View>
@@ -2626,11 +3034,20 @@ function ProfileSetupScreen({
   const [email, setEmail] = useState(user.email || '');
   const [city, setCity] = useState(user.city || 'Lucknow');
   const [localError, setLocalError] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const profileScrollRef = useRef<ScrollView | null>(null);
   const profileFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => {
-    if (profileFocusTimerRef.current) clearTimeout(profileFocusTimerRef.current);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      if (profileFocusTimerRef.current) clearTimeout(profileFocusTimerRef.current);
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
   }, []);
 
   function revealProfileField(y: number) {
@@ -2664,14 +3081,13 @@ function ProfileSetupScreen({
   return (
     <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <AppStatusBar variant="light" />
-      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={profileScrollRef}
           style={styles.authScrollViewport}
           contentContainerStyle={styles.profileSetupScroll}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           showsVerticalScrollIndicator={false}
         >
           <View
@@ -2680,14 +3096,16 @@ function ProfileSetupScreen({
               { maxWidth: Math.min(640, responsive.contentMaxWidth) }
             ]}
           >
-            <View style={styles.profileSetupHero}>
-              <View style={styles.profileSetupHeroIcon}>
-                <Ionicons name="person-add-outline" size={28} color={colors.customer} />
+            {!keyboardVisible ? (
+              <View style={styles.profileSetupHero}>
+                <View style={styles.profileSetupHeroIcon}>
+                  <Ionicons name="person-add-outline" size={28} color={colors.customer} />
+                </View>
+                <Text style={styles.profileSetupHeroKicker}>WELCOME TO INDIERY</Text>
+                <Text style={styles.profileSetupHeroTitle}>Tell us about you</Text>
+                <Text style={styles.profileSetupHeroText}>A few details will help us personalize your deliveries.</Text>
               </View>
-              <Text style={styles.profileSetupHeroKicker}>WELCOME TO INDIERY</Text>
-              <Text style={styles.profileSetupHeroTitle}>Tell us about you</Text>
-              <Text style={styles.profileSetupHeroText}>A few details will help us personalize your deliveries.</Text>
-            </View>
+            ) : null}
             <View style={styles.authForm}>
               <Text style={styles.authKicker}>Almost there</Text>
               <Text style={styles.authTitle}>Profile</Text>
@@ -2698,7 +3116,7 @@ function ProfileSetupScreen({
                 onChangeText={setName}
                 icon="person"
                 autoFocus
-                onFocus={() => revealProfileField(150)}
+                onFocus={() => revealProfileField(0)}
               />
               <AuthField
                 label="Email"
@@ -2707,21 +3125,28 @@ function ProfileSetupScreen({
                 keyboardType="email-address"
                 icon="mail"
                 autoCapitalize="none"
-                onFocus={() => revealProfileField(210)}
+                onFocus={() => revealProfileField(60)}
               />
               <AuthField
                 label="City"
                 value={city}
                 onChangeText={setCity}
                 icon="location"
-                onFocus={() => revealProfileField(270)}
+                onFocus={() => revealProfileField(130)}
               />
               <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
               {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
-              <PrimaryButton title={busy ? 'Saving' : 'Continue'} icon="arrow-forward" onPress={submit} />
+              {!keyboardVisible ? (
+                <AuthActionButton title={busy ? 'Saving' : 'Continue'} onPress={submit} disabled={busy} />
+              ) : null}
             </View>
           </View>
         </ScrollView>
+        {keyboardVisible ? (
+          <View style={styles.authKeyboardFooter}>
+            <AuthActionButton title={busy ? 'Saving' : 'Continue'} onPress={submit} disabled={busy} />
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -2737,7 +3162,10 @@ function AuthField({
   icon,
   maxLength,
   autoFocus = false,
-  onFocus
+  onFocus,
+  profile = false,
+  profileFontScale = 1,
+  profileCompact = false
 }: {
   label: string;
   value: string;
@@ -2749,12 +3177,52 @@ function AuthField({
   maxLength?: number;
   autoFocus?: boolean;
   onFocus?: () => void;
+  profile?: boolean;
+  profileFontScale?: number;
+  profileCompact?: boolean;
 }) {
   return (
-    <View style={styles.authFieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={[styles.authInputShell, !editable && styles.authInputReadonly]}>
-        <Ionicons name={icon} size={18} color={editable ? colors.customer : colors.muted} />
+    <View
+      style={[
+        styles.authFieldGroup,
+        profile && styles.loginProfileFieldGroup,
+        profile && profileCompact && styles.loginProfileFieldGroupCompact
+      ]}
+    >
+      <Text
+        style={[
+          styles.fieldLabel,
+          profile && styles.loginProfileFieldLabel,
+          profile && { fontSize: 10 * profileFontScale }
+        ]}
+      >
+        {label}
+      </Text>
+      <View
+        style={[
+          styles.authInputShell,
+          profile && styles.loginProfileInputShell,
+          profile && profileCompact && styles.loginProfileInputShellCompact,
+          !editable && styles.authInputReadonly
+        ]}
+      >
+        {profile ? (
+          <View
+            style={[
+              styles.loginProfileFieldIcon,
+              profileCompact && styles.loginProfileFieldIconCompact,
+              !editable && styles.loginProfileFieldIconReadonly
+            ]}
+          >
+            <Ionicons
+              name={icon}
+              size={profileCompact ? 15 : 17}
+              color={editable ? colors.customer : colors.muted}
+            />
+          </View>
+        ) : (
+          <Ionicons name={icon} size={18} color={editable ? colors.customer : colors.muted} />
+        )}
         <TextInput
           value={value}
           editable={editable}
@@ -2765,7 +3233,11 @@ function AuthField({
           autoFocus={autoFocus}
           onFocus={onFocus}
           placeholderTextColor={colors.muted}
-          style={styles.authInputText}
+          style={[
+            styles.authInputText,
+            profile && styles.loginProfileInputText,
+            profile && { fontSize: 14 * profileFontScale }
+          ]}
         />
       </View>
     </View>
@@ -2791,6 +3263,8 @@ function HomeScreen({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
+  const compact = responsive.isCompact;
+  const small = responsive.isSmall;
   const lastOrder = data.orders[0];
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
@@ -2905,62 +3379,73 @@ function HomeScreen({
       <ScrollView
         contentContainerStyle={[
           styles.homeScroll,
+          compact && styles.homeScrollCompact,
           { maxWidth: responsive.contentMaxWidth, paddingHorizontal: responsive.horizontalPadding }
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable style={styles.homeLocationCard} onPress={onPickupPress}>
-          <View style={[styles.homeLocationIcon, pickupSelected && styles.homeLocationIconSelected]}>
+        <Pressable style={[styles.homeLocationCard, compact && styles.homeLocationCardCompact]} onPress={onPickupPress}>
+          <View style={[
+            styles.homeLocationIcon,
+            compact && styles.homeLocationIconCompact,
+            pickupSelected && styles.homeLocationIconSelected
+          ]}>
             {autoPickupLoading ? (
               <ActivityIndicator size="small" color={colors.customer} />
             ) : (
-              <Ionicons name={pickupSelected ? 'home' : 'locate'} size={18} color={pickupSelected ? colors.white : colors.customer} />
+              <Ionicons name={pickupSelected ? 'home' : 'locate'} size={compact ? 16 : 18} color={pickupSelected ? colors.white : colors.customer} />
             )}
           </View>
           <View style={styles.flex}>
-            <Text style={styles.homeLocationLabel}>{copy.pickupLocation}</Text>
-            <Text style={styles.homeLocationTitle} numberOfLines={1}>{pickupDisplay}</Text>
+            <Text style={[styles.homeLocationLabel, compact && styles.homeLocationLabelCompact]}>{copy.pickupLocation}</Text>
+            <Text style={[styles.homeLocationTitle, compact && styles.homeLocationTitleCompact]} numberOfLines={1}>{pickupDisplay}</Text>
           </View>
-          <Ionicons name="arrow-forward" size={18} color={colors.customer} />
+          <Ionicons name="arrow-forward" size={compact ? 17 : 18} color={colors.customer} />
         </Pressable>
 
-        <View style={styles.homeServiceGrid}>
+        <View style={[styles.homeServiceGrid, compact && styles.homeServiceGridCompact]}>
           {homeVehicleCards.map((service) => (
             <Pressable
               key={service.id}
-              style={styles.homeServiceCard}
+              style={[
+                styles.homeServiceCard,
+                compact && styles.homeServiceCardCompact,
+                small && styles.homeServiceCardSmall
+              ]}
               onPress={() => startBookingFromHome(service.vehicle)}
             >
-              <HomeVehicleVisual vehicle={service.vehicle} color={service.accent} />
+              <HomeVehicleVisual vehicle={service.vehicle} color={service.accent} compact={compact} small={small} />
               <View style={styles.homeServiceFooter}>
                 <View style={styles.flex}>
-                  <Text style={styles.homeServiceTitle}>{service.title}</Text>
-                  <Text style={styles.homeServiceSubtitle} numberOfLines={2}>{service.subtitle}</Text>
+                  <Text style={[styles.homeServiceTitle, compact && styles.homeServiceTitleCompact, small && styles.homeServiceTitleSmall]}>{service.title}</Text>
+                  <Text style={[styles.homeServiceSubtitle, compact && styles.homeServiceSubtitleCompact]} numberOfLines={2}>{service.subtitle}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={17} color={colors.ink} />
+                <Ionicons name="chevron-forward" size={compact ? 15 : 17} color={colors.ink} />
               </View>
             </Pressable>
           ))}
         </View>
 
       {lastOrder ? (
-        <Pressable style={styles.rebookCard} onPress={() => onBook(1)}>
-          <View style={styles.rebookIcon}>
-            <Ionicons name="repeat" size={18} color={colors.customer} />
+        <Pressable style={[styles.rebookCard, compact && styles.rebookCardCompact]} onPress={() => onBook(1)}>
+          <View style={[styles.rebookIcon, compact && styles.rebookIconCompact]}>
+            <Ionicons name="repeat" size={compact ? 16 : 18} color={colors.customer} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.cardTitle}>{copy.repeatLastRoute}</Text>
-            <Text style={styles.mutedSmall}>{lastOrder.pickup.label} to {lastOrder.drop.label}</Text>
+            <Text style={[styles.cardTitle, compact && styles.cardTitleCompact]}>{copy.repeatLastRoute}</Text>
+            <Text style={[styles.mutedSmall, compact && styles.mutedSmallCompact]} numberOfLines={small ? 1 : 2}>
+              {lastOrder.pickup.label} to {lastOrder.drop.label}
+            </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          <Ionicons name="chevron-forward" size={compact ? 16 : 18} color={colors.muted} />
         </Pressable>
       ) : null}
 
-        <View style={styles.homeAnnouncementHeader}>
-          <Text style={styles.homeAnnouncementTitle}>Announcements</Text>
+        <View style={[styles.homeAnnouncementHeader, compact && styles.homeAnnouncementHeaderCompact]}>
+          <Text style={[styles.homeAnnouncementTitle, compact && styles.homeAnnouncementTitleCompact]}>Announcements</Text>
         </View>
         <View
-          style={styles.homeAnnouncementCarousel}
+          style={[styles.homeAnnouncementCarousel, compact && styles.homeAnnouncementCarouselCompact]}
           onLayout={(event) => setAnnouncementWidth(event.nativeEvent.layout.width)}
         >
           <ScrollView
@@ -2978,15 +3463,16 @@ function HomeScreen({
                 key={item.id}
                 style={[
                   styles.homeAnnouncementCard,
+                  compact && styles.homeAnnouncementCardCompact,
                   announcementWidth ? { width: announcementWidth } : null
                 ]}
               >
-                <View style={styles.homeAnnouncementIcon}>
-                  <Ionicons name={item.icon} size={22} color={item.iconColor} />
+                <View style={[styles.homeAnnouncementIcon, compact && styles.homeAnnouncementIconCompact]}>
+                  <Ionicons name={item.icon} size={compact ? 18 : 22} color={item.iconColor} />
                 </View>
                 <View style={styles.flex}>
-                  <Text style={styles.homeAnnouncementCopy}>{item.title}</Text>
-                  <Text style={styles.homeAnnouncementMeta}>{item.subtitle}</Text>
+                  <Text style={[styles.homeAnnouncementCopy, compact && styles.homeAnnouncementCopyCompact]}>{item.title}</Text>
+                  <Text style={[styles.homeAnnouncementMeta, compact && styles.homeAnnouncementMetaCompact]}>{item.subtitle}</Text>
                 </View>
               </View>
             ))}
@@ -3176,18 +3662,31 @@ function PickupSearchModal({
   );
 }
 
-function HomeVehicleVisual({ vehicle, color }: { vehicle: Vehicle; color: string }) {
+function HomeVehicleVisual({
+  vehicle,
+  color,
+  compact = false,
+  small = false
+}: {
+  vehicle: Vehicle;
+  color: string;
+  compact?: boolean;
+  small?: boolean;
+}) {
   const source = vehicleArtSources[vehicle.code] ?? mini700VehicleImage;
   return (
-    <View style={styles.homeServiceArt}>
-      <View style={[styles.homeServiceArtHalo, { backgroundColor: `${color}1F` }]} />
-      <View style={[styles.homeServiceArtShadow, { backgroundColor: color }]} />
+    <View style={[styles.homeServiceArt, compact && styles.homeServiceArtCompact, small && styles.homeServiceArtSmall]}>
+      <View style={[styles.homeServiceArtHalo, compact && styles.homeServiceArtHaloCompact, { backgroundColor: `${color}1F` }]} />
+      <View style={[styles.homeServiceArtShadow, compact && styles.homeServiceArtShadowCompact, { backgroundColor: color }]} />
       <Image
         source={source}
         resizeMode="contain"
         style={[
           styles.homeVehicleImage,
+          compact && styles.homeVehicleImageCompact,
+          small && styles.homeVehicleImageSmall,
           vehicle.code === 'bike' && styles.homeVehicleImageBike,
+          vehicle.code === 'bike' && compact && styles.homeVehicleImageBikeCompact,
           vehicle.code === 'loader90' && styles.homeVehicleImageLoader
         ]}
       />
@@ -3219,6 +3718,7 @@ function LocationPickerField({
   onOpenMap?: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const isPickup = label === copy.pickup || label === 'Pickup';
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -3290,8 +3790,8 @@ function LocationPickerField({
   return (
     <View style={[styles.locationFieldGroup, variant === 'route' && styles.routeLocationFieldGroup]}>
       {variant === 'default' ? (
-        <View style={styles.locationLabelRow}>
-          <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={[styles.locationLabelRow, responsive.isCompact && styles.locationLabelRowCompact]}>
+          <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact]}>{label}</Text>
           {selected ? (
             <View style={styles.locationSelectedBadge}>
               <Ionicons name="checkmark-circle" size={13} color={colors.customer} />
@@ -3302,10 +3802,12 @@ function LocationPickerField({
       ) : null}
       <View style={[
         styles.locationInputShell,
+        responsive.isCompact && styles.locationInputShellCompact,
         variant === 'route' && styles.routeLocationInputShell,
+        variant === 'route' && responsive.isCompact && styles.routeLocationInputShellCompact,
         focused && styles.locationInputShellActive
       ]}>
-        <Ionicons name={isPickup ? 'radio-button-on' : 'location'} size={18} color={colors.customer} />
+        <Ionicons name={isPickup ? 'radio-button-on' : 'location'} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
         <TextInput
           value={value}
           onFocus={() => {
@@ -3327,7 +3829,7 @@ function LocationPickerField({
           }}
           placeholder={placeholder || copy.mapSearchPlaceholder}
           placeholderTextColor={colors.muted}
-          style={styles.locationInput}
+          style={[styles.locationInput, responsive.isCompact && styles.locationInputCompact]}
         />
         {loading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
       </View>
@@ -3497,10 +3999,12 @@ function VehicleFareOption({
   onPress: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
     <Pressable
       style={[
         styles.vehicleFareOption,
+        responsive.isCompact && styles.vehicleFareOptionCompact,
         suggested && styles.vehicleFareOptionSuggested,
         selected && styles.vehicleFareOptionSelected,
         disabled && styles.vehicleFareOptionDisabled
@@ -3508,7 +4012,7 @@ function VehicleFareOption({
       disabled={disabled}
       onPress={onPress}
     >
-      <View style={styles.vehicleFareOptionIcon}>
+      <View style={[styles.vehicleFareOptionIcon, responsive.isCompact && styles.vehicleFareOptionIconCompact]}>
         <VehicleMiniArt vehicle={vehicle} muted={disabled} selected={selected} suggested={suggested} />
       </View>
       <View style={styles.vehicleFareOptionCopy}>
@@ -3516,6 +4020,7 @@ function VehicleFareOption({
           <Text
             style={[
               styles.vehicleFareOptionTitle,
+              responsive.isCompact && styles.vehicleFareOptionTitleCompact,
               suggested && styles.vehicleFareOptionTitleSuggested,
               selected && styles.vehicleFareOptionTitleSelected,
               disabled && styles.vehicleNameDisabled
@@ -3529,14 +4034,15 @@ function VehicleFareOption({
             </View>
           ) : null}
         </View>
-        <Text style={styles.vehicleFareOptionMeta}>
+        <Text style={[styles.vehicleFareOptionMeta, responsive.isCompact && styles.vehicleFareOptionMetaCompact]}>
           {vehicleCapacityText(vehicle, copy.upTo)} - {vehicle.etaMinutes} min
         </Text>
       </View>
-      <View style={styles.vehicleFareOptionPriceWrap}>
+      <View style={[styles.vehicleFareOptionPriceWrap, responsive.isCompact && styles.vehicleFareOptionPriceWrapCompact]}>
         <Text
           style={[
             styles.vehicleFareOptionPrice,
+            responsive.isCompact && styles.vehicleFareOptionPriceCompact,
             suggested && styles.vehicleFareOptionPriceSuggested,
             selected && styles.vehicleFareOptionPriceSelected,
             disabled && styles.vehicleNameDisabled
@@ -3632,7 +4138,26 @@ function BookScreen({
   const [goodsRulesOpen, setGoodsRulesOpen] = useState(false);
   const [contactError, setContactError] = useState('');
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible());
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const autoPickupAttemptedRef = useRef(false);
+  const fullBookingViewportRef = useRef({ width: responsive.width, height: responsive.height });
+  if (Math.abs(fullBookingViewportRef.current.width - responsive.width) > 1) {
+    fullBookingViewportRef.current = { width: responsive.width, height: responsive.height };
+  } else if (!keyboardVisible && responsive.height > fullBookingViewportRef.current.height) {
+    fullBookingViewportRef.current.height = responsive.height;
+  }
+  const bookingKeyboardLayoutVisible =
+    keyboardVisible || fullBookingViewportRef.current.height - responsive.height > 120;
+  const bookingViewportKeyboardShrink = Math.max(
+    0,
+    fullBookingViewportRef.current.height - responsive.height
+  );
+  const goodsAndroidKeyboardPadding =
+    Platform.OS === 'android' && step === 2 && bookingKeyboardLayoutVisible
+      ? Math.max(0, keyboardHeight - bookingViewportKeyboardShrink)
+      : 0;
+  const showGoodsKeyboardFooter = step === 2 && bookingKeyboardLayoutVisible;
   const hasPickupLocation = booking.pickup.trim().length > 0;
   const hasDropLocation = booking.drop.trim().length > 0;
   const stepMeta: Record<number, { title: string; subtitle: string }> = {
@@ -3694,6 +4219,23 @@ function BookScreen({
       cancelled = true;
     };
   }, [hasPickupLocation, setBooking]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useAndroidBackHandler(() => {
     if (mapPickerTarget) {
@@ -3868,6 +4410,7 @@ function BookScreen({
     if (booking.vehicleId !== vehicleForEstimate.id) {
       setBooking((current) => ({ ...current, vehicleId: vehicleForEstimate.id }));
     }
+    Keyboard.dismiss();
     estimateNow(3, vehicleForEstimate.id);
   }
 
@@ -3957,10 +4500,26 @@ function BookScreen({
 
   return (
     <>
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="always">
-      <View style={styles.bookingStepHeader}>
+    <KeyboardAvoidingView
+      style={[
+        styles.bookingScreenKeyboard,
+        goodsAndroidKeyboardPadding > 0 && { paddingBottom: goodsAndroidKeyboardPadding }
+      ]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+    <ScrollView
+      style={styles.bookingScreenScroll}
+      contentContainerStyle={[
+        styles.scroll,
+        responsive.isCompact && styles.scrollCompact,
+        showGoodsKeyboardFooter && styles.bookingScreenScrollKeyboard
+      ]}
+      keyboardShouldPersistTaps="always"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+    >
+      <View style={[styles.bookingStepHeader, responsive.isCompact && styles.bookingStepHeaderCompact]}>
         <Pressable
-          style={styles.bookingStepBack}
+          style={[styles.bookingStepBack, responsive.isCompact && styles.bookingStepBackCompact]}
           onPress={() => {
             if (step > 1) {
               setStep(step - 1);
@@ -3972,29 +4531,29 @@ function BookScreen({
           accessibilityRole="button"
           accessibilityLabel={step > 1 ? 'Previous booking step' : 'Back to home'}
         >
-          <Ionicons name="arrow-back" size={20} color={colors.ink} />
+          <Ionicons name="arrow-back" size={responsive.isCompact ? 17 : 20} color={colors.ink} />
         </Pressable>
         <View style={styles.flex}>
-          <Text style={styles.bookingStepTitle}>{currentStepMeta.title}</Text>
-          <Text style={styles.bookingStepSubtitle} numberOfLines={1}>{currentStepMeta.subtitle}</Text>
+          <Text style={[styles.bookingStepTitle, responsive.isCompact && styles.bookingStepTitleCompact]}>{currentStepMeta.title}</Text>
+          <Text style={[styles.bookingStepSubtitle, responsive.isCompact && styles.bookingStepSubtitleCompact]} numberOfLines={1}>{currentStepMeta.subtitle}</Text>
         </View>
-        <Text style={styles.bookingStepCount}>{step}/4</Text>
+        <Text style={[styles.bookingStepCount, responsive.isCompact && styles.bookingStepCountCompact]}>{step}/4</Text>
       </View>
-      <View style={styles.bookingProgressTrack}>
+      <View style={[styles.bookingProgressTrack, responsive.isCompact && styles.bookingProgressTrackCompact]}>
         <View style={[styles.bookingProgressFill, { width: `${step * 25}%` }]} />
       </View>
 
       {step === 1 && (
         <View>
           {autoPickupLoading ? (
-            <View style={styles.noticeInfo}>
+            <View style={[styles.noticeInfo, responsive.isCompact && styles.noticeInfoCompact]}>
               <ActivityIndicator size="small" color={colors.blue} />
-              <Text style={styles.noticeInfoText}>{copy.settingPickupLocation}</Text>
+              <Text style={[styles.noticeInfoText, responsive.isCompact && styles.noticeInfoTextCompact]}>{copy.settingPickupLocation}</Text>
             </View>
           ) : null}
 
-          <View style={styles.routeEntryCard}>
-            <View style={styles.routeEntryPickupRow}>
+          <View style={[styles.routeEntryCard, responsive.isCompact && styles.routeEntryCardCompact]}>
+            <View style={[styles.routeEntryPickupRow, responsive.isCompact && styles.routeEntryPickupRowCompact]}>
               <View style={[styles.routeEntryDot, styles.routeEntryDotPickup]} />
               <View style={styles.flex}>
                 <LocationPickerField
@@ -4020,9 +4579,9 @@ function BookScreen({
               </View>
             </View>
 
-            <View style={styles.routeEntryDivider} />
+            <View style={[styles.routeEntryDivider, responsive.isCompact && styles.routeEntryDividerCompact]} />
 
-            <View style={styles.routeEntryDropRow}>
+            <View style={[styles.routeEntryDropRow, responsive.isCompact && styles.routeEntryDropRowCompact]}>
               <View style={[styles.routeEntryDot, styles.routeEntryDotDrop]} />
               <View style={styles.flex}>
                 <LocationPickerField
@@ -4060,37 +4619,37 @@ function BookScreen({
 
       {step === 2 && (
         <View>
-          <View style={styles.routeReviewCard}>
-            <View style={styles.routeReviewHeader}>
-              <Text style={styles.summaryTitle}>{copy.routeSummary}</Text>
-              <Pressable style={styles.changeRouteButton} onPress={() => setStep(1)}>
+          <View style={[styles.routeReviewCard, responsive.isCompact && styles.routeReviewCardCompact]}>
+            <View style={[styles.routeReviewHeader, responsive.isCompact && styles.routeReviewHeaderCompact]}>
+              <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeSummary}</Text>
+              <Pressable style={[styles.changeRouteButton, responsive.isCompact && styles.changeRouteButtonCompact]} onPress={() => setStep(1)}>
                 <Ionicons name="create-outline" size={14} color={colors.customer} />
-                <Text style={styles.changeRouteText}>{copy.changeRoute}</Text>
+                <Text style={[styles.changeRouteText, responsive.isCompact && styles.changeRouteTextCompact]}>{copy.changeRoute}</Text>
               </Pressable>
             </View>
-            <View style={styles.routeReviewLine}>
+            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
               <View style={styles.routeReviewDot} />
               <View style={styles.flex}>
-                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
-                <Text style={styles.mutedSmall}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
               </View>
             </View>
-            <View style={styles.routeReviewLine}>
+            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
               <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
               <View style={styles.flex}>
-                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
-                <Text style={styles.mutedSmall}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
+                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
               </View>
             </View>
           </View>
-          <Text style={styles.fieldLabel}>{copy.goodsType}</Text>
-          <Pressable style={styles.goodsTypeSelector} onPress={openGoodsTypePicker}>
-            <View style={styles.goodsTypeSelectorIcon}>
-              <Ionicons name={goodsTypeIcon(booking.goodsType)} size={21} color={colors.customer} />
+          <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact]}>{copy.goodsType}</Text>
+          <Pressable style={[styles.goodsTypeSelector, responsive.isCompact && styles.goodsTypeSelectorCompact]} onPress={openGoodsTypePicker}>
+            <View style={[styles.goodsTypeSelectorIcon, responsive.isCompact && styles.goodsTypeSelectorIconCompact]}>
+              <Ionicons name={goodsTypeIcon(booking.goodsType)} size={responsive.isCompact ? 18 : 21} color={colors.customer} />
             </View>
             <View style={styles.flex}>
-              <Text style={styles.goodsTypeSelectorValue}>{goodsLabel(language, booking.goodsType)}</Text>
-              <Text style={styles.goodsTypeSelectorHint}>{copy.tapToChooseGoods}</Text>
+              <Text style={[styles.goodsTypeSelectorValue, responsive.isCompact && styles.goodsTypeSelectorValueCompact]}>{goodsLabel(language, booking.goodsType)}</Text>
+              <Text style={[styles.goodsTypeSelectorHint, responsive.isCompact && styles.goodsTypeSelectorHintCompact]}>{copy.tapToChooseGoods}</Text>
             </View>
             <Ionicons name="chevron-down" size={19} color={colors.customer} />
           </Pressable>
@@ -4100,9 +4659,9 @@ function BookScreen({
             value={booking.weightKg}
             onChangeText={updateBookingWeight}
           />
-          <Pressable style={styles.notice} onPress={() => setGoodsRulesOpen(true)}>
+          <Pressable style={[styles.notice, responsive.isCompact && styles.noticeCompact]} onPress={() => setGoodsRulesOpen(true)}>
             <Ionicons name="warning" size={16} color={colors.amber} />
-            <Text style={styles.noticeText}>{copy.viewGoodsRules}</Text>
+            <Text style={[styles.noticeText, responsive.isCompact && styles.noticeTextCompact]}>{copy.viewGoodsRules}</Text>
             <Ionicons name="chevron-up" size={16} color={colors.amber} />
           </Pressable>
           {bookingWeightKg && !suggestedVehicle ? (
@@ -4112,34 +4671,36 @@ function BookScreen({
             </View>
           ) : null}
           {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
-          <View style={styles.bookingSummaryCard}>
-            <Text style={styles.summaryTitle}>{copy.routeSummary}</Text>
+          <View style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}>
+            <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeSummary}</Text>
             <SummaryRow label={copy.service} value={serviceTitle(language, booking.serviceCategory)} />
             <SummaryRow label={copy.vehicle} value={selectedVehicle?.name || copy.selectVehicleValue} />
             <SummaryRow label={copy.route} value={copy.direct} />
           </View>
-          <View style={styles.row}>
-            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
-            <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromGoodsDetails} />
-          </View>
+          {!showGoodsKeyboardFooter ? (
+            <View style={styles.row}>
+              <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
+              <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromGoodsDetails} />
+            </View>
+          ) : null}
         </View>
       )}
 
       {step === 3 && (
         <View>
-          <View style={styles.vehicleRoutePanel}>
-            <View style={styles.routeReviewLine}>
+          <View style={[styles.vehicleRoutePanel, responsive.isCompact && styles.vehicleRoutePanelCompact]}>
+            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
               <View style={styles.routeReviewDot} />
               <View style={styles.flex}>
-                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
-                <Text style={styles.mutedSmall}>{booking.pickupContactName || user.name}</Text>
+                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{booking.pickupContactName || user.name}</Text>
               </View>
             </View>
-            <View style={styles.routeReviewLine}>
+            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
               <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
               <View style={styles.flex}>
-                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
-                <Text style={styles.mutedSmall}>{booking.dropContactName || copy.receiver}</Text>
+                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{booking.dropContactName || copy.receiver}</Text>
               </View>
             </View>
             <View style={styles.vehicleRouteActions}>
@@ -4150,7 +4711,7 @@ function BookScreen({
             </View>
           </View>
 
-          <View style={styles.vehicleFareList}>
+          <View style={[styles.vehicleFareList, responsive.isCompact && styles.vehicleFareListCompact]}>
             {vehicleChoices.map((vehicle) => {
               const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
               const selected = booking.vehicleId === vehicle.id || (!booking.vehicleId && selectedVehicle?.id === vehicle.id);
@@ -4180,43 +4741,43 @@ function BookScreen({
 
       {step === 4 && (
         <View>
-          <View style={styles.routeReviewCard}>
-            <View style={styles.routeReviewHeader}>
-              <Text style={styles.summaryTitle}>{copy.routeAndContacts}</Text>
-              <Pressable style={styles.changeRouteButton} onPress={() => setStep(1)}>
+          <View style={[styles.routeReviewCard, responsive.isCompact && styles.routeReviewCardCompact]}>
+            <View style={[styles.routeReviewHeader, responsive.isCompact && styles.routeReviewHeaderCompact]}>
+              <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeAndContacts}</Text>
+              <Pressable style={[styles.changeRouteButton, responsive.isCompact && styles.changeRouteButtonCompact]} onPress={() => setStep(1)}>
                 <Ionicons name="create-outline" size={14} color={colors.customer} />
-                <Text style={styles.changeRouteText}>{copy.changeRoute}</Text>
+                <Text style={[styles.changeRouteText, responsive.isCompact && styles.changeRouteTextCompact]}>{copy.changeRoute}</Text>
               </Pressable>
             </View>
-            <View style={styles.routeReviewLine}>
+            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
               <View style={styles.routeReviewDot} />
               <View style={styles.flex}>
-                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
-                <Text style={styles.mutedSmall}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
               </View>
             </View>
-            <View style={styles.routeReviewLine}>
+            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
               <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
               <View style={styles.flex}>
-                <Text style={styles.routeReviewTitle} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
-                <Text style={styles.mutedSmall}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
+                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
               </View>
             </View>
           </View>
 
           {selectedVehicle ? (
-            <View style={styles.vehicleFareCard}>
-              <View style={styles.vehicleFareIcon}>
+            <View style={[styles.vehicleFareCard, responsive.isCompact && styles.vehicleFareCardCompact]}>
+              <View style={[styles.vehicleFareIcon, responsive.isCompact && styles.vehicleFareIconCompact]}>
                 <Ionicons name={vehicleIcon(selectedVehicle)} size={26} color={colors.customer} />
               </View>
               <View style={styles.vehicleFareCopy}>
-                <Text style={styles.vehicleName}>{selectedVehicle.shortName}</Text>
-                <Text style={styles.vehicleFareMeta}>
+                <Text style={[styles.vehicleName, responsive.isCompact && styles.vehicleNameCompact]}>{selectedVehicle.shortName}</Text>
+                <Text style={[styles.vehicleFareMeta, responsive.isCompact && styles.vehicleFareMetaCompact]}>
                   {vehicleCapacityText(selectedVehicle, copy.upTo)} - {selectedFare?.etaMinutes || selectedVehicle.etaMinutes} min
                 </Text>
-                <Text style={styles.mutedSmall}>{copy.pricedAfterRoute}</Text>
+                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.pricedAfterRoute}</Text>
               </View>
-              <Text style={styles.vehicleFarePrice}>
+              <Text style={[styles.vehicleFarePrice, responsive.isCompact && styles.vehicleFarePriceCompact]}>
                 {selectedFare
                   ? money(selectedFare.total)
                   : typeof routeBillableKm === 'number'
@@ -4226,14 +4787,14 @@ function BookScreen({
             </View>
           ) : null}
 
-          <Pressable style={styles.notice} onPress={() => setGoodsRulesOpen(true)}>
+          <Pressable style={[styles.notice, responsive.isCompact && styles.noticeCompact]} onPress={() => setGoodsRulesOpen(true)}>
             <Ionicons name="warning" size={16} color={colors.amber} />
-            <Text style={styles.noticeText}>{copy.viewGoodsRules}</Text>
+            <Text style={[styles.noticeText, responsive.isCompact && styles.noticeTextCompact]}>{copy.viewGoodsRules}</Text>
             <Ionicons name="chevron-up" size={16} color={colors.amber} />
           </Pressable>
 
-          <View style={styles.bookingSummaryCard}>
-            <Text style={styles.summaryTitle}>{copy.bookingSummary}</Text>
+          <View style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}>
+            <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.bookingSummary}</Text>
             <SummaryRow
               label={copy.route}
               value={`${composeBookingAddress(booking.pickup, booking.pickupAddressLine)} to ${composeBookingAddress(booking.drop, booking.dropAddressLine)}`}
@@ -4250,6 +4811,7 @@ function BookScreen({
                 key={mode}
                 style={[
                   styles.payRow,
+                  responsive.isCompact && styles.payRowCompact,
                   booking.paymentMode === mode && styles.payRowActive
                 ]}
                 onPress={() => {
@@ -4262,8 +4824,8 @@ function BookScreen({
                   color={colors.customer}
                 />
                 <View style={styles.flex}>
-                  <Text style={styles.payText}>{mode.toUpperCase()}</Text>
-                  <Text style={styles.mutedSmall}>{subtitle}</Text>
+                  <Text style={[styles.payText, responsive.isCompact && styles.payTextCompact]}>{mode.toUpperCase()}</Text>
+                  <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{subtitle}</Text>
                 </View>
               </Pressable>
             );
@@ -4275,6 +4837,18 @@ function BookScreen({
         </View>
       )}
     </ScrollView>
+    {showGoodsKeyboardFooter ? (
+      <View style={[styles.bookingKeyboardFooter, responsive.isCompact && styles.bookingKeyboardFooterCompact]}>
+        <View style={[styles.bookingKeyboardFooterInner, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
+          <PrimaryButton
+            title={busy ? copy.estimating : copy.continue}
+            icon="arrow-forward"
+            onPress={continueFromGoodsDetails}
+          />
+        </View>
+      </View>
+    ) : null}
+    </KeyboardAvoidingView>
     {mapPickerTarget ? (
       <MapLocationPicker
         api={api}
@@ -4574,6 +5148,10 @@ function InlineExactLocationPicker({
       : Math.max(110, Math.min(150, responsive.height * 0.24))
     : responsive.isLandscape && responsive.isShort
       ? Math.max(160, Math.min(240, responsive.height * 0.45))
+    : responsive.isCompact && !expanded
+      ? responsive.isSmall
+        ? 258
+        : 288
     : Math.max(
         responsive.isShort ? 230 : 300,
         Math.min(410, responsive.height * (responsive.isLandscape ? 0.62 : 0.46))
@@ -4771,27 +5349,31 @@ function InlineExactLocationPicker({
           </View>
         )}
         <Pressable
-          style={styles.contactMapBackButton}
+          style={[styles.contactMapBackButton, responsive.isCompact && styles.contactMapBackButtonCompact]}
           onPress={onBack}
           hitSlop={5}
           accessibilityRole="button"
           accessibilityLabel={expanded ? 'Close expanded map' : 'Close location details'}
         >
-          <Ionicons name="arrow-back" size={22} color={colors.ink} />
+          <Ionicons name="arrow-back" size={responsive.isCompact ? 19 : 22} color={colors.ink} />
         </Pressable>
         <Pressable
-          style={styles.contactMapExpandButton}
+          style={[styles.contactMapExpandButton, responsive.isCompact && styles.contactMapExpandButtonCompact]}
           onPress={onToggleExpanded}
           hitSlop={3}
           accessibilityRole="button"
           accessibilityLabel={expanded ? 'Minimize map' : 'Maximize map'}
         >
-          <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={21} color={colors.customer} />
+          <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={responsive.isCompact ? 18 : 21} color={colors.customer} />
         </Pressable>
         {!compact || expanded ? (
           <View
             pointerEvents="none"
-            style={[styles.contactMapTitlePill, responsive.isShort && styles.contactMapTitlePillShort]}
+            style={[
+              styles.contactMapTitlePill,
+              responsive.isCompact && !expanded && styles.contactMapTitlePillCompact,
+              responsive.isShort && styles.contactMapTitlePillShort
+            ]}
           >
             <Text style={styles.contactMapTitleText} numberOfLines={2}>{title}</Text>
           </View>
@@ -4829,9 +5411,24 @@ function ContactDetailsModal({
   const [localError, setLocalError] = useState('');
   const [selectedAddressType, setSelectedAddressType] = useState<'home' | 'work' | 'other' | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible());
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [mapExpanded, setMapExpanded] = useState(false);
   const contactScrollRef = useRef<ScrollView | null>(null);
   const contactScrollResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fullContactViewportRef = useRef({ width: responsive.width, height: responsive.height });
+  if (Math.abs(fullContactViewportRef.current.width - responsive.width) > 1) {
+    fullContactViewportRef.current = { width: responsive.width, height: responsive.height };
+  } else if (!keyboardVisible && responsive.height > fullContactViewportRef.current.height) {
+    fullContactViewportRef.current.height = responsive.height;
+  }
+  const contactViewportKeyboardShrink = Math.max(
+    0,
+    fullContactViewportRef.current.height - responsive.height
+  );
+  const contactAndroidKeyboardPadding =
+    Platform.OS === 'android' && keyboardVisible
+      ? Math.max(0, keyboardHeight - contactViewportKeyboardShrink)
+      : 0;
   const isPickup = target === 'pickup';
   const mapHint = isPickup ? 'Your goods will be picked up here' : 'Your goods will be dropped here';
   const name = isPickup ? booking.pickupContactName : booking.dropContactName;
@@ -4854,15 +5451,17 @@ function ContactDetailsModal({
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSubscription = Keyboard.addListener(showEvent, () => {
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
       if (contactScrollResetTimerRef.current) {
         clearTimeout(contactScrollResetTimerRef.current);
         contactScrollResetTimerRef.current = null;
       }
       setKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates.height);
     });
     const hideSubscription = Keyboard.addListener(hideEvent, () => {
       setKeyboardVisible(false);
+      setKeyboardHeight(0);
       if (contactScrollResetTimerRef.current) clearTimeout(contactScrollResetTimerRef.current);
       contactScrollResetTimerRef.current = setTimeout(() => {
         requestAnimationFrame(() => contactScrollRef.current?.scrollTo({ y: 0, animated: false }));
@@ -4999,11 +5598,11 @@ function ContactDetailsModal({
 
   const contactFormCompactMap = keyboardVisible && !mapExpanded;
   const contactFooter = (
-    <View style={styles.contactPageFooter}>
+    <View style={[styles.contactPageFooter, responsive.isCompact && styles.contactPageFooterCompact]}>
       <View style={[styles.contactResponsiveFooterContent, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
         {localError ? <Text style={styles.contactFooterError}>{localError}</Text> : null}
-        <Pressable style={styles.contactConfirmButton} onPress={saveDetails}>
-          <Text style={styles.contactConfirmButtonText}>{primaryTitle || 'Confirm and continue'}</Text>
+        <Pressable style={[styles.contactConfirmButton, responsive.isCompact && styles.contactConfirmButtonCompact]} onPress={saveDetails}>
+          <Text style={[styles.contactConfirmButtonText, responsive.isCompact && styles.contactConfirmButtonTextCompact]}>{primaryTitle || 'Confirm and continue'}</Text>
         </Pressable>
       </View>
     </View>
@@ -5019,7 +5618,10 @@ function ContactDetailsModal({
       <AppStatusBar variant="light" />
       <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.contactPageShell}>
         <KeyboardAvoidingView
-          style={styles.contactPageKeyboard}
+          style={[
+            styles.contactPageKeyboard,
+            contactAndroidKeyboardPadding > 0 && { paddingBottom: contactAndroidKeyboardPadding }
+          ]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <InlineExactLocationPicker
@@ -5070,7 +5672,7 @@ function ContactDetailsModal({
           <>
             <ScrollView
               ref={contactScrollRef}
-              style={styles.contactPagePanel}
+              style={[styles.contactPagePanel, responsive.isCompact && styles.contactPagePanelCompact]}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -5089,20 +5691,20 @@ function ContactDetailsModal({
               ]}
             >
             <View style={styles.contactSheetHandle} />
-            <View style={styles.contactAddressHeader}>
-              <Ionicons name="location" size={24} color={locationColor} />
+            <View style={[styles.contactAddressHeader, responsive.isCompact && styles.contactAddressHeaderCompact]}>
+              <Ionicons name="location" size={responsive.isCompact ? 20 : 24} color={locationColor} />
               <View style={styles.flex}>
-                <Text style={styles.contactAddressTitle} numberOfLines={1}>{locationTitle}</Text>
-                <Text style={styles.contactAddressSubtitle} numberOfLines={1}>{locationSubtitle}</Text>
+                <Text style={[styles.contactAddressTitle, responsive.isCompact && styles.contactAddressTitleCompact]} numberOfLines={1}>{locationTitle}</Text>
+                <Text style={[styles.contactAddressSubtitle, responsive.isCompact && styles.contactAddressSubtitleCompact]} numberOfLines={1}>{locationSubtitle}</Text>
               </View>
               <Pressable
-                style={styles.contactChangeButton}
+                style={[styles.contactChangeButton, responsive.isCompact && styles.contactChangeButtonCompact]}
                 onPress={onChangeLocation || onClose}
                 hitSlop={7}
                 accessibilityRole="button"
                 accessibilityLabel="Change location"
               >
-                <Text style={styles.contactChangeButtonText}>Change</Text>
+                <Text style={[styles.contactChangeButtonText, responsive.isCompact && styles.contactChangeButtonTextCompact]}>Change</Text>
               </Pressable>
             </View>
             <ContactFormField
@@ -5123,7 +5725,7 @@ function ContactDetailsModal({
               onChangeText={(value) => updateContact(isPickup ? { pickupContactPhone: value } : { dropContactPhone: value })}
             />
             <Pressable
-              style={styles.contactMobileCheckRow}
+              style={[styles.contactMobileCheckRow, responsive.isCompact && styles.contactMobileCheckRowCompact]}
               onPress={usingMine ? enterManually : useMine}
               hitSlop={8}
               accessibilityRole="checkbox"
@@ -5131,10 +5733,10 @@ function ContactDetailsModal({
               accessibilityLabel={`Use my mobile number ${user.phone}`}
             >
               <Ionicons name={usingMine ? 'checkbox' : 'square-outline'} size={18} color={colors.customer} />
-              <Text style={styles.contactMobileCheckText}>Use my mobile number: {user.phone}</Text>
+              <Text style={[styles.contactMobileCheckText, responsive.isCompact && styles.contactMobileCheckTextCompact]}>Use my mobile number: {user.phone}</Text>
             </Pressable>
-            <Text style={styles.contactSaveAsLabel}>Save this address as</Text>
-            <View style={styles.contactTypeRow}>
+            <Text style={[styles.contactSaveAsLabel, responsive.isCompact && styles.contactSaveAsLabelCompact]}>Save this address as</Text>
+            <View style={[styles.contactTypeRow, responsive.isCompact && styles.contactTypeRowCompact]}>
               {[
                 { type: 'home' as const, icon: 'home' as const, label: 'Home' },
                 { type: 'work' as const, icon: 'business' as const, label: 'Shop' },
@@ -5144,7 +5746,11 @@ function ContactDetailsModal({
                 return (
                   <Pressable
                     key={option.type}
-                    style={[styles.contactTypeChip, active && styles.contactTypeChipActive]}
+                    style={[
+                      styles.contactTypeChip,
+                      responsive.isCompact && styles.contactTypeChipCompact,
+                      active && styles.contactTypeChipActive
+                    ]}
                     onPress={() => setSelectedAddressType(active ? null : option.type)}
                     hitSlop={6}
                     accessibilityRole="checkbox"
@@ -5152,7 +5758,11 @@ function ContactDetailsModal({
                     accessibilityLabel={`Save address as ${option.label}`}
                   >
                     <Ionicons name={option.icon} size={13} color={active ? colors.customer : colors.ink} />
-                    <Text style={[styles.contactTypeChipText, active && styles.contactTypeChipTextActive]}>
+                    <Text style={[
+                      styles.contactTypeChipText,
+                      responsive.isCompact && styles.contactTypeChipTextCompact,
+                      active && styles.contactTypeChipTextActive
+                    ]}>
                       {option.label}
                     </Text>
                   </Pressable>
@@ -5182,15 +5792,16 @@ function ContactFormField({
   keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
   icon?: keyof typeof Ionicons.glyphMap;
 }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.contactFormField}>
-      <Text style={styles.contactFormLabel}>{label}</Text>
-      <View style={styles.contactFormInputShell}>
+    <View style={[styles.contactFormField, responsive.isCompact && styles.contactFormFieldCompact]}>
+      <Text style={[styles.contactFormLabel, responsive.isCompact && styles.contactFormLabelCompact]}>{label}</Text>
+      <View style={[styles.contactFormInputShell, responsive.isCompact && styles.contactFormInputShellCompact]}>
         <TextInput
           value={value}
           onChangeText={onChangeText}
           keyboardType={keyboardType}
-          style={styles.contactFormInput}
+          style={[styles.contactFormInput, responsive.isCompact && styles.contactFormInputCompact]}
         />
         {icon ? <Ionicons name={icon} size={17} color={colors.customer} /> : null}
       </View>
@@ -5498,6 +6109,7 @@ function OrdersScreen({
   onBackToHome: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const activeOrderIds = new Set(activeOrders.map((order) => order.id));
   const pastOrders = orders.filter((order) => !activeOrderIds.has(order.id));
   const [detailOrderId, setDetailOrderId] = useState<string | undefined>();
@@ -5554,7 +6166,7 @@ function OrdersScreen({
   return (
     <ScrollView
       ref={ordersScrollRef}
-      contentContainerStyle={styles.scroll}
+      contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
     >
@@ -5570,9 +6182,9 @@ function OrdersScreen({
         />
       ) : (
         <>
-          <View style={styles.historyHeader}>
+          <View style={[styles.historyHeader, responsive.isCompact && styles.historyHeaderCompact]}>
             <SectionTitle title={`${copy.active} ${copy.orders}`} />
-            <Text style={styles.mutedSmall}>{activeOrders.length} {copy.orders.toLowerCase()}</Text>
+            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{activeOrders.length} {copy.orders.toLowerCase()}</Text>
           </View>
           {activeOrders.length ? (
             activeOrders.map((order) => (
@@ -5586,17 +6198,17 @@ function OrdersScreen({
               />
             ))
           ) : (
-            <View style={styles.noActiveOrderCard}>
-              <Ionicons name="navigate-outline" size={30} color={colors.muted} />
-              <Text style={styles.emptyTitle}>{copy.noActiveDelivery}</Text>
-              <Text style={styles.muted}>{copy.liveTrackingAppear}</Text>
+            <View style={[styles.noActiveOrderCard, responsive.isCompact && styles.noActiveOrderCardCompact]}>
+              <Ionicons name="navigate-outline" size={responsive.isCompact ? 25 : 30} color={colors.muted} />
+              <Text style={[styles.emptyTitle, responsive.isCompact && styles.emptyTitleCompact]}>{copy.noActiveDelivery}</Text>
+              <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact]}>{copy.liveTrackingAppear}</Text>
               <PrimaryButton title={copy.bookDelivery} icon="add" onPress={onBook} />
             </View>
           )}
 
-          <View style={styles.historyHeader}>
+          <View style={[styles.historyHeader, responsive.isCompact && styles.historyHeaderCompact]}>
             <SectionTitle title={copy.orderHistory} />
-            <Text style={styles.mutedSmall}>
+            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>
               {historyFiltersActive ? `${filteredPastOrders.length} / ${pastOrders.length}` : pastOrders.length} {copy.orders.toLowerCase()}
             </Text>
           </View>
@@ -5640,10 +6252,10 @@ function OrdersScreen({
                   />
                 ))
               ) : (
-                <View style={styles.emptyHistoryCard}>
-                  <Ionicons name="filter-outline" size={28} color={colors.muted} />
-                  <Text style={styles.emptyTitle}>{copy.noMatchingOrders}</Text>
-                  <Text style={styles.muted}>{copy.adjustOrderFilters}</Text>
+                <View style={[styles.emptyHistoryCard, responsive.isCompact && styles.emptyHistoryCardCompact]}>
+                  <Ionicons name="filter-outline" size={responsive.isCompact ? 24 : 28} color={colors.muted} />
+                  <Text style={[styles.emptyTitle, responsive.isCompact && styles.emptyTitleCompact]}>{copy.noMatchingOrders}</Text>
+                  <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact]}>{copy.adjustOrderFilters}</Text>
                   <Pressable
                     style={styles.orderHistoryClearButton}
                     onPress={() => {
@@ -5658,10 +6270,10 @@ function OrdersScreen({
               )}
             </>
           ) : (
-            <View style={styles.emptyHistoryCard}>
-              <Ionicons name="cube-outline" size={28} color={colors.muted} />
-              <Text style={styles.emptyTitle}>{copy.noPastOrders}</Text>
-              <Text style={styles.muted}>{copy.completedCancelledAppear}</Text>
+            <View style={[styles.emptyHistoryCard, responsive.isCompact && styles.emptyHistoryCardCompact]}>
+              <Ionicons name="cube-outline" size={responsive.isCompact ? 24 : 28} color={colors.muted} />
+              <Text style={[styles.emptyTitle, responsive.isCompact && styles.emptyTitleCompact]}>{copy.noPastOrders}</Text>
+              <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact]}>{copy.completedCancelledAppear}</Text>
             </View>
           )}
         </>
@@ -5689,32 +6301,33 @@ function OrderDetailsPanel({
 }) {
   const copy = useCopy();
   const language = useLanguage();
+  const responsive = useResponsiveLayout();
   const countdown = useOrderCountdown(order);
   const orderActive = isActiveOrder(order);
   const cancellable = isCustomerCancellableOrder(order);
 
   return (
     <View>
-      <View style={styles.liveOrderPanel}>
-        <View style={styles.liveOrderHeader}>
-          <View style={styles.liveOrderIcon}>
-            <Ionicons name="cube" size={22} color={colors.white} />
+      <View style={[styles.liveOrderPanel, responsive.isCompact && styles.liveOrderPanelCompact]}>
+        <View style={[styles.liveOrderHeader, responsive.isCompact && styles.liveOrderHeaderCompact]}>
+          <View style={[styles.liveOrderIcon, responsive.isCompact && styles.liveOrderIconCompact]}>
+            <Ionicons name="cube" size={responsive.isCompact ? 18 : 22} color={colors.white} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.liveOrderTitle}>{orderActive ? copy.activeDelivery : copy.orderDetails}</Text>
-            <Text style={styles.liveOrderNo}>{order.orderNo}</Text>
+            <Text style={[styles.liveOrderTitle, responsive.isCompact && styles.liveOrderTitleCompact]}>{orderActive ? copy.activeDelivery : copy.orderDetails}</Text>
+            <Text style={[styles.liveOrderNo, responsive.isCompact && styles.liveOrderNoCompact]}>{order.orderNo}</Text>
           </View>
           <View style={styles.orderDetailHeaderActions}>
             <Badge label={statusLabel(language, order.status)} />
             {onClose ? (
               <Pressable
-                style={styles.orderDetailClose}
+                style={[styles.orderDetailClose, responsive.isCompact && styles.orderDetailCloseCompact]}
                 onPress={onClose}
                 hitSlop={9}
                 accessibilityRole="button"
                 accessibilityLabel="Close order details"
               >
-                <Ionicons name="close" size={16} color={colors.ink} />
+                <Ionicons name="close" size={responsive.isCompact ? 14 : 16} color={colors.ink} />
               </Pressable>
             ) : null}
           </View>
@@ -5729,58 +6342,66 @@ function OrderDetailsPanel({
           partnerLocation={orderActive ? order.partnerLocation : undefined}
         />
 
-        <View style={styles.liveRouteCard}>
-          <View style={styles.liveRouteLine}>
-            <View style={[styles.liveRouteDot, styles.liveRoutePickupDot]} />
+        <View style={[styles.liveRouteCard, responsive.isCompact && styles.liveRouteCardCompact]}>
+          <View style={[styles.liveRouteLine, responsive.isCompact && styles.liveRouteLineCompact]}>
+            <View style={[styles.liveRouteDot, responsive.isCompact && styles.liveRouteDotCompact, styles.liveRoutePickupDot]} />
             <View style={styles.flex}>
-              <Text style={styles.liveRouteLabel}>{copy.pickup}</Text>
-              <Text style={styles.liveRouteText} numberOfLines={1}>{order.pickup.label}</Text>
+              <Text style={[styles.liveRouteLabel, responsive.isCompact && styles.liveRouteLabelCompact]}>{copy.pickup}</Text>
+              <Text style={[styles.liveRouteText, responsive.isCompact && styles.liveRouteTextCompact]} numberOfLines={1}>{order.pickup.label}</Text>
             </View>
           </View>
           {order.extraStops.map((stop, index) => (
-            <View key={`${order.id}-detail-stop-${index}`} style={styles.liveRouteLine}>
-              <View style={[styles.liveRouteDot, styles.liveRouteStopDot]} />
+            <View key={`${order.id}-detail-stop-${index}`} style={[styles.liveRouteLine, responsive.isCompact && styles.liveRouteLineCompact]}>
+              <View style={[styles.liveRouteDot, responsive.isCompact && styles.liveRouteDotCompact, styles.liveRouteStopDot]} />
               <View style={styles.flex}>
-                <Text style={styles.liveRouteLabel}>{copy.stop} {index + 1}</Text>
-                <Text style={styles.liveRouteText} numberOfLines={1}>{stop.label}</Text>
+                <Text style={[styles.liveRouteLabel, responsive.isCompact && styles.liveRouteLabelCompact]}>{copy.stop} {index + 1}</Text>
+                <Text style={[styles.liveRouteText, responsive.isCompact && styles.liveRouteTextCompact]} numberOfLines={1}>{stop.label}</Text>
               </View>
             </View>
           ))}
-          <View style={styles.liveRouteLine}>
-            <View style={[styles.liveRouteDot, styles.liveRouteDropDot]} />
+          <View style={[styles.liveRouteLine, responsive.isCompact && styles.liveRouteLineCompact]}>
+            <View style={[styles.liveRouteDot, responsive.isCompact && styles.liveRouteDotCompact, styles.liveRouteDropDot]} />
             <View style={styles.flex}>
-              <Text style={styles.liveRouteLabel}>{copy.drop}</Text>
-              <Text style={styles.liveRouteText} numberOfLines={1}>{order.drop.label}</Text>
+              <Text style={[styles.liveRouteLabel, responsive.isCompact && styles.liveRouteLabelCompact]}>{copy.drop}</Text>
+              <Text style={[styles.liveRouteText, responsive.isCompact && styles.liveRouteTextCompact]} numberOfLines={1}>{order.drop.label}</Text>
             </View>
           </View>
         </View>
 
-        <View style={styles.liveOrderMetrics}>
-          <View style={styles.liveOrderMetric}>
-            <Text style={styles.liveOrderMetricValue}>{order.vehicle.shortName}</Text>
-            <Text style={styles.liveOrderMetricLabel}>{copy.vehicle}</Text>
+        <View style={[styles.liveOrderMetrics, responsive.isCompact && styles.liveOrderMetricsCompact]}>
+          <View style={[styles.liveOrderMetric, responsive.isCompact && styles.liveOrderMetricCompact]}>
+            <Text style={[styles.liveOrderMetricValue, responsive.isCompact && styles.liveOrderMetricValueCompact]}>{order.vehicle.shortName}</Text>
+            <Text style={[styles.liveOrderMetricLabel, responsive.isCompact && styles.liveOrderMetricLabelCompact]}>{copy.vehicle}</Text>
           </View>
-          <View style={styles.liveOrderMetric}>
-            <Text style={styles.liveOrderMetricValue}>{order.weightKg} kg</Text>
-            <Text style={styles.liveOrderMetricLabel}>{goodsLabel(language, order.goodsType)}</Text>
+          <View style={[styles.liveOrderMetric, responsive.isCompact && styles.liveOrderMetricCompact]}>
+            <Text style={[styles.liveOrderMetricValue, responsive.isCompact && styles.liveOrderMetricValueCompact]}>{order.weightKg} kg</Text>
+            <Text style={[styles.liveOrderMetricLabel, responsive.isCompact && styles.liveOrderMetricLabelCompact]}>{goodsLabel(language, order.goodsType)}</Text>
           </View>
-          <View style={styles.liveOrderMetric}>
-            <Text style={styles.liveOrderMetricValue}>{money(order.fare.total)}</Text>
-            <Text style={styles.liveOrderMetricLabel} numberOfLines={1}>
+          <View style={[styles.liveOrderMetric, responsive.isCompact && styles.liveOrderMetricCompact]}>
+            <Text style={[styles.liveOrderMetricValue, responsive.isCompact && styles.liveOrderMetricValueCompact]}>{money(order.fare.total)}</Text>
+            <Text style={[styles.liveOrderMetricLabel, responsive.isCompact && styles.liveOrderMetricLabelCompact]} numberOfLines={1}>
               {order.paymentMode.toUpperCase()} - {order.paymentStatus.toUpperCase()}
             </Text>
           </View>
         </View>
 
         {countdown ? (
-          <View style={[styles.countdownCard, countdown.delayed && styles.countdownCardDelayed]}>
+          <View style={[
+            styles.countdownCard,
+            responsive.isCompact && styles.countdownCardCompact,
+            countdown.delayed && styles.countdownCardDelayed
+          ]}>
             <Ionicons
               name={countdown.delayed ? 'alert-circle' : countdown.pendingPickup ? 'cube-outline' : 'timer-outline'}
-              size={19}
+              size={responsive.isCompact ? 16 : 19}
               color={countdown.delayed ? colors.red : colors.customer}
             />
             <View style={styles.flex}>
-              <Text style={[styles.countdownValue, countdown.delayed && styles.countdownValueDelayed]}>
+              <Text style={[
+                styles.countdownValue,
+                responsive.isCompact && styles.countdownValueCompact,
+                countdown.delayed && styles.countdownValueDelayed
+              ]}>
                 {countdown.delayed ? copy.runningLate : countdown.pendingPickup ? copy.countdownBegins : countdown.label}
               </Text>
             </View>
@@ -5788,7 +6409,7 @@ function OrderDetailsPanel({
         ) : null}
 
         {order.partner ? (
-          <View style={styles.assignedPartnerRow}>
+          <View style={[styles.assignedPartnerRow, responsive.isCompact && styles.assignedPartnerRowCompact]}>
             <View style={styles.driverAvatar}>
               <Text style={styles.driverAvatarText}>{order.partner.initials}</Text>
             </View>
@@ -5799,36 +6420,36 @@ function OrderDetailsPanel({
             </View>
           </View>
         ) : orderActive ? (
-          <View style={styles.searchingPartnerRow}>
+          <View style={[styles.searchingPartnerRow, responsive.isCompact && styles.searchingPartnerRowCompact]}>
             <ActivityIndicator size="small" color={colors.customer} />
-            <Text style={styles.searchingPartnerText}>{copy.findingNearbyPartner}</Text>
+            <Text style={[styles.searchingPartnerText, responsive.isCompact && styles.searchingPartnerTextCompact]}>{copy.findingNearbyPartner}</Text>
           </View>
         ) : null}
 
         {tripOtp?.pickup || tripOtp?.drop ? (
-          <View style={styles.ordersOtpPanel}>
+          <View style={[styles.ordersOtpPanel, responsive.isCompact && styles.ordersOtpPanelCompact]}>
             <View style={styles.ordersOtpTitleRow}>
               <Ionicons name="key" size={16} color={colors.customer} />
-              <Text style={styles.ordersOtpTitle}>{copy.deliveryOtp}</Text>
+              <Text style={[styles.ordersOtpTitle, responsive.isCompact && styles.ordersOtpTitleCompact]}>{copy.deliveryOtp}</Text>
             </View>
             <View style={styles.ordersOtpRow}>
               {tripOtp.pickup ? (
-                <View style={styles.compactOtpBox}>
-                  <Text style={styles.mutedSmall}>{copy.pickupOtp}</Text>
-                  <Text style={styles.compactOtpText}>{tripOtp.pickup}</Text>
+                <View style={[styles.compactOtpBox, responsive.isCompact && styles.compactOtpBoxDense]}>
+                  <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.pickupOtp}</Text>
+                  <Text style={[styles.compactOtpText, responsive.isCompact && styles.compactOtpTextDense]}>{tripOtp.pickup}</Text>
                 </View>
               ) : null}
               {tripOtp.drop ? (
-                <View style={styles.compactOtpBox}>
-                  <Text style={styles.mutedSmall}>{copy.dropOtp}</Text>
-                  <Text style={styles.compactOtpText}>{tripOtp.drop}</Text>
+                <View style={[styles.compactOtpBox, responsive.isCompact && styles.compactOtpBoxDense]}>
+                  <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.dropOtp}</Text>
+                  <Text style={[styles.compactOtpText, responsive.isCompact && styles.compactOtpTextDense]}>{tripOtp.drop}</Text>
                 </View>
               ) : null}
             </View>
           </View>
         ) : null}
 
-        <View style={styles.orderActionBar}>
+        <View style={[styles.orderActionBar, responsive.isCompact && styles.orderActionBarCompact]}>
           <OrderActionButton title={copy.refresh} icon="refresh" tone="primary" onPress={onRefresh} />
           {onShare && orderActive ? <OrderActionButton title={copy.share} icon="share-social" onPress={onShare} /> : null}
           {onCancel && cancellable ? (
@@ -5839,10 +6460,10 @@ function OrderDetailsPanel({
 
       <FareCard fare={order.fare} />
 
-      <View style={styles.timelinePanel}>
+      <View style={[styles.timelinePanel, responsive.isCompact && styles.timelinePanelCompact]}>
         <View style={styles.timelinePanelHeader}>
-          <Text style={styles.cardTitle}>{copy.track}</Text>
-          <Text style={styles.mutedSmall}>{statusLabel(language, order.status)}</Text>
+          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact]}>{copy.track}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{statusLabel(language, order.status)}</Text>
         </View>
         <Timeline items={order.timeline} />
       </View>
@@ -5898,6 +6519,7 @@ function WalletScreen({
   onCoupon: () => Promise<{ addedCoins: number; alreadyApplied?: boolean }>;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const [couponMessage, setCouponMessage] = useState('');
   const [couponMessageKind, setCouponMessageKind] = useState<'success' | 'error'>('success');
   const recentCoinLedger = wallet.coinLedger.slice(0, 7);
@@ -5921,39 +6543,43 @@ function WalletScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.walletCoinsCard}>
-          <View style={styles.walletCoinsHeader}>
-            <View style={styles.walletCoinsIcon}>
-              <Ionicons name="wallet-outline" size={21} color={colors.customer} />
+    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+        <View style={[styles.walletCoinsCard, responsive.isCompact && styles.walletCoinsCardCompact]}>
+          <View style={[styles.walletCoinsHeader, responsive.isCompact && styles.walletCoinsHeaderCompact]}>
+            <View style={[styles.walletCoinsIcon, responsive.isCompact && styles.walletCoinsIconCompact]}>
+              <Ionicons name="wallet-outline" size={responsive.isCompact ? 18 : 21} color={colors.customer} />
             </View>
             <View style={styles.flex}>
-              <Text style={styles.walletCoinsEyebrow}>{copy.indieryCoins}</Text>
-              <Text style={styles.walletCoinsCaption}>{copy.useCoinsDiscount}</Text>
+              <Text style={[styles.walletCoinsEyebrow, responsive.isCompact && styles.walletCoinsEyebrowCompact]}>{copy.indieryCoins}</Text>
+              <Text style={[styles.walletCoinsCaption, responsive.isCompact && styles.walletCoinsCaptionCompact]}>{copy.useCoinsDiscount}</Text>
             </View>
           </View>
 
-          <View style={styles.walletCoinsBalanceRow}>
-            <View style={styles.walletCoinsBalanceMain}>
-              <Text style={styles.walletCoinsValue}>{wallet.coins}</Text>
-              <Text style={styles.walletCoinsAvailable}>{copy.coinsAvailable}</Text>
+          <View style={[styles.walletCoinsBalanceRow, responsive.isCompact && styles.walletCoinsBalanceRowCompact]}>
+            <View style={[styles.walletCoinsBalanceMain, responsive.isCompact && styles.walletCoinsBalanceMainCompact]}>
+              <Text style={[styles.walletCoinsValue, responsive.isCompact && styles.walletCoinsValueCompact]}>{wallet.coins}</Text>
+              <Text style={[styles.walletCoinsAvailable, responsive.isCompact && styles.walletCoinsAvailableCompact]}>{copy.coinsAvailable}</Text>
             </View>
-            <View style={styles.walletCoinsDiscountBox}>
-              <Ionicons name="sparkles" size={16} color={colors.green} />
+            <View style={[styles.walletCoinsDiscountBox, responsive.isCompact && styles.walletCoinsDiscountBoxCompact]}>
+              <Ionicons name="sparkles" size={responsive.isCompact ? 14 : 16} color={colors.green} />
               <View style={styles.flex}>
-                <Text style={styles.walletCoinsDiscountValue}>{money(nextOrderDiscount)}</Text>
-                <Text style={styles.walletCoinsDiscount}>{copy.coinDiscountNextOrders}</Text>
+                <Text style={[styles.walletCoinsDiscountValue, responsive.isCompact && styles.walletCoinsDiscountValueCompact]}>{money(nextOrderDiscount)}</Text>
+                <Text style={[styles.walletCoinsDiscount, responsive.isCompact && styles.walletCoinsDiscountCompact]}>{copy.coinDiscountNextOrders}</Text>
               </View>
             </View>
           </View>
 
           <Pressable
-            style={[styles.walletCouponButton, busy && styles.walletCouponButtonBusy]}
+            style={[
+              styles.walletCouponButton,
+              responsive.isCompact && styles.walletCouponButtonCompact,
+              busy && styles.walletCouponButtonBusy
+            ]}
             onPress={applyFirst50}
             disabled={busy}
           >
             {busy ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="gift-outline" size={17} color={colors.customer} />}
-            <Text style={styles.walletCouponText}>{busy ? copy.applying : `${copy.applyCoupon} FIRST50`}</Text>
+            <Text style={[styles.walletCouponText, responsive.isCompact && styles.walletCouponTextCompact]}>{busy ? copy.applying : `${copy.applyCoupon} FIRST50`}</Text>
           </Pressable>
           {couponMessage ? (
             <Text style={couponMessageKind === 'success' ? styles.walletCouponSuccess : styles.walletCouponError}>
@@ -5965,7 +6591,7 @@ function WalletScreen({
 
         <SectionTitle title={copy.coinActivity} />
         {recentCoinLedger.length ? (
-          <View style={styles.coinActivityCard}>
+          <View style={[styles.coinActivityCard, responsive.isCompact && styles.coinActivityCardCompact]}>
             {recentCoinLedger.map((item, index) => (
               <CoinActivityRow
                 key={item.id}
@@ -5986,19 +6612,32 @@ function WalletScreen({
 
 function CoinActivityRow({ item, showDivider = false }: { item: LedgerItem; showDivider?: boolean }) {
   const isCredit = item.kind === 'credit';
+  const responsive = useResponsiveLayout();
   return (
-    <View style={[styles.coinActivityRow, showDivider && styles.coinActivityRowDivider]}>
-      <View style={[styles.coinActivityIcon, isCredit ? styles.coinActivityIconCredit : styles.coinActivityIconDebit]}>
-        <Ionicons name={isCredit ? 'chevron-up' : 'chevron-down'} size={18} color={isCredit ? colors.green : colors.red} />
+    <View style={[
+      styles.coinActivityRow,
+      responsive.isCompact && styles.coinActivityRowCompact,
+      showDivider && styles.coinActivityRowDivider
+    ]}>
+      <View style={[
+        styles.coinActivityIcon,
+        responsive.isCompact && styles.coinActivityIconCompact,
+        isCredit ? styles.coinActivityIconCredit : styles.coinActivityIconDebit
+      ]}>
+        <Ionicons name={isCredit ? 'chevron-up' : 'chevron-down'} size={responsive.isCompact ? 15 : 18} color={isCredit ? colors.green : colors.red} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.coinActivityTitle}>{item.title}</Text>
-        <Text style={styles.coinActivityDate}>{formatCoinActivityDate(item.createdAt)}</Text>
+        <Text style={[styles.coinActivityTitle, responsive.isCompact && styles.coinActivityTitleCompact]}>{item.title}</Text>
+        <Text style={[styles.coinActivityDate, responsive.isCompact && styles.coinActivityDateCompact]}>{formatCoinActivityDate(item.createdAt)}</Text>
       </View>
-      <Text style={[styles.coinActivityAmount, isCredit ? styles.coinActivityAmountCredit : styles.coinActivityAmountDebit]}>
+      <Text style={[
+        styles.coinActivityAmount,
+        responsive.isCompact && styles.coinActivityAmountCompact,
+        isCredit ? styles.coinActivityAmountCredit : styles.coinActivityAmountDebit
+      ]}>
         {isCredit ? '+' : '-'}{item.amount}
       </Text>
-      <View style={styles.coinActivityBadge}>
+      <View style={[styles.coinActivityBadge, responsive.isCompact && styles.coinActivityBadgeCompact]}>
         <Ionicons name="ellipse" size={7} color={colors.white} />
       </View>
     </View>
@@ -6027,6 +6666,7 @@ function AccountScreen({
   onBackToHome: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const completedOrders = data.orders.filter((order) => order.status === 'delivered').length;
   const activeOrders = data.orders.filter((order) => !['delivered', 'cancelled'].includes(order.status)).length;
   const savedAddresses = data.user.customerProfile?.savedAddresses ?? [];
@@ -6122,34 +6762,34 @@ function AccountScreen({
 
     return (
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]} keyboardShouldPersistTaps="handled">
           <AccountDetailHeader title={title} subtitle={subtitle} onBack={() => openPage('overview')} />
 
           {page === 'personal' ? (
-            <View style={styles.accountDetailCard}>
-              <View style={styles.accountProfilePreview}>
-                <View style={styles.accountAvatarSmall}>
-                  <Text style={styles.accountAvatarText}>{data.user.initials}</Text>
+            <View style={[styles.accountDetailCard, responsive.isCompact && styles.accountDetailCardCompact]}>
+              <View style={[styles.accountProfilePreview, responsive.isCompact && styles.accountProfilePreviewCompact]}>
+                <View style={[styles.accountAvatarSmall, responsive.isCompact && styles.accountAvatarSmallCompact]}>
+                  <Text style={[styles.accountAvatarText, responsive.isCompact && styles.accountAvatarTextCompact]}>{data.user.initials}</Text>
                 </View>
                 <View style={styles.flex}>
-                  <Text style={styles.accountMenuTitle}>{data.user.name}</Text>
-                  <Text style={styles.accountMenuSubtitle}>{data.user.phone}</Text>
+                  <Text style={[styles.accountMenuTitle, responsive.isCompact && styles.accountMenuTitleCompact]}>{data.user.name}</Text>
+                  <Text style={[styles.accountMenuSubtitle, responsive.isCompact && styles.accountMenuSubtitleCompact]}>{data.user.phone}</Text>
                 </View>
-                <View style={styles.accountVerifiedBadge}>
+                <View style={[styles.accountVerifiedBadge, responsive.isCompact && styles.accountVerifiedBadgeCompact]}>
                   <Ionicons name="checkmark-circle" size={14} color={colors.green} />
-                  <Text style={styles.accountVerifiedText}>{copy.verified}</Text>
+                  <Text style={[styles.accountVerifiedText, responsive.isCompact && styles.accountVerifiedTextCompact]}>{copy.verified}</Text>
                 </View>
               </View>
               <Field label={copy.name} value={name} onChangeText={setName} />
               <Field label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" />
               <Field label={copy.city} value={city} onChangeText={setCity} />
               <Field label={copy.mobileNumber} value={data.user.phone} editable={false} keyboardType="phone-pad" />
-        <View style={styles.accountInfoStrip}>
+        <View style={[styles.accountInfoStrip, responsive.isCompact && styles.accountInfoStripCompact]}>
           <Ionicons name="shield-checkmark" size={19} color={colors.customer} />
-          <Text style={styles.accountInfoText}>{copy.mobileLinkedText}</Text>
+          <Text style={[styles.accountInfoText, responsive.isCompact && styles.accountInfoTextCompact]}>{copy.mobileLinkedText}</Text>
         </View>
               {localError ? <Text style={styles.accountEditError}>{localError}</Text> : null}
-              <View style={styles.accountEditActions}>
+              <View style={[styles.accountEditActions, responsive.isCompact && styles.accountEditActionsCompact]}>
                 <SecondaryButton title={copy.cancel} icon="close" onPress={cancelEditDetails} />
                 <PrimaryButton title={busy ? copy.saving : copy.save} icon="checkmark" onPress={submitDetails} />
               </View>
@@ -6208,56 +6848,56 @@ function AccountScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.accountHero}>
-        <View style={styles.accountHeroTop}>
+    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+      <View style={[styles.accountHero, responsive.isCompact && styles.accountHeroCompact]}>
+        <View style={[styles.accountHeroTop, responsive.isCompact && styles.accountHeroTopCompact]}>
           <View>
-            <Text style={styles.accountEyebrow}>{copy.account}</Text>
+            <Text style={[styles.accountEyebrow, responsive.isCompact && styles.accountEyebrowCompact]}>{copy.account}</Text>
           </View>
         </View>
-        <View style={styles.accountIdentityCard}>
-          <View style={styles.accountAvatar}>
-            <Text style={styles.accountAvatarText}>{data.user.initials}</Text>
+        <View style={[styles.accountIdentityCard, responsive.isCompact && styles.accountIdentityCardCompact]}>
+          <View style={[styles.accountAvatar, responsive.isCompact && styles.accountAvatarCompact]}>
+            <Text style={[styles.accountAvatarText, responsive.isCompact && styles.accountAvatarTextCompact]}>{data.user.initials}</Text>
           </View>
           <View style={styles.flex}>
-            <Text style={styles.accountName}>{data.user.name}</Text>
-            <Text style={styles.accountSubtext}>{data.user.phone}</Text>
-            <Text style={styles.accountSubtext}>{data.user.city}</Text>
+            <Text style={[styles.accountName, responsive.isCompact && styles.accountNameCompact]}>{data.user.name}</Text>
+            <Text style={[styles.accountSubtext, responsive.isCompact && styles.accountSubtextCompact]}>{data.user.phone}</Text>
+            <Text style={[styles.accountSubtext, responsive.isCompact && styles.accountSubtextCompact]}>{data.user.city}</Text>
           </View>
           <Pressable
-            style={styles.accountEditButton}
+            style={[styles.accountEditButton, responsive.isCompact && styles.accountEditButtonCompact]}
             onPress={() => openPage('personal')}
             hitSlop={5}
             accessibilityRole="button"
             accessibilityLabel="Edit personal details"
           >
-            <Ionicons name="create-outline" size={18} color={colors.customer} />
+            <Ionicons name="create-outline" size={responsive.isCompact ? 16 : 18} color={colors.customer} />
           </Pressable>
         </View>
       </View>
 
-      <View style={styles.accountStatsRow}>
-        <View style={styles.accountStatBox}>
-          <Text style={styles.accountStatValue}>{data.orders.length}</Text>
-          <Text style={styles.accountStatLabel}>{copy.orders}</Text>
+      <View style={[styles.accountStatsRow, responsive.isCompact && styles.accountStatsRowCompact]}>
+        <View style={[styles.accountStatBox, responsive.isCompact && styles.accountStatBoxCompact]}>
+          <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{data.orders.length}</Text>
+          <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.orders}</Text>
         </View>
-        <View style={styles.accountStatBox}>
-          <Text style={styles.accountStatValue}>{activeOrders}</Text>
-          <Text style={styles.accountStatLabel}>{copy.active}</Text>
+        <View style={[styles.accountStatBox, responsive.isCompact && styles.accountStatBoxCompact]}>
+          <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{activeOrders}</Text>
+          <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.active}</Text>
         </View>
-        <View style={styles.accountStatBox}>
-          <Text style={styles.accountStatValue}>{completedOrders}</Text>
-          <Text style={styles.accountStatLabel}>{copy.done}</Text>
+        <View style={[styles.accountStatBox, responsive.isCompact && styles.accountStatBoxCompact]}>
+          <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{completedOrders}</Text>
+          <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.done}</Text>
         </View>
       </View>
 
-      <Pressable style={styles.enterpriseCard} onPress={() => openPage('enterprise')}>
-        <View style={styles.enterpriseIcon}>
-          <Ionicons name="business" size={24} color={colors.white} />
+      <Pressable style={[styles.enterpriseCard, responsive.isCompact && styles.enterpriseCardCompact]} onPress={() => openPage('enterprise')}>
+        <View style={[styles.enterpriseIcon, responsive.isCompact && styles.enterpriseIconCompact]}>
+          <Ionicons name="business" size={responsive.isCompact ? 20 : 24} color={colors.white} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.enterpriseTitle}>{copy.enterprisesTitle}</Text>
-          <Text style={styles.enterpriseText}>{copy.enterprisesText}</Text>
+          <Text style={[styles.enterpriseTitle, responsive.isCompact && styles.enterpriseTitleCompact]}>{copy.enterprisesTitle}</Text>
+          <Text style={[styles.enterpriseText, responsive.isCompact && styles.enterpriseTextCompact]}>{copy.enterprisesText}</Text>
         </View>
         <Ionicons name="chevron-forward" size={19} color={colors.customer} />
       </Pressable>
@@ -6306,20 +6946,21 @@ function AccountScreen({
 }
 
 function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.accountDetailHeader}>
+    <View style={[styles.accountDetailHeader, responsive.isCompact && styles.accountDetailHeaderCompact]}>
       <Pressable
-        style={styles.mapPickerClose}
+        style={[styles.mapPickerClose, responsive.isCompact && styles.mapPickerCloseCompact]}
         onPress={onBack}
         hitSlop={3}
         accessibilityRole="button"
         accessibilityLabel="Go back"
       >
-        <Ionicons name="arrow-back" size={21} color={colors.ink} />
+        <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.ink} />
       </Pressable>
       <View style={styles.flex}>
-        <Text style={styles.accountDetailTitle}>{title}</Text>
-        <Text style={styles.accountDetailSubtitle}>{subtitle}</Text>
+        <Text style={[styles.accountDetailTitle, responsive.isCompact && styles.accountDetailTitleCompact]}>{title}</Text>
+        <Text style={[styles.accountDetailSubtitle, responsive.isCompact && styles.accountDetailSubtitleCompact]}>{subtitle}</Text>
       </View>
     </View>
   );
@@ -6327,6 +6968,7 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
 
 function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const businessFeatures: Array<{
     icon: keyof typeof Ionicons.glyphMap;
     title: string;
@@ -6356,58 +6998,58 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   const businessTypes = [copy.retailStores, copy.wholesalers, copy.restaurants, copy.manufacturers, copy.offices, copy.ecommerceSellers];
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
-      <View style={styles.enterprisePageHeader}>
+    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+      <View style={[styles.enterprisePageHeader, responsive.isCompact && styles.enterprisePageHeaderCompact]}>
         <Pressable
-          style={styles.mapPickerClose}
+          style={[styles.mapPickerClose, responsive.isCompact && styles.mapPickerCloseCompact]}
           onPress={onBack}
           hitSlop={3}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={21} color={colors.ink} />
+          <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.ink} />
         </Pressable>
         <View style={styles.flex}>
-          <Text style={styles.enterprisePageTitle}>{copy.enterprisesTitle}</Text>
+          <Text style={[styles.enterprisePageTitle, responsive.isCompact && styles.enterprisePageTitleCompact]}>{copy.enterprisesTitle}</Text>
         </View>
       </View>
 
-      <View style={styles.enterpriseHeroPanel}>
-        <View style={styles.enterpriseHeroIcon}>
-          <Ionicons name="business" size={30} color={colors.white} />
+      <View style={[styles.enterpriseHeroPanel, responsive.isCompact && styles.enterpriseHeroPanelCompact]}>
+        <View style={[styles.enterpriseHeroIcon, responsive.isCompact && styles.enterpriseHeroIconCompact]}>
+          <Ionicons name="business" size={responsive.isCompact ? 24 : 30} color={colors.white} />
         </View>
-        <Text style={styles.enterpriseHeroTitle}>{copy.moveGoodsBusiness}</Text>
-        <Text style={styles.enterpriseHeroText}>{copy.enterpriseHeroText}</Text>
+        <Text style={[styles.enterpriseHeroTitle, responsive.isCompact && styles.enterpriseHeroTitleCompact]}>{copy.moveGoodsBusiness}</Text>
+        <Text style={[styles.enterpriseHeroText, responsive.isCompact && styles.enterpriseHeroTextCompact]}>{copy.enterpriseHeroText}</Text>
       </View>
 
       <SectionTitle title={copy.whatYouGet} />
-      <View style={styles.enterpriseFeatureGrid}>
+      <View style={[styles.enterpriseFeatureGrid, responsive.isCompact && styles.enterpriseFeatureGridCompact]}>
         {businessFeatures.map((feature) => (
           <View
             key={feature.title}
-            style={styles.enterpriseFeatureCard}
+            style={[styles.enterpriseFeatureCard, responsive.isCompact && styles.enterpriseFeatureCardCompact]}
           >
-            <View style={styles.enterpriseFeatureIcon}>
-              <Ionicons name={feature.icon} size={18} color={colors.customer} />
+            <View style={[styles.enterpriseFeatureIcon, responsive.isCompact && styles.enterpriseFeatureIconCompact]}>
+              <Ionicons name={feature.icon} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
             </View>
-            <Text style={styles.enterpriseFeatureTitle}>{feature.title}</Text>
-            <Text style={styles.enterpriseFeatureText}>{feature.subtitle}</Text>
+            <Text style={[styles.enterpriseFeatureTitle, responsive.isCompact && styles.enterpriseFeatureTitleCompact]}>{feature.title}</Text>
+            <Text style={[styles.enterpriseFeatureText, responsive.isCompact && styles.enterpriseFeatureTextCompact]}>{feature.subtitle}</Text>
           </View>
         ))}
       </View>
 
       <SectionTitle title={copy.bestFor} />
-      <View style={styles.enterpriseChipWrap}>
+      <View style={[styles.enterpriseChipWrap, responsive.isCompact && styles.enterpriseChipWrapCompact]}>
         {businessTypes.map((item) => (
-          <View key={item} style={styles.enterpriseChip}>
-            <Text style={styles.enterpriseChipText}>{item}</Text>
+          <View key={item} style={[styles.enterpriseChip, responsive.isCompact && styles.enterpriseChipCompact]}>
+            <Text style={[styles.enterpriseChipText, responsive.isCompact && styles.enterpriseChipTextCompact]}>{item}</Text>
           </View>
         ))}
       </View>
 
-      <View style={styles.enterpriseContactCard}>
-        <Text style={styles.enterpriseFeatureTitle}>{copy.talkEnterprises}</Text>
-        <Text style={styles.enterpriseFeatureText}>{copy.shareBusinessRoutes}</Text>
+      <View style={[styles.enterpriseContactCard, responsive.isCompact && styles.enterpriseContactCardCompact]}>
+        <Text style={[styles.enterpriseFeatureTitle, responsive.isCompact && styles.enterpriseFeatureTitleCompact]}>{copy.talkEnterprises}</Text>
+        <Text style={[styles.enterpriseFeatureText, responsive.isCompact && styles.enterpriseFeatureTextCompact]}>{copy.shareBusinessRoutes}</Text>
         <View style={styles.row}>
           <SecondaryButton title={copy.emailButton} icon="mail-outline" onPress={() => Linking.openURL('mailto:support@indiery.in?subject=Indiery%20Enterprises')} />
           <PrimaryButton title={copy.callButton} icon="call-outline" onPress={() => Linking.openURL('tel:+919000000000')} />
@@ -6427,26 +7069,31 @@ function SavedAddressesSection({
   onDeleteAddress: (addressId: string) => Promise<void>;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
     <View>
       <SectionTitle title={copy.savedAddresses} />
       {addresses.length ? (
-        <View style={styles.savedAddressList}>
+        <View style={[styles.savedAddressList, responsive.isCompact && styles.savedAddressListCompact]}>
           {addresses.map((address, index) => (
             <View
               key={address.id}
-              style={[styles.savedAddressRow, index === addresses.length - 1 && styles.savedAddressRowLast]}
+              style={[
+                styles.savedAddressRow,
+                responsive.isCompact && styles.savedAddressRowCompact,
+                index === addresses.length - 1 && styles.savedAddressRowLast
+              ]}
             >
-              <View style={styles.savedAddressIcon}>
-                <Ionicons name={address.type === 'home' ? 'home' : address.type === 'work' ? 'briefcase' : 'location'} size={18} color={colors.customer} />
+              <View style={[styles.savedAddressIcon, responsive.isCompact && styles.savedAddressIconCompact]}>
+                <Ionicons name={address.type === 'home' ? 'home' : address.type === 'work' ? 'briefcase' : 'location'} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
               </View>
               <View style={styles.flex}>
-                <Text style={styles.savedAddressTitle}>{address.label}</Text>
-                <Text style={styles.savedAddressSubtitle}>{address.addressLine || address.address}</Text>
-                <Text style={styles.savedAddressMeta} numberOfLines={1}>{address.address}</Text>
+                <Text style={[styles.savedAddressTitle, responsive.isCompact && styles.savedAddressTitleCompact]}>{address.label}</Text>
+                <Text style={[styles.savedAddressSubtitle, responsive.isCompact && styles.savedAddressSubtitleCompact]}>{address.addressLine || address.address}</Text>
+                <Text style={[styles.savedAddressMeta, responsive.isCompact && styles.savedAddressMetaCompact]} numberOfLines={1}>{address.address}</Text>
               </View>
               <Pressable
-                style={styles.savedAddressDeleteButton}
+                style={[styles.savedAddressDeleteButton, responsive.isCompact && styles.savedAddressDeleteButtonCompact]}
                 disabled={busy}
                 onPress={() => onDeleteAddress(address.id)}
                 hitSlop={6}
@@ -6460,10 +7107,10 @@ function SavedAddressesSection({
           ))}
         </View>
       ) : (
-        <View style={styles.savedAddressEmpty}>
-          <Ionicons name="bookmark-outline" size={24} color={colors.muted} />
-          <Text style={styles.savedAddressEmptyTitle}>{copy.noSavedAddresses}</Text>
-          <Text style={styles.mutedSmall}>{copy.savePickupDropAddresses}</Text>
+        <View style={[styles.savedAddressEmpty, responsive.isCompact && styles.savedAddressEmptyCompact]}>
+          <Ionicons name="bookmark-outline" size={responsive.isCompact ? 21 : 24} color={colors.muted} />
+          <Text style={[styles.savedAddressEmptyTitle, responsive.isCompact && styles.savedAddressEmptyTitleCompact]}>{copy.noSavedAddresses}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.savePickupDropAddresses}</Text>
         </View>
       )}
     </View>
@@ -6478,17 +7125,26 @@ function LanguagePanel({
   onSelect: (language: AppLanguage) => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.accountPanel}>
+    <View style={[styles.accountPanel, responsive.isCompact && styles.accountPanelCompact]}>
       {languageOptions.map((option) => {
         const active = selected === option.id;
         return (
-          <Pressable key={option.id} style={[styles.languageOption, active && styles.languageOptionActive]} onPress={() => onSelect(option.id)}>
+          <Pressable
+            key={option.id}
+            style={[
+              styles.languageOption,
+              responsive.isCompact && styles.languageOptionCompact,
+              active && styles.languageOptionActive
+            ]}
+            onPress={() => onSelect(option.id)}
+          >
             <View style={styles.flex}>
-              <Text style={styles.languageTitle}>{option.id === 'hi' ? copy.languageHindi : copy.languageEnglish}</Text>
-              <Text style={styles.languageSubtitle}>{languageNativeLabel(option.id)}</Text>
+              <Text style={[styles.languageTitle, responsive.isCompact && styles.languageTitleCompact]}>{option.id === 'hi' ? copy.languageHindi : copy.languageEnglish}</Text>
+              <Text style={[styles.languageSubtitle, responsive.isCompact && styles.languageSubtitleCompact]}>{languageNativeLabel(option.id)}</Text>
             </View>
-            <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={18} color={colors.customer} />
+            <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
           </Pressable>
         );
       })}
@@ -6498,6 +7154,7 @@ function LanguagePanel({
 
 function SupportPanel() {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const supportActions: Array<{
     icon: keyof typeof Ionicons.glyphMap;
     title: string;
@@ -6525,17 +7182,17 @@ function SupportPanel() {
   ];
 
   return (
-    <View style={styles.accountPanel}>
+    <View style={[styles.accountPanel, responsive.isCompact && styles.accountPanelCompact]}>
       {supportActions.map((item) => (
-        <Pressable key={item.title} style={styles.supportActionRow} onPress={item.action}>
-          <View style={styles.accountMenuIcon}>
-            <Ionicons name={item.icon} size={18} color={colors.customer} />
+        <Pressable key={item.title} style={[styles.supportActionRow, responsive.isCompact && styles.supportActionRowCompact]} onPress={item.action}>
+          <View style={[styles.accountMenuIcon, responsive.isCompact && styles.accountMenuIconCompact]}>
+            <Ionicons name={item.icon} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
           </View>
           <View style={styles.flex}>
-            <Text style={styles.accountMenuTitle}>{item.title}</Text>
-            <Text style={styles.accountMenuSubtitle}>{item.subtitle}</Text>
+            <Text style={[styles.accountMenuTitle, responsive.isCompact && styles.accountMenuTitleCompact]}>{item.title}</Text>
+            <Text style={[styles.accountMenuSubtitle, responsive.isCompact && styles.accountMenuSubtitleCompact]}>{item.subtitle}</Text>
           </View>
-          <Ionicons name="open-outline" size={17} color={colors.muted} />
+          <Ionicons name="open-outline" size={responsive.isCompact ? 15 : 17} color={colors.muted} />
         </Pressable>
       ))}
     </View>
@@ -6555,16 +7212,25 @@ function AccountMenuRow({
   onPress?: () => void;
   last?: boolean;
 }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.accountMenuRow, last && styles.accountMenuRowLast]} onPress={onPress} disabled={!onPress}>
-      <View style={styles.accountMenuIcon}>
-        <Ionicons name={icon} size={18} color={colors.customer} />
+    <Pressable
+      style={[
+        styles.accountMenuRow,
+        responsive.isCompact && styles.accountMenuRowCompact,
+        last && styles.accountMenuRowLast
+      ]}
+      onPress={onPress}
+      disabled={!onPress}
+    >
+      <View style={[styles.accountMenuIcon, responsive.isCompact && styles.accountMenuIconCompact]}>
+        <Ionicons name={icon} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
       </View>
       <View style={styles.flex}>
-        <Text style={styles.accountMenuTitle}>{title}</Text>
-        <Text style={styles.accountMenuSubtitle}>{subtitle}</Text>
+        <Text style={[styles.accountMenuTitle, responsive.isCompact && styles.accountMenuTitleCompact]}>{title}</Text>
+        <Text style={[styles.accountMenuSubtitle, responsive.isCompact && styles.accountMenuSubtitleCompact]}>{subtitle}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+      <Ionicons name="chevron-forward" size={responsive.isCompact ? 15 : 17} color={colors.muted} />
     </Pressable>
   );
 }
@@ -6594,6 +7260,7 @@ function PolicyCard({
   onPress: () => void;
 }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   const icons: Record<LegalPolicy['id'], keyof typeof Ionicons.glyphMap> = {
     privacy: 'lock-closed',
     terms: 'document-text',
@@ -6601,17 +7268,17 @@ function PolicyCard({
   };
 
   return (
-    <View style={styles.policyCard}>
-      <Pressable style={styles.policyHeader} onPress={onPress}>
-        <View style={styles.policyIcon}>
-          <Ionicons name={icons[policy.id]} size={18} color={colors.customer} />
+    <View style={[styles.policyCard, responsive.isCompact && styles.policyCardCompact]}>
+      <Pressable style={[styles.policyHeader, responsive.isCompact && styles.policyHeaderCompact]} onPress={onPress}>
+        <View style={[styles.policyIcon, responsive.isCompact && styles.policyIconCompact]}>
+          <Ionicons name={icons[policy.id]} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
         </View>
         <View style={styles.flex}>
-          <Text style={styles.cardTitle}>{policy.title}</Text>
-          <Text style={styles.mutedSmall}>{copy.updated} {policy.updatedAt}</Text>
-          <Text style={styles.policySummary}>{policy.summary}</Text>
+          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact]}>{policy.title}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.updated} {policy.updatedAt}</Text>
+          <Text style={[styles.policySummary, responsive.isCompact && styles.policySummaryCompact]}>{policy.summary}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        <Ionicons name="chevron-forward" size={responsive.isCompact ? 16 : 18} color={colors.muted} />
       </Pressable>
     </View>
   );
@@ -6619,18 +7286,19 @@ function PolicyCard({
 
 function AccountPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: () => void }) {
   const copy = useCopy();
+  const responsive = useResponsiveLayout();
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
+    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
       <AccountDetailHeader title={policy.title} subtitle={`${copy.updated} ${policy.updatedAt}`} onBack={onBack} />
-      <View style={styles.policyDetailHero}>
-        <Ionicons name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'} size={24} color={colors.customer} />
-        <Text style={styles.policyDetailSummary}>{policy.summary}</Text>
+      <View style={[styles.policyDetailHero, responsive.isCompact && styles.policyDetailHeroCompact]}>
+        <Ionicons name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'} size={responsive.isCompact ? 21 : 24} color={colors.customer} />
+        <Text style={[styles.policyDetailSummary, responsive.isCompact && styles.policyDetailSummaryCompact]}>{policy.summary}</Text>
       </View>
       {policy.sections.map((section) => (
-        <View key={section.heading} style={styles.policyDetailSection}>
-          <Text style={styles.policyHeading}>{section.heading}</Text>
+        <View key={section.heading} style={[styles.policyDetailSection, responsive.isCompact && styles.policyDetailSectionCompact]}>
+          <Text style={[styles.policyHeading, responsive.isCompact && styles.policyHeadingCompact]}>{section.heading}</Text>
           {section.body.map((line) => (
-            <Text key={line} style={styles.policyText}>{line}</Text>
+            <Text key={line} style={[styles.policyText, responsive.isCompact && styles.policyTextCompact]}>{line}</Text>
           ))}
         </View>
       ))}
@@ -6649,6 +7317,7 @@ function BottomTabs({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
+  const compact = responsive.isCompact;
   const { bottom: bottomInset } = useSafeAreaInsets();
   const tabs: Array<[Tab, keyof typeof Ionicons.glyphMap, string]> = [
     ['home', 'home', copy.homeTab],
@@ -6657,24 +7326,28 @@ function BottomTabs({
     ['account', 'person', copy.accountTab]
   ];
   return (
-    <View style={[styles.tabs, { height: responsive.tabBarHeight + bottomInset, paddingBottom: bottomInset }]}>
+    <View style={[
+      styles.tabs,
+      compact && styles.tabsCompact,
+      { height: responsive.tabBarHeight + bottomInset, paddingBottom: bottomInset }
+    ]}>
       <View style={[styles.tabsInner, { maxWidth: Math.min(720, responsive.contentMaxWidth) }]}>
         {tabs.map(([key, icon, label]) => {
           const selected = active === key;
           return (
             <Pressable
               key={key}
-              style={styles.tab}
+              style={[styles.tab, compact && styles.tabCompact]}
               onPress={() => onChange(key)}
               accessibilityRole="tab"
               accessibilityLabel={label}
               accessibilityState={{ selected }}
             >
               <View>
-                <Ionicons name={icon} size={22} color={selected ? colors.customer : colors.muted} />
+                <Ionicons name={icon} size={compact ? 19 : 22} color={selected ? colors.customer : colors.muted} />
                 {key === 'orders' && activeOrder ? <View style={styles.tabDot} /> : null}
               </View>
-              <Text numberOfLines={2} style={[styles.tabText, selected && styles.tabTextActive]}>{label}</Text>
+              <Text numberOfLines={2} style={[styles.tabText, compact && styles.tabTextCompact, selected && styles.tabTextActive]}>{label}</Text>
             </Pressable>
           );
         })}
@@ -6684,19 +7357,21 @@ function BottomTabs({
 }
 
 function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={styles.primaryButton} onPress={onPress}>
-      <Ionicons name={icon} size={17} color={colors.white} />
-      <Text style={styles.primaryButtonText}>{title}</Text>
+    <Pressable style={[styles.primaryButton, responsive.isCompact && styles.primaryButtonCompact]} onPress={onPress}>
+      <Ionicons name={icon} size={responsive.isCompact ? 15 : 17} color={colors.white} />
+      <Text style={[styles.primaryButtonText, responsive.isCompact && styles.primaryButtonTextCompact]}>{title}</Text>
     </Pressable>
   );
 }
 
 function SecondaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+  const responsive = useResponsiveLayout();
   return (
-    <Pressable style={styles.secondaryButton} onPress={onPress}>
-      <Ionicons name={icon} size={17} color={colors.ink} />
-      <Text style={styles.secondaryButtonText}>{title}</Text>
+    <Pressable style={[styles.secondaryButton, responsive.isCompact && styles.secondaryButtonCompact]} onPress={onPress}>
+      <Ionicons name={icon} size={responsive.isCompact ? 15 : 17} color={colors.ink} />
+      <Text style={[styles.secondaryButtonText, responsive.isCompact && styles.secondaryButtonTextCompact]}>{title}</Text>
     </Pressable>
   );
 }
@@ -6714,22 +7389,28 @@ function Field({
   keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
   editable?: boolean;
 }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+    <View style={[styles.fieldGroup, responsive.isCompact && styles.fieldGroupCompact]}>
+      <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact]}>{label}</Text>
       <TextInput
         value={value}
         editable={editable}
         onChangeText={onChangeText}
         keyboardType={keyboardType}
-        style={[styles.input, !editable && styles.inputReadonly]}
+        style={[
+          styles.input,
+          responsive.isCompact && styles.inputCompact,
+          !editable && styles.inputReadonly
+        ]}
       />
     </View>
   );
 }
 
 function SectionTitle({ title }: { title: string }) {
-  return <Text style={styles.sectionTitle}>{title}</Text>;
+  const responsive = useResponsiveLayout();
+  return <Text style={[styles.sectionTitle, responsive.isCompact && styles.sectionTitleCompact]}>{title}</Text>;
 }
 
 function StatCard({ title, value, tone }: { title: string; value: string; tone: 'purple' | 'green' | 'amber' }) {
@@ -6765,6 +7446,7 @@ function OrderCard({
 }) {
   const copy = useCopy();
   const language = useLanguage();
+  const responsive = useResponsiveLayout();
   if (compact) {
     const compactContent = (
       <>
@@ -6802,60 +7484,60 @@ function OrderCard({
 
   const content = (
     <>
-      <View style={styles.orderCardHeader}>
+      <View style={[styles.orderCardHeader, responsive.isCompact && styles.orderCardHeaderCompact]}>
         <View>
-          <Text style={styles.orderNo}>{order.orderNo}</Text>
-          <Text style={styles.orderCardDate}>{formatOrderCardDateTime(order.createdAt)}</Text>
+          <Text style={[styles.orderNo, responsive.isCompact && styles.orderNoCompact]}>{order.orderNo}</Text>
+          <Text style={[styles.orderCardDate, responsive.isCompact && styles.orderCardDateCompact]}>{formatOrderCardDateTime(order.createdAt)}</Text>
         </View>
         <Badge label={statusLabel(language, order.status)} />
       </View>
 
-      <View style={styles.orderCardRouteBox}>
-        <View style={styles.route}>
-          <View style={styles.routeDot} />
+      <View style={[styles.orderCardRouteBox, responsive.isCompact && styles.orderCardRouteBoxCompact]}>
+        <View style={[styles.route, responsive.isCompact && styles.routeCompact]}>
+          <View style={[styles.routeDot, responsive.isCompact && styles.routeDotCompact]} />
           <View style={styles.flex}>
-            <Text style={styles.routeText} numberOfLines={1}>{order.pickup.label}</Text>
-            <Text style={styles.mutedSmall}>{copy.pickup}</Text>
+            <Text style={[styles.routeText, responsive.isCompact && styles.routeTextCompact]} numberOfLines={1}>{order.pickup.label}</Text>
+            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.pickup}</Text>
           </View>
         </View>
         {order.extraStops?.map((stop, index) => (
-          <View key={`${order.id}-stop-${index}`} style={styles.route}>
-            <View style={styles.routeDotStop} />
+          <View key={`${order.id}-stop-${index}`} style={[styles.route, responsive.isCompact && styles.routeCompact]}>
+            <View style={[styles.routeDotStop, responsive.isCompact && styles.routeDotCompact]} />
             <View style={styles.flex}>
-              <Text style={styles.routeText} numberOfLines={1}>{stop.label}</Text>
-              <Text style={styles.mutedSmall}>{copy.stop} {index + 1}</Text>
+              <Text style={[styles.routeText, responsive.isCompact && styles.routeTextCompact]} numberOfLines={1}>{stop.label}</Text>
+              <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.stop} {index + 1}</Text>
             </View>
           </View>
         ))}
-        <View style={styles.route}>
-          <View style={[styles.routeDot, styles.routeDotGreen]} />
+        <View style={[styles.route, responsive.isCompact && styles.routeCompact]}>
+          <View style={[styles.routeDot, responsive.isCompact && styles.routeDotCompact, styles.routeDotGreen]} />
           <View style={styles.flex}>
-            <Text style={styles.routeText} numberOfLines={1}>{order.drop.label}</Text>
-            <Text style={styles.mutedSmall}>{copy.drop}</Text>
+            <Text style={[styles.routeText, responsive.isCompact && styles.routeTextCompact]} numberOfLines={1}>{order.drop.label}</Text>
+            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.drop}</Text>
           </View>
         </View>
       </View>
 
-      <View style={styles.orderCardFareRow}>
-        <View style={styles.orderCardVehicleArt}>
+      <View style={[styles.orderCardFareRow, responsive.isCompact && styles.orderCardFareRowCompact]}>
+        <View style={[styles.orderCardVehicleArt, responsive.isCompact && styles.orderCardVehicleArtCompact]}>
           <VehicleMiniArt vehicle={order.vehicle} />
         </View>
         <View style={styles.orderCardFareCopy}>
-          <Text style={styles.orderCardVehicle}>{order.vehicle.shortName}</Text>
-          <Text style={styles.mutedSmall}>{order.distanceKm} km - {goodsLabel(language, order.goodsType)}</Text>
+          <Text style={[styles.orderCardVehicle, responsive.isCompact && styles.orderCardVehicleCompact]}>{order.vehicle.shortName}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{order.distanceKm} km - {goodsLabel(language, order.goodsType)}</Text>
         </View>
-        <Text style={styles.priceText}>{money(order.fare.total)}</Text>
+        <Text style={[styles.priceText, responsive.isCompact && styles.priceTextCompact]}>{money(order.fare.total)}</Text>
       </View>
       {actionTitle && onActionPress ? (
         <Pressable
-          style={styles.orderCardActionButton}
+          style={[styles.orderCardActionButton, responsive.isCompact && styles.orderCardActionButtonCompact]}
           onPress={onActionPress}
           hitSlop={4}
           accessibilityRole="button"
           accessibilityLabel={actionTitle}
         >
           <Ionicons name={actionIcon} size={13} color={colors.white} />
-          <Text style={styles.orderCardActionText}>{actionTitle}</Text>
+          <Text style={[styles.orderCardActionText, responsive.isCompact && styles.orderCardActionTextCompact]}>{actionTitle}</Text>
         </Pressable>
       ) : null}
     </>
@@ -6863,23 +7545,24 @@ function OrderCard({
 
   if (onPress) {
     return (
-      <Pressable style={[styles.orderCard, selected && styles.orderCardSelected]} onPress={onPress}>
+      <Pressable style={[styles.orderCard, responsive.isCompact && styles.orderCardCompact, selected && styles.orderCardSelected]} onPress={onPress}>
         {content}
       </Pressable>
     );
   }
 
   return (
-    <View style={[styles.orderCard, selected && styles.orderCardSelected]}>
+    <View style={[styles.orderCard, responsive.isCompact && styles.orderCardCompact, selected && styles.orderCardSelected]}>
       {content}
     </View>
   );
 }
 
 function Badge({ label }: { label: string }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.badge}>
-      <Text style={styles.badgeText}>{label}</Text>
+    <View style={[styles.badge, responsive.isCompact && styles.badgeCompact]}>
+      <Text style={[styles.badgeText, responsive.isCompact && styles.badgeTextCompact]}>{label}</Text>
     </View>
   );
 }
@@ -6895,10 +7578,12 @@ function OrderActionButton({
   tone?: 'default' | 'primary' | 'danger';
   onPress: () => void;
 }) {
+  const responsive = useResponsiveLayout();
   return (
     <Pressable
       style={[
         styles.orderActionButton,
+        responsive.isCompact && styles.orderActionButtonCompact,
         tone === 'primary' && styles.orderActionButtonPrimary,
         tone === 'danger' && styles.orderActionButtonDanger
       ]}
@@ -6906,12 +7591,13 @@ function OrderActionButton({
     >
       <Ionicons
         name={icon}
-        size={16}
+        size={responsive.isCompact ? 14 : 16}
         color={tone === 'primary' ? colors.white : tone === 'danger' ? colors.red : colors.ink}
       />
       <Text
         style={[
           styles.orderActionButtonText,
+          responsive.isCompact && styles.orderActionButtonTextCompact,
           tone === 'primary' && styles.orderActionButtonTextPrimary,
           tone === 'danger' && styles.orderActionButtonTextDanger
         ]}
@@ -6939,7 +7625,7 @@ function MapPreview({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
-  const mapHeight = 218;
+  const mapHeight = responsive.isSmall ? 158 : responsive.isCompact ? 172 : 218;
   const hasLiveLocation = liveTracking && typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
   const routePoints = [pickup, ...extraStops, drop]
@@ -6988,7 +7674,7 @@ function MapPreview({
 
   return (
     <View
-      style={[styles.map, { height: mapHeight }]}
+      style={[styles.map, responsive.isCompact && styles.mapCompact, { height: mapHeight }]}
       onLayout={(event) => {
         const { width, height } = event.nativeEvent.layout;
         setMapSize((current) => (
@@ -7066,29 +7752,31 @@ function MapPreview({
       )}
       {liveTracking ? (
         <>
-          <View style={styles.etaChip}>
-            <Text style={styles.etaValue}>{eta}</Text>
-            <Text style={styles.etaLabel}>{copy.min}</Text>
+          <View style={[styles.etaChip, responsive.isCompact && styles.etaChipCompact]}>
+            <Text style={[styles.etaValue, responsive.isCompact && styles.etaValueCompact]}>{eta}</Text>
+            <Text style={[styles.etaLabel, responsive.isCompact && styles.etaLabelCompact]}>{copy.min}</Text>
           </View>
-          <View style={styles.liveChip}>
+          <View style={[styles.liveChip, responsive.isCompact && styles.liveChipCompact]}>
             <View style={[styles.liveDot, hasLiveLocation && styles.liveDotOn]} />
-            <Text style={styles.liveText}>{hasLiveLocation ? copy.liveGps : copy.waitingGps}</Text>
+            <Text style={[styles.liveText, responsive.isCompact && styles.liveTextCompact]}>{hasLiveLocation ? copy.liveGps : copy.waitingGps}</Text>
           </View>
         </>
       ) : null}
-      <Text style={styles.mapText} numberOfLines={1}>{pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}</Text>
+      <Text style={[styles.mapText, responsive.isCompact && styles.mapTextCompact]} numberOfLines={1}>{pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}</Text>
     </View>
   );
 }
 
 function Timeline({ items }: { items: Order['timeline'] }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, responsive.isCompact && styles.cardCompact]}>
       {items.map((item) => (
-        <View key={item.key} style={styles.timelineItem}>
+        <View key={item.key} style={[styles.timelineItem, responsive.isCompact && styles.timelineItemCompact]}>
           <View
             style={[
               styles.timelineDot,
+              responsive.isCompact && styles.timelineDotCompact,
               item.state === 'done' && styles.timelineDone,
               item.state === 'active' && styles.timelineActive
             ]}
@@ -7096,8 +7784,8 @@ function Timeline({ items }: { items: Order['timeline'] }) {
             {item.state === 'done' ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
           </View>
           <View style={styles.flex}>
-            <Text style={styles.timelineTitle}>{item.title}</Text>
-            <Text style={styles.mutedSmall}>{item.note}</Text>
+            <Text style={[styles.timelineTitle, responsive.isCompact && styles.timelineTitleCompact]}>{item.title}</Text>
+            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{item.note}</Text>
           </View>
         </View>
       ))}
@@ -7106,6 +7794,7 @@ function Timeline({ items }: { items: Order['timeline'] }) {
 }
 
 function FareCard({ fare }: { fare: FareBreakup }) {
+  const responsive = useResponsiveLayout();
   const waitingFare = fare as FareBreakup & {
     waitingCharge?: number;
     billableWaitingMinutes?: number;
@@ -7116,7 +7805,7 @@ function FareCard({ fare }: { fare: FareBreakup }) {
   const hasWaitingPolicy =
     typeof waitingFare.waitingFreeMinutes === 'number' && typeof waitingFare.waitingPerMinute === 'number';
   return (
-    <View style={styles.fareCard}>
+    <View style={[styles.fareCard, responsive.isCompact && styles.fareCardCompact]}>
       <FareRow label={`Distance charge (${fare.billableKm} billable km)`} value={money(fare.distance)} />
       <FareRow label="Order value" value={money(fare.orderValue)} />
       {waitingCharge > 0 ? (
@@ -7128,7 +7817,7 @@ function FareCard({ fare }: { fare: FareBreakup }) {
       <FareRow label="GST" value={money(fare.gst)} />
       <FareRow label="Coins" value={`-${money(fare.coins)}`} />
       {hasWaitingPolicy ? (
-        <Text style={styles.farePolicyText}>
+        <Text style={[styles.farePolicyText, responsive.isCompact && styles.farePolicyTextCompact]}>
           Waiting: {waitingFare.waitingFreeMinutes} min free, then {money(waitingFare.waitingPerMinute)}/min
         </Text>
       ) : null}
@@ -7139,19 +7828,21 @@ function FareCard({ fare }: { fare: FareBreakup }) {
 }
 
 function FareRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.between}>
-      <Text style={[styles.fareLabel, bold && styles.bold]}>{label}</Text>
-      <Text style={[styles.fareValue, bold && styles.bold]}>{value}</Text>
+    <View style={[styles.between, responsive.isCompact && styles.betweenCompact]}>
+      <Text style={[styles.fareLabel, responsive.isCompact && styles.fareLabelCompact, bold && styles.bold, bold && responsive.isCompact && styles.boldCompact]}>{label}</Text>
+      <Text style={[styles.fareValue, responsive.isCompact && styles.fareValueCompact, bold && styles.bold, bold && responsive.isCompact && styles.boldCompact]}>{value}</Text>
     </View>
   );
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
+  const responsive = useResponsiveLayout();
   return (
-    <View style={styles.summaryRow}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue} numberOfLines={2}>
+    <View style={[styles.summaryRow, responsive.isCompact && styles.summaryRowCompact]}>
+      <Text style={[styles.summaryLabel, responsive.isCompact && styles.summaryLabelCompact]}>{label}</Text>
+      <Text style={[styles.summaryValue, responsive.isCompact && styles.summaryValueCompact]} numberOfLines={2}>
         {value}
       </Text>
     </View>
@@ -7162,36 +7853,212 @@ const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
   loginShell: { flex: 1, backgroundColor: colors.white },
   authKeyboard: { flex: 1 },
+  authKeyboardFooter: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 22,
+    paddingTop: 10,
+    paddingBottom: 12,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8
+  },
+  androidKeyboardFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30
+  },
   authScrollViewport: { flex: 1 },
   authScroll: { flexGrow: 1, backgroundColor: colors.white },
   authScrollOtp: { paddingBottom: 24 },
+  loginPhoneLayout: { flex: 1, backgroundColor: colors.white },
+  loginPhoneKeyboardScrollContent: { paddingBottom: 106 },
+  loginPhoneFormContent: {
+    width: '100%',
+    alignSelf: 'center',
+    flexGrow: 1,
+    backgroundColor: colors.white,
+    paddingHorizontal: 22,
+    paddingTop: 30,
+    paddingBottom: 26
+  },
+  loginPhoneFormContentKeyboard: { paddingTop: 6, paddingBottom: 6 },
+  loginPhoneKeyboardTitle: { fontSize: 22, lineHeight: 26, marginBottom: 4 },
+  loginPhoneKeyboardFooter: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 22,
+    paddingTop: 10,
+    paddingBottom: 8,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8
+  },
+  loginPhoneKeyboardFooterInner: { width: '100%', alignSelf: 'center' },
+  loginPhoneKeyboardConsent: { marginTop: 7, paddingHorizontal: 0 },
+  loginProfileLayout: { flex: 1, backgroundColor: colors.white },
+  loginProfileFixedHeader: {
+    width: '100%',
+    alignSelf: 'center',
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEAF8',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 14
+  },
+  loginProfileFixedHeaderCompact: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 10
+  },
+  loginProfileHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12
+  },
+  loginProfileHeaderTopRowCompact: { marginBottom: 8 },
+  loginProfileFixedBackButton: { width: 34, height: 34, borderRadius: 11, marginBottom: 0 },
+  loginProfileFixedBackButtonCompact: { width: 30, height: 30, borderRadius: 10 },
+  loginProfileProgressPill: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 14,
+    backgroundColor: colors.customerLight,
+    paddingHorizontal: 10
+  },
+  loginProfileProgressPillCompact: { minHeight: 24, paddingHorizontal: 8 },
+  loginProfileProgressText: {
+    color: colors.customer,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase'
+  },
+  loginProfileHeadingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  loginProfileHeadingRowCompact: { gap: 9 },
+  loginProfileHeadingCopy: { flex: 1, paddingTop: 1 },
+  loginProfileFixedIcon: { width: 42, height: 42, borderRadius: 13, marginBottom: 0 },
+  loginProfileFixedIconCompact: { width: 36, height: 36, borderRadius: 11 },
+  loginProfileFixedKicker: { fontSize: 9, lineHeight: 11, marginBottom: 3 },
+  loginProfileFixedTitle: { fontSize: 23, lineHeight: 27, marginBottom: 3 },
+  loginProfileFixedSubtitle: { fontSize: 11, lineHeight: 16, marginBottom: 0 },
+  loginProfileFieldsViewport: { flex: 1, backgroundColor: '#F8F7FC' },
+  loginProfileFieldsContent: {
+    width: '100%',
+    alignSelf: 'center',
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 24
+  },
+  loginProfileFieldsContentCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 18
+  },
+  loginProfileFieldsContentKeyboard: { paddingBottom: 108 },
+  loginProfileAndroidKeyboardFooter: { bottom: 16 },
+  loginProfileFormCard: {
+    borderWidth: 1,
+    borderColor: '#E9E5F2',
+    borderRadius: 18,
+    backgroundColor: colors.white,
+    paddingHorizontal: 15,
+    paddingTop: 15,
+    paddingBottom: 3,
+    shadowColor: '#24134F',
+    shadowOpacity: 0.045,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2
+  },
+  loginProfileFormCardCompact: {
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingTop: 12
+  },
+  loginProfileFormTitle: { color: colors.ink, fontSize: 15, fontWeight: '700', marginBottom: 3 },
+  loginProfileFormHint: { color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15, marginBottom: 14 },
+  loginProfileFieldGroup: { marginBottom: 13 },
+  loginProfileFieldGroupCompact: { marginBottom: 10 },
+  loginProfileFieldLabel: { fontSize: 10, letterSpacing: 0.35, marginBottom: 6 },
+  loginProfileInputShell: {
+    minHeight: 52,
+    borderRadius: 12,
+    borderColor: '#E2DFEA',
+    paddingHorizontal: 10,
+    gap: 9
+  },
+  loginProfileInputShellCompact: {
+    minHeight: 46,
+    borderRadius: 11,
+    paddingHorizontal: 8,
+    gap: 8
+  },
+  loginProfileFieldIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: colors.customerLight,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  loginProfileFieldIconCompact: { width: 27, height: 27, borderRadius: 8 },
+  loginProfileFieldIconReadonly: { backgroundColor: '#ECEEF2' },
+  loginProfileInputText: { fontSize: 14, fontWeight: '600' },
+  loginProfileInlineAction: { marginTop: 14 },
+  loginProfileInlineActionCompact: { marginTop: 11 },
+  loginProfilePrivacyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 10
+  },
+  loginProfilePrivacyRowCompact: { marginTop: 8 },
+  loginProfilePrivacyText: { color: colors.muted, fontSize: 9, fontWeight: '500' },
   profileSetupScroll: { flexGrow: 1, backgroundColor: colors.white, paddingBottom: 32 },
   authResponsiveFrame: { width: '100%', alignSelf: 'center', flexGrow: 1 },
   loginHero: {
     width: '100%',
-    aspectRatio: 1.55,
-    backgroundColor: '#F8F6FF',
+    minHeight: 360,
+    backgroundColor: '#F1EDFF',
     justifyContent: 'flex-start',
     overflow: 'hidden'
   },
-  loginHeroImage: { position: 'absolute', left: 0, right: 0, bottom: 0, width: '100%', aspectRatio: 1448 / 1086 },
+  loginHeroImage: { position: 'absolute', top: 0, left: 0, width: '100%' },
   loginHeroWash: {
     position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: 'rgba(255,255,255,0.10)'
+    backgroundColor: 'rgba(255,255,255,0.06)'
   },
   loginBrandPanel: {
     alignSelf: 'flex-start',
     alignItems: 'flex-start',
     paddingHorizontal: 18,
     paddingTop: 18,
-    maxWidth: 190
+    maxWidth: 160
   },
-  loginBrandLogo: { width: 172, height: 54 },
-  loginHeroCaption: { color: colors.ink, fontSize: 14, fontWeight: '600', lineHeight: 19, marginTop: 10, maxWidth: 145 },
+  loginBrandLogo: { width: 140, height: 43 },
+  loginHeroCaption: { color: colors.ink, fontSize: 12, fontWeight: '600', lineHeight: 16, marginTop: 5, maxWidth: 140 },
   profileSetupHero: { minHeight: 190, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 22 },
   profileSetupHeroIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', marginBottom: 13, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   profileSetupHeroKicker: { color: colors.customer, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginBottom: 6 },
@@ -7231,6 +8098,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12
   },
+  phoneFieldGroupCompact: { marginBottom: 0 },
+  phoneInputShellCompact: { minHeight: 48 },
   countryCode: { color: colors.ink, fontSize: 14, fontWeight: '600', marginLeft: 7 },
   phoneDivider: { width: 1, height: 24, backgroundColor: colors.line, marginHorizontal: 10 },
   phoneInputText: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 12 },
@@ -7309,6 +8178,8 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 22
   },
+  appHeaderCompact: { paddingTop: 10, paddingBottom: 16 },
+  appHeaderSmall: { paddingTop: 8, paddingBottom: 14 },
   appHeaderInner: {
     width: '100%',
     alignSelf: 'center',
@@ -7317,10 +8188,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between'
   },
+  appHeaderInnerCompact: { paddingHorizontal: 16 },
   appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
   eyebrow: { color: '#DDD6FE', fontSize: 11, fontWeight: '600', letterSpacing: 1 },
+  eyebrowCompact: { fontSize: 9, letterSpacing: 0.8 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
   headerTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
+  headerTitleCompact: { fontSize: 19 },
+  headerTitleSmall: { fontSize: 18 },
   avatar: {
     width: 44,
     height: 44,
@@ -7329,7 +8204,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
+  avatarCompact: { width: 38, height: 38, borderRadius: 12 },
   avatarText: { color: colors.white, fontWeight: '600' },
+  avatarTextCompact: { fontSize: 13 },
   content: { flex: 1, width: '100%', alignSelf: 'center', marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
   homeContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F8FAFC' },
   homeShell: { flex: 1, backgroundColor: '#F8FAFC', overflow: 'hidden' },
@@ -7339,6 +8216,7 @@ const styles = StyleSheet.create({
   homePatternRoadTwo: { left: 98, right: -84, top: 220, transform: [{ rotate: '34deg' }] },
   homePatternRoadThree: { left: -76, right: -24, top: 384, transform: [{ rotate: '18deg' }] },
   homeScroll: { width: '100%', alignSelf: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 },
+  homeScrollCompact: { paddingTop: 9, paddingBottom: 18 },
   homeLocationCard: {
     minHeight: 72,
     borderRadius: 16,
@@ -7356,10 +8234,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 2
   },
+  homeLocationCardCompact: { minHeight: 58, borderRadius: 14, gap: 10, paddingHorizontal: 12, marginBottom: 10 },
   homeLocationIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  homeLocationIconCompact: { width: 28, height: 28, borderRadius: 14 },
   homeLocationIconSelected: { backgroundColor: colors.green },
   homeLocationLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  homeLocationLabelCompact: { fontSize: 9 },
   homeLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
+  homeLocationTitleCompact: { fontSize: 12, marginTop: 1 },
   homeLocationSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   pickupSearchShell: { flex: 1, backgroundColor: '#F8FAFC' },
   pickupSearchKeyboard: { flex: 1 },
@@ -7393,6 +8275,7 @@ const styles = StyleSheet.create({
   pickupSearchResultTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   pickupSearchResultSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   homeServiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  homeServiceGridCompact: { gap: 8 },
   homeServiceCard: {
     flexGrow: 1,
     flexShrink: 1,
@@ -7411,18 +8294,33 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 1
   },
+  homeServiceCardCompact: { minHeight: 116, borderRadius: 14, padding: 9 },
+  homeServiceCardSmall: { minHeight: 108, padding: 8 },
   homeServiceArt: { height: 76, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  homeServiceArtCompact: { height: 58 },
+  homeServiceArtSmall: { height: 53 },
   homeServiceArtHalo: { position: 'absolute', width: 104, height: 58, borderRadius: 29, opacity: 0.95 },
+  homeServiceArtHaloCompact: { width: 84, height: 46, borderRadius: 23 },
   homeServiceArtShadow: { position: 'absolute', bottom: 7, width: 64, height: 5, borderRadius: 5, opacity: 0.18 },
+  homeServiceArtShadowCompact: { bottom: 4, width: 52, height: 4 },
   homeVehicleImage: { width: 96, height: 70 },
+  homeVehicleImageCompact: { width: 78, height: 56 },
+  homeVehicleImageSmall: { width: 72, height: 52 },
   homeVehicleImageBike: { width: 92, height: 72 },
+  homeVehicleImageBikeCompact: { width: 76, height: 58 },
   homeVehicleImageLoader: { width: 90, height: 66, borderRadius: 10 },
   homeServiceFooter: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
   homeServiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  homeServiceTitleCompact: { fontSize: 13 },
+  homeServiceTitleSmall: { fontSize: 12 },
   homeServiceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 3 },
+  homeServiceSubtitleCompact: { fontSize: 10, lineHeight: 13, marginTop: 2 },
   homeAnnouncementHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 10 },
+  homeAnnouncementHeaderCompact: { marginTop: 12, marginBottom: 7 },
   homeAnnouncementTitle: { color: colors.muted, fontSize: 13, fontWeight: '600' },
+  homeAnnouncementTitleCompact: { fontSize: 11 },
   homeAnnouncementCarousel: { borderRadius: 16, overflow: 'hidden' },
+  homeAnnouncementCarouselCompact: { borderRadius: 14 },
   homeAnnouncementCard: {
     minHeight: 72,
     borderRadius: 16,
@@ -7434,9 +8332,13 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 13
   },
+  homeAnnouncementCardCompact: { minHeight: 58, borderRadius: 14, gap: 10, padding: 10 },
   homeAnnouncementIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  homeAnnouncementIconCompact: { width: 32, height: 32, borderRadius: 11 },
   homeAnnouncementCopy: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  homeAnnouncementCopyCompact: { fontSize: 12 },
   homeAnnouncementMeta: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 3 },
+  homeAnnouncementMetaCompact: { fontSize: 10, marginTop: 2 },
   homeDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 8 },
   homeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' },
   homeDotActive: { width: 18, backgroundColor: colors.ink },
@@ -7458,6 +8360,7 @@ const styles = StyleSheet.create({
   homeActiveRoute: { color: colors.ink, fontSize: 13, fontWeight: '600', marginBottom: 2 },
   homeActiveVehicle: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   scroll: { width: '100%', maxWidth: 1040, alignSelf: 'center', padding: 16, paddingBottom: 28 },
+  scrollCompact: { padding: 12, paddingBottom: 18 },
   customerHero: { backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 14 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
   heroTitle: { color: colors.ink, fontSize: 22, fontWeight: '700', lineHeight: 27, maxWidth: 230 },
@@ -7479,7 +8382,11 @@ const styles = StyleSheet.create({
   quickActionSecondary: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   quickActionSecondaryText: { color: colors.customer, fontSize: 14, fontWeight: '600' },
   rebookCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginTop: 14 },
+  rebookCardCompact: { gap: 10, borderRadius: 13, padding: 10, marginTop: 10 },
   rebookIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  rebookIconCompact: { width: 32, height: 32, borderRadius: 10 },
+  cardTitleCompact: { fontSize: 13 },
+  mutedSmallCompact: { fontSize: 10, lineHeight: 13 },
   promiseBand: { flexDirection: 'row', gap: 8, marginTop: 14 },
   promiseItem: { flex: 1, minHeight: 42, borderRadius: 12, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6 },
   promiseText: { color: colors.green, fontSize: 10, fontWeight: '600', textAlign: 'center' },
@@ -7488,6 +8395,7 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 20, fontWeight: '600' },
   statLabel: { fontSize: 11, fontWeight: '500', marginTop: 4 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.ink, marginTop: 20, marginBottom: 10 },
+  sectionTitleCompact: { fontSize: 14, marginTop: 14, marginBottom: 8 },
   ordersHeroHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -7516,51 +8424,81 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 2
   },
+  liveOrderPanelCompact: { borderRadius: 15, padding: 10, marginBottom: 10 },
   liveOrderHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 11, marginBottom: 12 },
+  liveOrderHeaderCompact: { gap: 8, marginBottom: 8 },
   liveOrderIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  liveOrderIconCompact: { width: 34, height: 34, borderRadius: 11 },
   liveOrderTitle: { color: colors.ink, fontSize: 16, fontWeight: '600' },
+  liveOrderTitleCompact: { fontSize: 14 },
   liveOrderNo: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  liveOrderNoCompact: { fontSize: 10, marginTop: 1 },
   orderDetailHeaderActions: { maxWidth: '100%', marginLeft: 'auto', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
   orderDetailClose: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  orderDetailCloseCompact: { width: 27, height: 27, borderRadius: 9 },
   liveRouteCard: { borderRadius: 15, backgroundColor: '#F8FAFC', padding: 12, marginBottom: 12 },
+  liveRouteCardCompact: { borderRadius: 12, padding: 8, marginBottom: 8 },
   liveRouteLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  liveRouteLineCompact: { gap: 8, paddingVertical: 4 },
   liveRouteDot: { width: 10, height: 10, borderRadius: 5 },
+  liveRouteDotCompact: { width: 8, height: 8, borderRadius: 4 },
   liveRoutePickupDot: { backgroundColor: colors.customer },
   liveRouteStopDot: { backgroundColor: colors.amber },
   liveRouteDropDot: { backgroundColor: colors.green },
   liveRouteLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
+  liveRouteLabelCompact: { fontSize: 9 },
   liveRouteText: { color: colors.ink, fontSize: 13, fontWeight: '600', marginTop: 2 },
+  liveRouteTextCompact: { fontSize: 12, marginTop: 1 },
   liveOrderMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  liveOrderMetricsCompact: { gap: 6, marginBottom: 8 },
   liveOrderMetric: { flexGrow: 1, flexShrink: 1, flexBasis: '29%', minWidth: 0, borderRadius: 13, backgroundColor: '#F8FAFC', padding: 10 },
+  liveOrderMetricCompact: { borderRadius: 11, padding: 8 },
   liveOrderMetricValue: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  liveOrderMetricValueCompact: { fontSize: 12 },
   liveOrderMetricLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
+  liveOrderMetricLabelCompact: { fontSize: 9, marginTop: 2 },
   activeOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   countdownCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, marginTop: 2, marginBottom: 10 },
+  countdownCardCompact: { gap: 8, borderRadius: 12, padding: 9, marginTop: 1, marginBottom: 8 },
   countdownCardDelayed: { backgroundColor: '#FEF2F2' },
   countdownValue: { color: colors.customer, fontSize: 22, fontWeight: '700' },
+  countdownValueCompact: { fontSize: 14, lineHeight: 18 },
   countdownValueDelayed: { color: colors.red, fontSize: 16 },
   countdownLabel: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   assignedPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
+  assignedPartnerRowCompact: { gap: 9, borderRadius: 12, padding: 9, marginTop: 2 },
   searchingPartnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, backgroundColor: '#F8FAFC', padding: 12, marginTop: 4 },
+  searchingPartnerRowCompact: { gap: 7, borderRadius: 12, padding: 9, marginTop: 2 },
   searchingPartnerText: { color: colors.ink, fontSize: 12, fontWeight: '600' },
+  searchingPartnerTextCompact: { fontSize: 11 },
   compactOtpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
   compactOtpBox: { flexGrow: 1, flexShrink: 1, flexBasis: '46%', minWidth: 0, backgroundColor: colors.customerLight, borderRadius: 14, padding: 11, alignItems: 'center' },
+  compactOtpBoxDense: { borderRadius: 11, padding: 8 },
   compactOtpText: { color: colors.customer, fontSize: 18, fontWeight: '700', marginTop: 2 },
+  compactOtpTextDense: { fontSize: 15, marginTop: 1 },
   ordersOtpPanel: { borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginTop: 12 },
+  ordersOtpPanelCompact: { borderRadius: 12, padding: 9, marginTop: 8 },
   ordersOtpTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   ordersOtpTitle: { color: colors.customer, fontSize: 13, fontWeight: '600' },
+  ordersOtpTitleCompact: { fontSize: 11 },
   ordersOtpRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   orderActionBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  orderActionBarCompact: { gap: 6, marginTop: 8 },
   orderActionButton: { flexGrow: 1, flexShrink: 1, flexBasis: '29%', minWidth: 0, minHeight: 40, borderRadius: 13, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8 },
+  orderActionButtonCompact: { minHeight: 34, borderRadius: 11, gap: 5, paddingHorizontal: 7 },
   orderActionButtonPrimary: { backgroundColor: colors.customer },
   orderActionButtonDanger: { backgroundColor: '#FEF2F2' },
   orderActionButtonText: { flexShrink: 1, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  orderActionButtonTextCompact: { fontSize: 10 },
   orderActionButtonTextPrimary: { color: colors.white },
   orderActionButtonTextDanger: { color: colors.red },
   timelinePanel: { marginBottom: 4 },
+  timelinePanelCompact: { marginBottom: 2 },
   timelinePanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   noActiveOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 8 },
+  noActiveOrderCardCompact: { borderRadius: 14, padding: 13, gap: 6 },
   historyHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  historyHeaderCompact: { gap: 6 },
   orderHistoryTools: { gap: 10, marginBottom: 12 },
   orderHistoryFilters: { gap: 8, paddingRight: 2 },
   orderHistoryFilterChip: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: colors.line, borderRadius: 999, backgroundColor: colors.white, paddingLeft: 13, paddingRight: 8, paddingVertical: 7 },
@@ -7574,6 +8512,7 @@ const styles = StyleSheet.create({
   orderHistoryClearButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: colors.customerLight, paddingHorizontal: 14, marginTop: 8 },
   orderHistoryClearButtonText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
+  orderCardCompact: { borderRadius: 14, padding: 10, marginBottom: 8 },
   orderCardSelected: { borderColor: colors.customer, backgroundColor: colors.customerLight },
   activeOrderSwitchRow: { gap: 10, paddingBottom: 10 },
   activeOrderSwitchCard: { width: 190, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12 },
@@ -7582,31 +8521,72 @@ const styles = StyleSheet.create({
   activeOrderSwitchTitleActive: { color: colors.customer },
   activeOrderSwitchMeta: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 5 },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 },
+  betweenCompact: { gap: 8, marginBottom: 6 },
   orderNo: { color: colors.muted, fontSize: 11, fontWeight: '600' },
+  orderNoCompact: { fontSize: 10 },
   orderCardHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  orderCardHeaderCompact: { gap: 7, marginBottom: 7 },
   orderCardDate: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
+  orderCardDateCompact: { fontSize: 12, marginTop: 1 },
   orderCardRouteBox: { borderRadius: 14, backgroundColor: '#F8FAFC', padding: 10, marginBottom: 10 },
+  orderCardRouteBoxCompact: { borderRadius: 12, padding: 8, marginBottom: 8 },
   orderCardFareRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
+  orderCardFareRowCompact: { gap: 8, marginBottom: 5 },
   orderCardVehicleArt: { width: 58, height: 50, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  orderCardVehicleArtCompact: { width: 48, height: 42, borderRadius: 12 },
   orderCardFareCopy: { flexGrow: 1, flexShrink: 1, minWidth: 0 },
   orderCardVehicle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  orderCardVehicleCompact: { fontSize: 12 },
   badge: { maxWidth: '100%', flexShrink: 1, backgroundColor: colors.customerLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999 },
+  badgeCompact: { paddingVertical: 3, paddingHorizontal: 8 },
   badgeText: { flexShrink: 1, color: colors.customer, fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  badgeTextCompact: { fontSize: 10 },
   route: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  routeCompact: { gap: 8, paddingVertical: 4 },
   routeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.customer },
   routeDotStop: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.amber },
+  routeDotCompact: { width: 8, height: 8, borderRadius: 4 },
   routeDotGreen: { backgroundColor: colors.green },
   routeText: { color: colors.ink, fontSize: 14, fontWeight: '500' },
+  routeTextCompact: { fontSize: 12 },
   muted: { color: colors.muted, marginTop: 8, textAlign: 'center' },
+  mutedCompact: { fontSize: 12, lineHeight: 17, marginTop: 5 },
   mutedSmall: { color: colors.muted, fontSize: 12 },
   emptyHistoryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 18, alignItems: 'center', marginBottom: 12 },
+  emptyHistoryCardCompact: { borderRadius: 13, padding: 13, marginBottom: 8 },
   priceText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
+  priceTextCompact: { fontSize: 12 },
+  bookingScreenKeyboard: { flex: 1, backgroundColor: colors.white },
+  bookingScreenScroll: { flex: 1 },
+  bookingScreenScrollKeyboard: { paddingBottom: 18 },
+  bookingKeyboardFooter: {
+    flexShrink: 0,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 10,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 8
+  },
+  bookingKeyboardFooterCompact: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 },
+  bookingKeyboardFooterInner: { width: '100%', alignSelf: 'center' },
   bookingStepHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 10 },
+  bookingStepHeaderCompact: { gap: 9, marginBottom: 8 },
   bookingStepBack: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  bookingStepBackCompact: { width: 33, height: 33, borderRadius: 11 },
   bookingStepTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
+  bookingStepTitleCompact: { fontSize: 16 },
   bookingStepSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  bookingStepSubtitleCompact: { fontSize: 9, marginTop: 1 },
   bookingStepCount: { color: colors.customer, fontSize: 12, fontWeight: '600', backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 9 },
+  bookingStepCountCompact: { fontSize: 10, paddingVertical: 4, paddingHorizontal: 7 },
   bookingProgressTrack: { height: 4, borderRadius: 4, backgroundColor: colors.faint, marginBottom: 16, overflow: 'hidden' },
+  bookingProgressTrackCompact: { marginBottom: 11 },
   bookingProgressFill: { height: 4, borderRadius: 4, backgroundColor: colors.customer },
   stepRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
   stepDot: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
@@ -7628,6 +8608,7 @@ const styles = StyleSheet.create({
   vehicleSuggestedText: { color: colors.white, fontSize: 9, fontWeight: '600' },
   vehicleEta: { color: colors.green, fontSize: 11, fontWeight: '600', backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   vehicleName: { color: colors.ink, fontWeight: '600', fontSize: 14 },
+  vehicleNameCompact: { fontSize: 12 },
   vehicleNameDisabled: { color: colors.muted },
   vehiclePriceLine: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   vehiclePriceLineSuggested: { color: colors.blue },
@@ -7635,17 +8616,24 @@ const styles = StyleSheet.create({
   vehicleSelectedText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   vehicleUnavailableText: { color: colors.red, fontSize: 11, fontWeight: '600' },
   fieldGroup: { marginBottom: 12 },
+  fieldGroupCompact: { marginBottom: 9 },
   fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 6 },
+  fieldLabelCompact: { fontSize: 9, marginBottom: 4 },
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.ink },
+  inputCompact: { borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, fontSize: 13 },
   inputReadonly: { backgroundColor: colors.faint },
   locationFieldGroup: { marginBottom: 14 },
   routeLocationFieldGroup: { marginBottom: 0 },
   locationLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  locationLabelRowCompact: { marginBottom: 4 },
   locationInputShell: { minHeight: 50, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 },
+  locationInputShellCompact: { minHeight: 42, borderRadius: 12, gap: 8, paddingHorizontal: 10 },
   locationInputShellActive: { borderColor: colors.customer, backgroundColor: '#FBFAFF' },
   routeLocationInputShell: { minHeight: 48, borderColor: colors.customer, borderRadius: 12, paddingLeft: 11, paddingRight: 7 },
+  routeLocationInputShellCompact: { minHeight: 40, borderRadius: 10, paddingLeft: 9, paddingRight: 6 },
   routeLocationMapButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   locationInput: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '600', paddingVertical: 10 },
+  locationInputCompact: { fontSize: 12, paddingVertical: 8 },
   locationSelectedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
   locationSelectedText: { color: colors.customer, fontSize: 10, fontWeight: '600' },
   locationSuggestionBox: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginTop: 8, overflow: 'hidden' },
@@ -7663,6 +8651,7 @@ const styles = StyleSheet.create({
   mapPickerResponsiveContent: { flexGrow: 1, width: '100%', alignSelf: 'center' },
   mapPickerHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   mapPickerClose: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  mapPickerCloseCompact: { width: 36, height: 36, borderRadius: 12 },
   mapPickerTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
   mapPickerSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   mapPickerSearchShell: { minHeight: 52, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
@@ -7720,12 +8709,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 2
   },
+  routeEntryCardCompact: { borderRadius: 14, padding: 10, marginBottom: 11 },
   routeEntryPickupRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2 },
+  routeEntryPickupRowCompact: { minHeight: 38, gap: 8 },
   routeEntryDropRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2 },
+  routeEntryDropRowCompact: { gap: 8 },
   routeEntryDot: { width: 8, height: 8, borderRadius: 4 },
   routeEntryDotPickup: { backgroundColor: colors.green },
   routeEntryDotDrop: { backgroundColor: colors.red },
   routeEntryDivider: { height: 1, backgroundColor: colors.line, marginLeft: 18, marginVertical: 9 },
+  routeEntryDividerCompact: { marginLeft: 15, marginVertical: 7 },
   contactGrid: { marginBottom: 4 },
   contactDetailsCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
   contactHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 },
@@ -7743,6 +8736,7 @@ const styles = StyleSheet.create({
   contactPageHeader: { marginBottom: 12 },
   contactPageActions: { marginTop: 4 },
   contactPageFooter: { backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
+  contactPageFooterCompact: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 9 },
   contactResponsiveFooterContent: { width: '100%', alignSelf: 'center', gap: 10 },
   contactSheetOverlay: { flex: 1, justifyContent: 'flex-end' },
   contactSheetBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
@@ -7773,7 +8767,9 @@ const styles = StyleSheet.create({
   contactMapHeroHint: { position: 'absolute', left: 70, right: 70, top: 84, borderRadius: 8, backgroundColor: 'rgba(17,24,39,0.88)', paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
   contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '600' },
   contactMapBackButton: { position: 'absolute', left: 10, top: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapBackButtonCompact: { left: 8, top: 10, width: 34, height: 34, borderRadius: 17 },
   contactMapExpandButton: { position: 'absolute', right: 12, bottom: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapExpandButtonCompact: { right: 9, bottom: 11, width: 36, height: 36, borderRadius: 18 },
   contactMapPickerHint: { left: 60, right: 60, bottom: 68 },
   contactMapTitlePill: { position: 'absolute', left: 60, right: 60, top: 90, minHeight: 31, borderRadius: 5, backgroundColor: 'rgba(17,24,39,0.88)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
   contactMapTitlePillShort: { top: 12, left: 68, right: 68 },
@@ -7784,26 +8780,44 @@ const styles = StyleSheet.create({
   contactUseCurrentButton: { flex: 1, minHeight: 40, borderRadius: 12, borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
   contactUseCurrentText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   contactPagePanel: { flex: 1, backgroundColor: colors.white, borderTopLeftRadius: 18, borderTopRightRadius: 18, marginTop: 0, shadowColor: '#0F172A', shadowOpacity: 0.10, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 5 },
+  contactPagePanelCompact: { borderTopLeftRadius: 15, borderTopRightRadius: 15 },
   contactPagePanelContent: { paddingHorizontal: 13, paddingTop: 7, paddingBottom: 14 },
   contactAddressHeader: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
+  contactAddressHeaderCompact: { minHeight: 44, gap: 7, marginBottom: 6 },
   contactAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  contactAddressTitleCompact: { fontSize: 12 },
   contactAddressSubtitle: { color: colors.ink, opacity: 0.7, fontSize: 11, fontWeight: '500', marginTop: 3 },
+  contactAddressSubtitleCompact: { fontSize: 10, marginTop: 1 },
   contactChangeButton: { minWidth: 64, minHeight: 34, borderRadius: 5, borderWidth: 1, borderColor: '#D8D3C6', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.white },
+  contactChangeButtonCompact: { minWidth: 56, minHeight: 30, paddingHorizontal: 8 },
   contactChangeButtonText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
+  contactChangeButtonTextCompact: { fontSize: 10 },
   contactFormField: { marginBottom: 8 },
+  contactFormFieldCompact: { marginBottom: 6 },
   contactFormLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginBottom: 3 },
+  contactFormLabelCompact: { fontSize: 9, marginBottom: 2 },
   contactFormInputShell: { minHeight: 39, borderWidth: 1, borderColor: '#DDE3EC', borderRadius: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10 },
+  contactFormInputShellCompact: { minHeight: 35, gap: 6, paddingHorizontal: 9 },
   contactFormInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 8 },
+  contactFormInputCompact: { fontSize: 11, paddingVertical: 6 },
   contactMobileCheckRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
+  contactMobileCheckRowCompact: { minHeight: 29, gap: 7, marginBottom: 8 },
   contactMobileCheckText: { flex: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
+  contactMobileCheckTextCompact: { fontSize: 10 },
   contactSaveAsLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginBottom: 8 },
+  contactSaveAsLabelCompact: { fontSize: 10, marginBottom: 6 },
   contactTypeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 12 },
+  contactTypeRowCompact: { gap: 7, marginBottom: 8 },
   contactTypeChip: { flexGrow: 1, flexShrink: 1, flexBasis: 82, minHeight: 36, minWidth: 75, borderRadius: 6, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 10 },
+  contactTypeChipCompact: { minHeight: 32, minWidth: 68, gap: 5, paddingHorizontal: 8 },
   contactTypeChipActive: { borderColor: '#93C5FD', backgroundColor: colors.customerLight },
   contactTypeChipText: { color: colors.ink, fontSize: 11, fontWeight: '600' },
+  contactTypeChipTextCompact: { fontSize: 10 },
   contactTypeChipTextActive: { color: colors.customer },
   contactConfirmButton: { minHeight: 44, borderRadius: 5, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, marginTop: 2 },
+  contactConfirmButtonCompact: { minHeight: 40, paddingHorizontal: 12, marginTop: 0 },
   contactConfirmButtonText: { color: colors.white, fontSize: 13, fontWeight: '600' },
+  contactConfirmButtonTextCompact: { fontSize: 12 },
   contactExpandedMapFooter: { flexShrink: 1, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, gap: 10 },
   contactExpandedLocationRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 10 },
   contactExpandedLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '700' },
@@ -7828,13 +8842,21 @@ const styles = StyleSheet.create({
   saveAddressInlineButton: { alignSelf: 'flex-start', minHeight: 34, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, marginBottom: 10 },
   saveAddressInlineText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
   notice: { flexDirection: 'row', gap: 8, backgroundColor: '#FFFBEB', borderRadius: 12, padding: 12, marginBottom: 14 },
+  noticeCompact: { gap: 6, borderRadius: 10, padding: 9, marginBottom: 10 },
   noticeText: { flex: 1, color: '#92400E', fontSize: 12, fontWeight: '500' },
+  noticeTextCompact: { fontSize: 10, lineHeight: 14 },
   noticeInfo: { flexDirection: 'row', gap: 8, backgroundColor: '#EFF6FF', borderRadius: 12, padding: 12, marginBottom: 14 },
+  noticeInfoCompact: { gap: 6, borderRadius: 10, padding: 9, marginBottom: 10 },
   noticeInfoText: { flex: 1, color: colors.blue, fontSize: 12, fontWeight: '600' },
+  noticeInfoTextCompact: { fontSize: 10 },
   goodsTypeSelector: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 15, backgroundColor: colors.white, paddingHorizontal: 13, paddingVertical: 10, marginBottom: 14 },
+  goodsTypeSelectorCompact: { minHeight: 56, gap: 9, borderRadius: 13, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10 },
   goodsTypeSelectorIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  goodsTypeSelectorIconCompact: { width: 35, height: 35, borderRadius: 11 },
   goodsTypeSelectorValue: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  goodsTypeSelectorValueCompact: { fontSize: 12 },
   goodsTypeSelectorHint: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
+  goodsTypeSelectorHintCompact: { fontSize: 9, marginTop: 2 },
   goodsTypePickerSheet: {
     height: '88%',
     maxHeight: '88%'
@@ -7863,36 +8885,54 @@ const styles = StyleSheet.create({
   goodsRulesBulletRestricted: { backgroundColor: colors.red },
   goodsRulesItemText: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '500', lineHeight: 17 },
   routeReviewCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
+  routeReviewCardCompact: { borderRadius: 13, padding: 10, marginBottom: 10 },
   routeReviewHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  routeReviewHeaderCompact: { gap: 7, marginBottom: 7 },
   changeRouteButton: { minHeight: 34, borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9 },
+  changeRouteButtonCompact: { minHeight: 30, borderRadius: 10, gap: 4, paddingHorizontal: 7 },
   changeRouteText: { color: colors.customer, fontSize: 11, fontWeight: '600' },
+  changeRouteTextCompact: { fontSize: 10 },
   routeReviewLine: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7 },
+  routeReviewLineCompact: { gap: 8, paddingVertical: 5 },
   routeReviewDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.customer },
   routeReviewDotDrop: { backgroundColor: colors.green },
   routeReviewTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  routeReviewTitleCompact: { fontSize: 11 },
   vehicleFareCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderWidth: 1.5, borderColor: colors.customer, borderRadius: 16, backgroundColor: colors.customerLight, padding: 14, marginBottom: 14 },
+  vehicleFareCardCompact: { gap: 9, borderRadius: 13, padding: 10, marginBottom: 10 },
   vehicleFareIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  vehicleFareIconCompact: { width: 40, height: 40, borderRadius: 13 },
   vehicleFareCopy: { flex: 1, minWidth: 0 },
   vehicleFareMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2, marginBottom: 2 },
+  vehicleFareMetaCompact: { fontSize: 10, marginTop: 1, marginBottom: 1 },
   vehicleFarePrice: { color: colors.ink, fontSize: 18, fontWeight: '700' },
+  vehicleFarePriceCompact: { fontSize: 14 },
   vehicleRoutePanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
+  vehicleRoutePanelCompact: { borderRadius: 14, padding: 10, marginBottom: 10 },
   vehicleRouteActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, marginTop: 9, paddingTop: 10 },
   vehicleRouteAction: { flex: 1, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
   vehicleRouteActionText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   vehicleFareList: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden', marginBottom: 14 },
+  vehicleFareListCompact: { borderRadius: 14, marginBottom: 10 },
   vehicleFareOption: { minHeight: 78, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 13, borderBottomWidth: 1, borderBottomColor: colors.line },
+  vehicleFareOptionCompact: { minHeight: 64, gap: 9, padding: 10 },
   vehicleFareOptionSuggested: { minHeight: 96, backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: colors.blue, borderBottomWidth: 1.5, borderBottomColor: colors.blue, borderRadius: 16, margin: 8 },
   vehicleFareOptionSelected: { minHeight: 104, backgroundColor: colors.customerLight, borderWidth: 1.5, borderColor: colors.customer, borderBottomWidth: 1.5, borderBottomColor: colors.customer, borderRadius: 16, margin: 8 },
   vehicleFareOptionDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   vehicleFareOptionIcon: { width: 52, height: 44, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  vehicleFareOptionIconCompact: { width: 45, height: 38, borderRadius: 10 },
   vehicleFareOptionCopy: { flex: 1, minWidth: 0 },
   vehicleFareOptionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
   vehicleFareOptionTitle: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  vehicleFareOptionTitleCompact: { fontSize: 12 },
   vehicleFareOptionTitleSuggested: { color: colors.blue },
   vehicleFareOptionTitleSelected: { color: colors.customer },
   vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 3 },
+  vehicleFareOptionMetaCompact: { fontSize: 10, marginTop: 2 },
   vehicleFareOptionPriceWrap: { alignItems: 'flex-end', gap: 4 },
+  vehicleFareOptionPriceWrapCompact: { gap: 3 },
   vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  vehicleFareOptionPriceCompact: { fontSize: 12 },
   vehicleFareOptionPriceSuggested: { color: colors.blue },
   vehicleFareOptionPriceSelected: { color: colors.customer },
   vehicleNewBadge: { borderRadius: 7, backgroundColor: colors.blue, paddingHorizontal: 6, paddingVertical: 2 },
@@ -7904,16 +8944,24 @@ const styles = StyleSheet.create({
   vehicleMiniImageLoader: { width: 46, height: 34, borderRadius: 8 },
   vehicleMiniImageMuted: { opacity: 0.5 },
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
+  bookingSummaryCardCompact: { borderRadius: 12, padding: 10, marginBottom: 10 },
   summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginBottom: 8 },
+  summaryTitleCompact: { fontSize: 12, marginBottom: 6 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },
+  summaryRowCompact: { gap: 8, marginBottom: 5 },
   summaryLabel: { flexShrink: 1, color: colors.muted, fontSize: 12, fontWeight: '600' },
+  summaryLabelCompact: { fontSize: 10 },
   summaryValue: { flex: 1, minWidth: 0, color: colors.ink, fontSize: 12, fontWeight: '600', textAlign: 'right' },
+  summaryValueCompact: { fontSize: 10 },
   payRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 14, marginBottom: 10 },
+  payRowCompact: { gap: 8, borderRadius: 12, padding: 10, marginBottom: 8 },
   payRowActive: { backgroundColor: colors.customerLight, borderColor: colors.customer },
   payRowDisabled: { opacity: 0.55, backgroundColor: colors.faint },
   payText: { color: colors.ink, fontWeight: '600' },
+  payTextCompact: { fontSize: 12 },
   payTextDisabled: { color: colors.muted },
   map: { height: 218, borderRadius: 16, backgroundColor: '#E5E7EB', overflow: 'hidden', marginBottom: 12 },
+  mapCompact: { borderRadius: 13, marginBottom: 8 },
   mapNativeView: { flex: 1 },
   mapRoad: { position: 'absolute', top: 72, left: -20, right: -20, height: 20, backgroundColor: '#DDD6FE', transform: [{ rotate: '-8deg' }] },
   mapRoadTwo: { top: 30, transform: [{ rotate: '12deg' }], opacity: 0.7 },
@@ -7929,15 +8977,22 @@ const styles = StyleSheet.create({
   vehicleMarker: { position: 'absolute', left: '50%', top: '45%', width: 24, height: 24, marginLeft: -12, borderRadius: 12, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   vehicleMarkerLive: { backgroundColor: colors.green },
   etaChip: { position: 'absolute', right: 12, top: 12, maxWidth: '42%', backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  etaChipCompact: { right: 8, top: 8, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 9 },
   etaValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
+  etaValueCompact: { fontSize: 16 },
   etaLabel: { color: colors.muted, fontSize: 9, fontWeight: '600' },
+  etaLabelCompact: { fontSize: 8 },
   liveChip: { position: 'absolute', left: 12, top: 12, maxWidth: '48%', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  liveChipCompact: { left: 8, top: 8, gap: 5, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 8 },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.muted },
   liveDotOn: { backgroundColor: colors.green },
   liveText: { flexShrink: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
+  liveTextCompact: { fontSize: 9 },
   mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '600', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },
+  mapTextCompact: { left: 8, right: 8, bottom: 8, fontSize: 10, borderRadius: 8, paddingVertical: 5, paddingHorizontal: 8 },
   card: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
+  cardCompact: { borderRadius: 13, padding: 10, marginBottom: 8 },
   cardTitle: { color: colors.ink, fontWeight: '600', fontSize: 15 },
   driverCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, padding: 14, backgroundColor: colors.faint, marginBottom: 12 },
   driverAvatar: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
@@ -7945,20 +9000,30 @@ const styles = StyleSheet.create({
   rating: { color: '#92400E', fontWeight: '600', backgroundColor: '#FEF3C7', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10 },
   flex: { flex: 1, minWidth: 0 },
   timelineItem: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
+  timelineItemCompact: { gap: 8, paddingVertical: 6 },
   timelineDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  timelineDotCompact: { width: 20, height: 20, borderRadius: 10 },
   timelineDone: { backgroundColor: colors.green },
   timelineActive: { backgroundColor: colors.customer },
   timelineTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  timelineTitleCompact: { fontSize: 11 },
   fareCard: { backgroundColor: colors.customerLight, borderRadius: 16, padding: 14, marginBottom: 14 },
+  fareCardCompact: { borderRadius: 13, padding: 10, marginBottom: 10 },
   otpCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   otpBox: { flex: 1, backgroundColor: colors.customerLight, borderRadius: 14, padding: 12, alignItems: 'center' },
   otpText: { color: colors.customer, fontSize: 22, fontWeight: '700', marginTop: 4 },
   fareLabel: { flex: 1, minWidth: 0, color: colors.customer, fontSize: 13 },
+  fareLabelCompact: { fontSize: 11 },
   fareValue: { flexShrink: 0, color: colors.customer, fontSize: 13, fontWeight: '500', textAlign: 'right' },
+  fareValueCompact: { fontSize: 11 },
   farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2, marginBottom: 8 },
+  farePolicyTextCompact: { fontSize: 9, marginBottom: 6 },
   orderCardActionButton: { minHeight: 32, borderRadius: 8, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 5, paddingHorizontal: 12, paddingVertical: 6 },
+  orderCardActionButtonCompact: { minHeight: 30, marginTop: 3, paddingVertical: 5 },
   orderCardActionText: { color: colors.white, fontSize: 11, fontWeight: '600' },
+  orderCardActionTextCompact: { fontSize: 10 },
   bold: { fontWeight: '600', fontSize: 15 },
+  boldCompact: { fontSize: 12 },
   divider: { height: 1, backgroundColor: '#C4B5FD', marginVertical: 8 },
   walletCard: { borderRadius: 18, padding: 20, borderWidth: 1, borderColor: colors.line, alignItems: 'center', gap: 10 },
   walletSurface: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 14, gap: 13 },
@@ -7982,20 +9047,34 @@ const styles = StyleSheet.create({
   walletMethodText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   walletCoinsRow: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   walletCoinsCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14 },
+  walletCoinsCardCompact: { borderRadius: 14, padding: 10 },
   walletCoinsHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  walletCoinsHeaderCompact: { gap: 8, paddingBottom: 10 },
   walletCoinsIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  walletCoinsIconCompact: { width: 34, height: 34, borderRadius: 11 },
   walletCoinsEyebrow: { color: colors.ink, fontSize: 15, fontWeight: '600', textTransform: 'uppercase' },
+  walletCoinsEyebrowCompact: { fontSize: 13 },
   walletCoinsCaption: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 2 },
+  walletCoinsCaptionCompact: { fontSize: 10, lineHeight: 13, marginTop: 1 },
   walletCoinsBalanceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  walletCoinsBalanceRowCompact: { gap: 10, paddingVertical: 11 },
   walletCoinsBalanceMain: { flexBasis: 80, flexShrink: 0 },
+  walletCoinsBalanceMainCompact: { flexBasis: 68 },
   walletCoinsValue: { color: colors.customer, fontSize: 36, fontWeight: '700', lineHeight: 40 },
+  walletCoinsValueCompact: { fontSize: 29, lineHeight: 32 },
   walletCoinsAvailable: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  walletCoinsAvailableCompact: { fontSize: 10, marginTop: 1 },
   walletCoinsDiscountBox: { flex: 1, minWidth: 0, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
+  walletCoinsDiscountBoxCompact: { minHeight: 48, borderRadius: 12, gap: 6, paddingHorizontal: 9, paddingVertical: 7 },
   walletCoinsDiscountValue: { color: colors.green, fontSize: 14, fontWeight: '600' },
+  walletCoinsDiscountValueCompact: { fontSize: 12 },
   walletCoinsDiscount: { color: colors.green, fontSize: 10, fontWeight: '600', lineHeight: 14, marginTop: 1 },
+  walletCoinsDiscountCompact: { fontSize: 9, lineHeight: 12 },
   walletCouponButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
+  walletCouponButtonCompact: { minHeight: 38, borderRadius: 12, gap: 6, paddingHorizontal: 11 },
   walletCouponButtonBusy: { opacity: 0.65 },
   walletCouponText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
+  walletCouponTextCompact: { fontSize: 11 },
   walletCouponOverlay: { flex: 1, justifyContent: 'flex-end' },
   walletCouponBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
   walletCouponSheet: {
@@ -8032,17 +9111,24 @@ const styles = StyleSheet.create({
   walletCouponApplyButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   walletCouponApplyText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   coinActivityCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 14 },
+  coinActivityCardCompact: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 2, marginBottom: 10 },
   coinActivityRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  coinActivityRowCompact: { minHeight: 52, gap: 8 },
   coinActivityRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.line },
   coinActivityIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  coinActivityIconCompact: { width: 34, height: 34, borderRadius: 11 },
   coinActivityIconCredit: { backgroundColor: colors.partnerLight },
   coinActivityIconDebit: { backgroundColor: '#FEF2F2' },
   coinActivityTitle: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  coinActivityTitleCompact: { fontSize: 12 },
   coinActivityDate: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
+  coinActivityDateCompact: { fontSize: 10, marginTop: 1 },
   coinActivityAmount: { fontSize: 14, fontWeight: '600' },
+  coinActivityAmountCompact: { fontSize: 12 },
   coinActivityAmountCredit: { color: colors.green },
   coinActivityAmountDebit: { color: colors.red },
   coinActivityBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.amber, alignItems: 'center', justifyContent: 'center' },
+  coinActivityBadgeCompact: { width: 17, height: 17, borderRadius: 9 },
   coinPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FEF3C7', borderRadius: 999, paddingVertical: 7, paddingHorizontal: 10 },
   coinPillText: { color: '#92400E', fontSize: 13, fontWeight: '600' },
   walletTxnRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, marginBottom: 10 },
@@ -8058,57 +9144,108 @@ const styles = StyleSheet.create({
   listRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
   listText: { color: colors.ink, fontWeight: '500' },
   accountHero: { position: 'relative', borderRadius: 18, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
+  accountHeroCompact: { borderRadius: 15, padding: 11 },
   accountHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
+  accountHeroTopCompact: { gap: 8, marginBottom: 9 },
   accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  accountEyebrowCompact: { fontSize: 9 },
   accountIdentityCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.94)', padding: 12 },
+  accountIdentityCardCompact: { gap: 9, borderRadius: 14, padding: 9 },
   accountAvatar: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  accountAvatarCompact: { width: 46, height: 46, borderRadius: 14 },
   accountAvatarSmall: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '600' },
+  accountAvatarTextCompact: { fontSize: 16 },
   accountName: { color: colors.ink, fontSize: 18, fontWeight: '600' },
+  accountNameCompact: { fontSize: 15 },
   accountSubtext: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
+  accountSubtextCompact: { fontSize: 10, marginTop: 1 },
   accountVerifiedBadge: { maxWidth: '100%', flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
   accountVerifiedText: { flexShrink: 1, color: colors.green, fontSize: 10, fontWeight: '600' },
   accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  accountEditButtonCompact: { width: 32, height: 32, borderRadius: 11 },
   accountStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  accountStatsRowCompact: { gap: 8, marginTop: 10 },
   accountStatBox: { flexGrow: 1, flexShrink: 1, flexBasis: '29%', minWidth: 0, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
+  accountStatBoxCompact: { borderRadius: 12, padding: 9 },
   accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
+  accountStatValueCompact: { fontSize: 17 },
   accountStatLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  accountStatLabelCompact: { fontSize: 10, marginTop: 1 },
   enterpriseCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 15, marginTop: 14 },
+  enterpriseCardCompact: { gap: 9, borderRadius: 14, padding: 11, marginTop: 10 },
   enterpriseIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  enterpriseIconCompact: { width: 36, height: 36, borderRadius: 12 },
   enterpriseTitle: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  enterpriseTitleCompact: { fontSize: 13 },
   enterpriseText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 3 },
+  enterpriseTextCompact: { fontSize: 10, lineHeight: 13, marginTop: 2 },
   enterprisePageHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  enterprisePageHeaderCompact: { gap: 9, marginBottom: 10 },
   enterprisePageTitle: { color: colors.ink, fontSize: 24, fontWeight: '700', marginTop: 2 },
+  enterprisePageTitleCompact: { fontSize: 18, marginTop: 1 },
   enterpriseHeroPanel: { borderRadius: 18, backgroundColor: colors.customer, padding: 18, gap: 9 },
+  enterpriseHeroPanelCompact: { borderRadius: 15, padding: 13, gap: 7 },
   enterpriseHeroIcon: { width: 54, height: 54, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  enterpriseHeroIconCompact: { width: 44, height: 44, borderRadius: 14 },
   enterpriseHeroTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
+  enterpriseHeroTitleCompact: { fontSize: 17 },
   enterpriseHeroText: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', lineHeight: 18 },
+  enterpriseHeroTextCompact: { fontSize: 10, lineHeight: 14 },
   enterpriseFeatureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  enterpriseFeatureGridCompact: { gap: 8 },
   enterpriseFeatureCard: { flexGrow: 1, flexShrink: 1, flexBasis: '46%', minWidth: 0, minHeight: 138, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13 },
+  enterpriseFeatureCardCompact: { minHeight: 112, borderRadius: 12, padding: 10 },
   enterpriseFeatureIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  enterpriseFeatureIconCompact: { width: 30, height: 30, borderRadius: 10, marginBottom: 6 },
   enterpriseFeatureTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  enterpriseFeatureTitleCompact: { fontSize: 12 },
   enterpriseFeatureText: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginTop: 4 },
+  enterpriseFeatureTextCompact: { fontSize: 9, lineHeight: 13, marginTop: 3 },
   enterpriseChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  enterpriseChipWrapCompact: { gap: 6 },
   enterpriseChip: { borderRadius: 999, backgroundColor: colors.customerLight, paddingVertical: 8, paddingHorizontal: 11 },
+  enterpriseChipCompact: { paddingVertical: 6, paddingHorizontal: 9 },
   enterpriseChipText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
+  enterpriseChipTextCompact: { fontSize: 10 },
   enterpriseContactCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 15, gap: 10, marginTop: 18 },
+  enterpriseContactCardCompact: { borderRadius: 13, padding: 11, gap: 8, marginTop: 13 },
   savedAddressList: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, overflow: 'hidden' },
+  savedAddressListCompact: { borderRadius: 13 },
   savedAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  savedAddressRowCompact: { gap: 9, padding: 10 },
   savedAddressRowLast: { borderBottomWidth: 0 },
   savedAddressIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  savedAddressIconCompact: { width: 32, height: 32, borderRadius: 10 },
   savedAddressTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  savedAddressTitleCompact: { fontSize: 12 },
   savedAddressSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  savedAddressSubtitleCompact: { fontSize: 10, marginTop: 1 },
   savedAddressMeta: { color: colors.muted, fontSize: 10, fontWeight: '500', marginTop: 3 },
+  savedAddressMetaCompact: { fontSize: 9, marginTop: 2 },
   savedAddressDeleteButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
+  savedAddressDeleteButtonCompact: { width: 31, height: 31, borderRadius: 10 },
   savedAddressEmpty: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 16, alignItems: 'center', gap: 5 },
+  savedAddressEmptyCompact: { borderRadius: 13, padding: 12, gap: 4 },
   savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  savedAddressEmptyTitleCompact: { fontSize: 12 },
   accountDetailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  accountDetailHeaderCompact: { gap: 9, marginBottom: 10 },
   accountDetailTitle: { color: colors.ink, fontSize: 21, fontWeight: '700', marginTop: 2 },
+  accountDetailTitleCompact: { fontSize: 17, marginTop: 1 },
   accountDetailSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  accountDetailSubtitleCompact: { fontSize: 10, marginTop: 1 },
   accountDetailCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14, marginBottom: 12 },
+  accountDetailCardCompact: { borderRadius: 14, padding: 10, marginBottom: 9 },
   accountProfilePreview: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderRadius: 16, backgroundColor: colors.customerLight, padding: 12, marginBottom: 14 },
+  accountProfilePreviewCompact: { gap: 9, borderRadius: 13, padding: 9, marginBottom: 10 },
+  accountAvatarSmallCompact: { width: 40, height: 40, borderRadius: 13 },
+  accountVerifiedBadgeCompact: { paddingHorizontal: 6, paddingVertical: 4 },
+  accountVerifiedTextCompact: { fontSize: 9 },
   accountInfoStrip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: colors.customerLight, padding: 12, marginBottom: 12 },
+  accountInfoStripCompact: { gap: 8, borderRadius: 12, padding: 9, marginBottom: 9 },
   accountInfoText: { flex: 1, color: colors.customer, fontSize: 12, fontWeight: '600', lineHeight: 17 },
+  accountInfoTextCompact: { fontSize: 10, lineHeight: 14 },
   accountWalletHero: { alignItems: 'center', borderRadius: 22, backgroundColor: colors.customer, padding: 18, marginBottom: 14 },
   accountWalletValue: { color: colors.white, fontSize: 42, fontWeight: '700', marginTop: 10 },
   accountWalletLabel: { color: '#EDE9FE', fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
@@ -8117,18 +9254,28 @@ const styles = StyleSheet.create({
   accountBalanceValue: { color: colors.ink, fontSize: 22, fontWeight: '700', marginTop: 2 },
   accountMenu: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, overflow: 'hidden' },
   accountMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  accountMenuRowCompact: { gap: 9, padding: 10 },
   accountMenuRowLast: { borderBottomWidth: 0 },
   accountMenuIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  accountMenuIconCompact: { width: 31, height: 31, borderRadius: 10 },
   accountMenuTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  accountMenuTitleCompact: { fontSize: 12 },
   accountMenuSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
+  accountMenuSubtitleCompact: { fontSize: 10, marginTop: 1 },
   accountPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 10, marginTop: 12 },
+  accountPanelCompact: { borderRadius: 13, padding: 7, marginTop: 9 },
   languageOption: { minHeight: 54, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, marginBottom: 6 },
+  languageOptionCompact: { minHeight: 45, borderRadius: 11, paddingHorizontal: 9, marginBottom: 4 },
   languageOptionActive: { backgroundColor: colors.customerLight },
   languageTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  languageTitleCompact: { fontSize: 12 },
   languageSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  languageSubtitleCompact: { fontSize: 10, marginTop: 1 },
   supportActionRow: { minHeight: 58, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
+  supportActionRowCompact: { minHeight: 48, borderRadius: 11, gap: 9, padding: 8 },
   accountEditCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginTop: 12 },
   accountEditActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 4 },
+  accountEditActionsCompact: { gap: 8, marginTop: 2 },
   accountEditError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 10 },
   accountDangerZone: { marginTop: 6 },
   profileHero: { alignItems: 'center', paddingVertical: 18 },
@@ -8136,26 +9283,42 @@ const styles = StyleSheet.create({
   profileAvatarText: { color: colors.white, fontSize: 24, fontWeight: '600' },
   policyList: { marginTop: 4, marginBottom: 12 },
   policyCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, marginBottom: 10, overflow: 'hidden' },
+  policyCardCompact: { borderRadius: 12, marginBottom: 8 },
   policyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  policyHeaderCompact: { gap: 9, padding: 10 },
   policyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  policyIconCompact: { width: 31, height: 31, borderRadius: 10 },
   policySummary: { color: colors.ink, fontSize: 12, fontWeight: '500', marginTop: 5, lineHeight: 17 },
+  policySummaryCompact: { fontSize: 10, marginTop: 3, lineHeight: 14 },
   policyBody: { borderTopWidth: 1, borderTopColor: colors.line, paddingHorizontal: 14, paddingBottom: 12, backgroundColor: '#FAFAFE' },
   policySection: { marginTop: 12 },
   policyDetailHero: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 15, marginBottom: 12, gap: 8 },
+  policyDetailHeroCompact: { borderRadius: 14, padding: 11, marginBottom: 9, gap: 6 },
   policyDetailSummary: { color: colors.ink, fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  policyDetailSummaryCompact: { fontSize: 11, lineHeight: 16 },
   policyDetailSection: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
+  policyDetailSectionCompact: { borderRadius: 13, padding: 10, marginBottom: 8 },
   policyHeading: { color: colors.customer, fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  policyHeadingCompact: { fontSize: 11, marginBottom: 3 },
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
+  policyTextCompact: { fontSize: 10, lineHeight: 15, marginBottom: 3 },
   tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.white },
+  tabsCompact: { height: 62 },
   tabsInner: { flex: 1, width: '100%', alignSelf: 'center', flexDirection: 'row' },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  tabCompact: { gap: 2 },
   tabText: { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center' },
+  tabTextCompact: { fontSize: 10 },
   tabTextActive: { color: colors.customer },
   tabDot: { position: 'absolute', right: -3, top: -3, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
   primaryButton: { flex: 1, minWidth: 0, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  primaryButtonCompact: { minHeight: 40, borderRadius: 12, gap: 5, paddingHorizontal: 10 },
   primaryButtonText: { flexShrink: 1, color: colors.white, fontWeight: '600', textAlign: 'center' },
+  primaryButtonTextCompact: { fontSize: 12 },
   secondaryButton: { flex: 1, minWidth: 0, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12 },
+  secondaryButtonCompact: { minHeight: 40, borderRadius: 12, gap: 5, paddingHorizontal: 10 },
   secondaryButtonText: { flexShrink: 1, color: colors.ink, fontWeight: '600', textAlign: 'center' },
+  secondaryButtonTextCompact: { fontSize: 12 },
   deleteAccountButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: '#FECACA', backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 10 },
   deleteAccountButtonText: { color: colors.red, fontWeight: '600' },
   logoutButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, marginTop: 6, marginBottom: 12 },
@@ -8164,5 +9327,6 @@ const styles = StyleSheet.create({
   toastText: { color: colors.white, fontWeight: '600' },
   empty: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyTitle: { color: colors.ink, fontSize: 18, fontWeight: '600' },
+  emptyTitleCompact: { fontSize: 15 },
   errorTitle: { color: colors.red, fontSize: 18, fontWeight: '600', marginBottom: 6 }
 });

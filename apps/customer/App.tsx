@@ -136,7 +136,8 @@ type MapPickerTarget = {
   lng?: number;
   openContact?: boolean;
 };
-type OrderHistoryFilter = 'all' | 'delivered' | 'cancelled';
+type OrderHistoryDateFilter = 'all' | 'today' | 'last7Days';
+type OrderHistoryStatusFilter = 'all' | 'delivered' | 'cancelled';
 type CustomerOnboardingProfile = { name: string; email: string; city: string };
 type LoginStep = 'phone' | 'profile' | 'otp';
 
@@ -357,6 +358,14 @@ const enCopy = {
   bookDelivery: 'Book a delivery',
   orderHistory: 'Order History',
   allOrders: 'All',
+  today: 'Today',
+  last7Days: 'Last 7 days',
+  filters: 'Filters',
+  filterOrders: 'Filter orders',
+  filterOrdersSubtitle: 'Choose a date range and delivery status.',
+  date: 'Date',
+  status: 'Status',
+  applyFilters: 'Apply filters',
   noMatchingOrders: 'No matching orders',
   adjustOrderFilters: 'Try a different search or filter.',
   clearFilters: 'Clear filters',
@@ -623,6 +632,14 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   bookDelivery: 'डिलीवरी बुक करें',
   orderHistory: 'ऑर्डर हिस्ट्री',
   allOrders: 'सभी',
+  today: 'आज',
+  last7Days: 'पिछले 7 दिन',
+  filters: 'फ़िल्टर',
+  filterOrders: 'ऑर्डर फ़िल्टर करें',
+  filterOrdersSubtitle: 'तारीख और डिलीवरी स्थिति चुनें।',
+  date: 'तारीख',
+  status: 'स्थिति',
+  applyFilters: 'फ़िल्टर लागू करें',
   noMatchingOrders: 'कोई मिलता ऑर्डर नहीं',
   adjustOrderFilters: 'अलग खोज या फ़िल्टर आज़माएँ।',
   clearFilters: 'फ़िल्टर हटाएँ',
@@ -6109,23 +6126,56 @@ function OrdersScreen({
   onBackToHome: () => void;
 }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
+  const { bottom: bottomInset, left: leftInset, right: rightInset } = useSafeAreaInsets();
   const activeOrderIds = new Set(activeOrders.map((order) => order.id));
   const pastOrders = orders.filter((order) => !activeOrderIds.has(order.id));
   const [detailOrderId, setDetailOrderId] = useState<string | undefined>();
-  const [historyFilter, setHistoryFilter] = useState<OrderHistoryFilter>('all');
+  const [historyDateFilter, setHistoryDateFilter] = useState<OrderHistoryDateFilter>('all');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<OrderHistoryStatusFilter>('all');
+  const [historyFilterOpen, setHistoryFilterOpen] = useState(false);
+  const [draftHistoryDateFilter, setDraftHistoryDateFilter] = useState<OrderHistoryDateFilter>('all');
+  const [draftHistoryStatusFilter, setDraftHistoryStatusFilter] = useState<OrderHistoryStatusFilter>('all');
   const ordersScrollRef = useRef<ScrollView | null>(null);
   const allOrderIds = orders.map((order) => order.id).join('|');
   const allActiveOrderIds = activeOrders.map((order) => order.id).join('|');
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const lastSevenDaysStart = new Date(todayStart);
+  lastSevenDaysStart.setDate(lastSevenDaysStart.getDate() - 6);
+  const matchesHistoryDateFilter = (order: Order, filter: OrderHistoryDateFilter) => {
+    if (filter === 'all') return true;
+    const createdAt = new Date(order.createdAt).getTime();
+    if (!Number.isFinite(createdAt)) return false;
+    if (filter === 'today') {
+      return createdAt >= todayStart.getTime() && createdAt < tomorrowStart.getTime();
+    }
+    return createdAt >= lastSevenDaysStart.getTime() && createdAt < tomorrowStart.getTime();
+  };
   const deliveredOrderCount = pastOrders.filter((order) => order.status === 'delivered').length;
   const cancelledOrderCount = pastOrders.filter((order) => order.status === 'cancelled').length;
-  const filteredPastOrders = pastOrders.filter((order) => historyFilter === 'all' || order.status === historyFilter);
-  const historyFilterOptions: Array<{ id: OrderHistoryFilter; label: string; count: number }> = [
+  const todayOrderCount = pastOrders.filter((order) => matchesHistoryDateFilter(order, 'today')).length;
+  const lastSevenDaysOrderCount = pastOrders.filter((order) => matchesHistoryDateFilter(order, 'last7Days')).length;
+  const filteredPastOrders = pastOrders.filter((order) => (
+    matchesHistoryDateFilter(order, historyDateFilter) &&
+    (historyStatusFilter === 'all' || order.status === historyStatusFilter)
+  ));
+  const historyDateFilterOptions: Array<{ id: OrderHistoryDateFilter; label: string; count: number }> = [
+    { id: 'all', label: copy.allOrders, count: pastOrders.length },
+    { id: 'today', label: copy.today, count: todayOrderCount },
+    { id: 'last7Days', label: copy.last7Days, count: lastSevenDaysOrderCount }
+  ];
+  const historyStatusFilterOptions: Array<{ id: OrderHistoryStatusFilter; label: string; count: number }> = [
     { id: 'all', label: copy.allOrders, count: pastOrders.length },
     { id: 'delivered', label: copy.delivered, count: deliveredOrderCount },
     { id: 'cancelled', label: copy.cancelled, count: cancelledOrderCount }
   ];
-  const historyFiltersActive = historyFilter !== 'all';
+  const activeHistoryFilterCount =
+    Number(historyDateFilter !== 'all') + Number(historyStatusFilter !== 'all');
+  const historyFiltersActive = activeHistoryFilterCount > 0;
   const detailOrder = detailOrderId
     ? activeOrders.find((order) => order.id === detailOrderId) ?? orders.find((order) => order.id === detailOrderId)
     : undefined;
@@ -6161,6 +6211,26 @@ function OrdersScreen({
     if (isActiveOrder(order)) onSelectActiveOrder(order.id);
     setDetailOrderId(order.id);
     setTimeout(() => ordersScrollRef.current?.scrollTo({ y: 0, animated: true }), 0);
+  }
+
+  function openHistoryFilters() {
+    setDraftHistoryDateFilter(historyDateFilter);
+    setDraftHistoryStatusFilter(historyStatusFilter);
+    setHistoryFilterOpen(true);
+  }
+
+  function clearHistoryFilters() {
+    setHistoryDateFilter('all');
+    setHistoryStatusFilter('all');
+    setDraftHistoryDateFilter('all');
+    setDraftHistoryStatusFilter('all');
+    setHistoryFilterOpen(false);
+  }
+
+  function applyHistoryFilters() {
+    setHistoryDateFilter(draftHistoryDateFilter);
+    setHistoryStatusFilter(draftHistoryStatusFilter);
+    setHistoryFilterOpen(false);
   }
 
   return (
@@ -6208,41 +6278,39 @@ function OrdersScreen({
 
           <View style={[styles.historyHeader, responsive.isCompact && styles.historyHeaderCompact]}>
             <SectionTitle title={copy.orderHistory} />
-            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>
-              {historyFiltersActive ? `${filteredPastOrders.length} / ${pastOrders.length}` : pastOrders.length} {copy.orders.toLowerCase()}
-            </Text>
+            {pastOrders.length ? (
+              <Pressable
+                style={[
+                  styles.orderHistoryFilterButton,
+                  historyFiltersActive && styles.orderHistoryFilterButtonActive
+                ]}
+                onPress={openHistoryFilters}
+                accessibilityRole="button"
+                accessibilityLabel={copy.filterOrders}
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={15}
+                  color={historyFiltersActive ? colors.white : colors.customer}
+                />
+                <Text
+                  style={[
+                    styles.orderHistoryFilterButtonText,
+                    historyFiltersActive && styles.orderHistoryFilterButtonTextActive
+                  ]}
+                >
+                  {copy.filters}
+                </Text>
+                {historyFiltersActive ? (
+                  <View style={styles.orderHistoryFilterBadge}>
+                    <Text style={styles.orderHistoryFilterBadgeText}>{activeHistoryFilterCount}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            ) : null}
           </View>
           {pastOrders.length ? (
             <>
-              <View style={styles.orderHistoryTools}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.orderHistoryFilters}
-                >
-                  {historyFilterOptions.map((option) => {
-                    const selected = historyFilter === option.id;
-                    return (
-                      <Pressable
-                        key={option.id}
-                        style={[styles.orderHistoryFilterChip, selected && styles.orderHistoryFilterChipActive]}
-                        onPress={() => setHistoryFilter(option.id)}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected }}
-                      >
-                        <Text style={[styles.orderHistoryFilterText, selected && styles.orderHistoryFilterTextActive]}>
-                          {option.label}
-                        </Text>
-                        <View style={[styles.orderHistoryFilterCount, selected && styles.orderHistoryFilterCountActive]}>
-                          <Text style={[styles.orderHistoryFilterCountText, selected && styles.orderHistoryFilterCountTextActive]}>
-                            {option.count}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              </View>
               {filteredPastOrders.length ? (
                 filteredPastOrders.map((order) => (
                   <OrderCard
@@ -6258,9 +6326,7 @@ function OrdersScreen({
                   <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact]}>{copy.adjustOrderFilters}</Text>
                   <Pressable
                     style={styles.orderHistoryClearButton}
-                    onPress={() => {
-                      setHistoryFilter('all');
-                    }}
+                    onPress={clearHistoryFilters}
                     accessibilityRole="button"
                   >
                     <Ionicons name="refresh" size={15} color={colors.customer} />
@@ -6276,6 +6342,127 @@ function OrdersScreen({
               <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact]}>{copy.completedCancelledAppear}</Text>
             </View>
           )}
+          <Modal
+            visible={historyFilterOpen}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setHistoryFilterOpen(false)}
+          >
+            <View style={styles.contactSheetOverlay}>
+              <Pressable
+                style={styles.contactSheetBackdrop}
+                onPress={() => setHistoryFilterOpen(false)}
+              />
+              <View
+                style={[
+                  styles.contactSheet,
+                  styles.orderHistoryFilterSheet,
+                  {
+                    paddingBottom: Math.max(22, bottomInset + 12),
+                    paddingLeft: Math.max(16, leftInset + 12),
+                    paddingRight: Math.max(16, rightInset + 12)
+                  }
+                ]}
+              >
+                <View style={styles.contactSheetHandle} />
+                <View style={styles.contactSheetHeader}>
+                  <View style={styles.flex}>
+                    <Text style={styles.contactSheetTitle}>{copy.filterOrders}</Text>
+                    <Text style={styles.contactSheetSubtitle}>{copy.filterOrdersSubtitle}</Text>
+                  </View>
+                  <Pressable
+                    style={styles.mapPickerClose}
+                    onPress={() => setHistoryFilterOpen(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close order filters"
+                  >
+                    <Ionicons name="close" size={20} color={colors.ink} />
+                  </Pressable>
+                </View>
+
+                <View style={styles.orderHistoryFilterGroup}>
+                  <Text style={styles.orderHistoryFilterGroupTitle}>{copy.date}</Text>
+                  <View style={styles.orderHistoryFilterOptionGrid}>
+                    {historyDateFilterOptions.map((option) => {
+                      const selected = draftHistoryDateFilter === option.id;
+                      return (
+                        <Pressable
+                          key={option.id}
+                          style={[
+                            styles.orderHistorySheetOption,
+                            selected && styles.orderHistorySheetOptionActive
+                          ]}
+                          onPress={() => setDraftHistoryDateFilter(option.id)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                        >
+                          <Text
+                            style={[
+                              styles.orderHistorySheetOptionText,
+                              selected && styles.orderHistorySheetOptionTextActive
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.orderHistorySheetOptionCount,
+                              selected && styles.orderHistorySheetOptionCountActive
+                            ]}
+                          >
+                            {option.count}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.orderHistoryFilterGroup}>
+                  <Text style={styles.orderHistoryFilterGroupTitle}>{copy.status}</Text>
+                  <View style={styles.orderHistoryFilterOptionGrid}>
+                    {historyStatusFilterOptions.map((option) => {
+                      const selected = draftHistoryStatusFilter === option.id;
+                      return (
+                        <Pressable
+                          key={option.id}
+                          style={[
+                            styles.orderHistorySheetOption,
+                            selected && styles.orderHistorySheetOptionActive
+                          ]}
+                          onPress={() => setDraftHistoryStatusFilter(option.id)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                        >
+                          <Text
+                            style={[
+                              styles.orderHistorySheetOptionText,
+                              selected && styles.orderHistorySheetOptionTextActive
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.orderHistorySheetOptionCount,
+                              selected && styles.orderHistorySheetOptionCountActive
+                            ]}
+                          >
+                            {option.count}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.orderHistoryFilterSheetActions}>
+                  <SecondaryButton title={copy.clearFilters} icon="refresh" onPress={clearHistoryFilters} />
+                  <PrimaryButton title={copy.applyFilters} icon="checkmark" onPress={applyHistoryFilters} />
+                </View>
+              </View>
+            </View>
+          </Modal>
         </>
       )}
     </ScrollView>
@@ -8499,16 +8686,23 @@ const styles = StyleSheet.create({
   noActiveOrderCardCompact: { borderRadius: 14, padding: 13, gap: 6 },
   historyHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   historyHeaderCompact: { gap: 6 },
-  orderHistoryTools: { gap: 10, marginBottom: 12 },
-  orderHistoryFilters: { gap: 8, paddingRight: 2 },
-  orderHistoryFilterChip: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: colors.line, borderRadius: 999, backgroundColor: colors.white, paddingLeft: 13, paddingRight: 8, paddingVertical: 7 },
-  orderHistoryFilterChipActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
-  orderHistoryFilterText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
-  orderHistoryFilterTextActive: { color: colors.customer },
-  orderHistoryFilterCount: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-  orderHistoryFilterCountActive: { backgroundColor: colors.customer },
-  orderHistoryFilterCountText: { color: colors.muted, fontSize: 10, fontWeight: '700' },
-  orderHistoryFilterCountTextActive: { color: colors.white },
+  orderHistoryFilterButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: colors.customer, borderRadius: 10, backgroundColor: colors.white, paddingHorizontal: 10, paddingVertical: 5 },
+  orderHistoryFilterButtonActive: { backgroundColor: colors.customer },
+  orderHistoryFilterButtonText: { color: colors.customer, fontSize: 12, fontWeight: '700' },
+  orderHistoryFilterButtonTextActive: { color: colors.white },
+  orderHistoryFilterBadge: { minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  orderHistoryFilterBadgeText: { color: colors.customer, fontSize: 9, fontWeight: '700' },
+  orderHistoryFilterSheet: { gap: 4 },
+  orderHistoryFilterGroup: { marginTop: 8, gap: 9 },
+  orderHistoryFilterGroupTitle: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  orderHistoryFilterOptionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  orderHistorySheetOption: { flexGrow: 1, flexShrink: 1, flexBasis: '30%', minWidth: 92, minHeight: 54, borderWidth: 1, borderColor: colors.line, borderRadius: 13, backgroundColor: colors.white, paddingHorizontal: 11, paddingVertical: 9, justifyContent: 'center' },
+  orderHistorySheetOptionActive: { borderColor: colors.customer, backgroundColor: colors.customerLight },
+  orderHistorySheetOptionText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
+  orderHistorySheetOptionTextActive: { color: colors.customer, fontWeight: '700' },
+  orderHistorySheetOptionCount: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
+  orderHistorySheetOptionCountActive: { color: colors.customer },
+  orderHistoryFilterSheetActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
   orderHistoryClearButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: colors.customerLight, paddingHorizontal: 14, marginTop: 8 },
   orderHistoryClearButtonText: { color: colors.customer, fontSize: 12, fontWeight: '600' },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },

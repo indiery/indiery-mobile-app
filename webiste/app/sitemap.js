@@ -1,0 +1,13 @@
+export const dynamic = "force-static";
+
+export default function sitemap() {
+  const baseUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "https://indiery.in";
+
+  return [
+    { url: baseUrl, changeFrequency: "monthly", priority: 1 },
+    { url: `${baseUrl}/privacy`, changeFrequency: "yearly", priority: 0.6 },
+    { url: `${baseUrl}/account-deletion`, changeFrequency: "yearly", priority: 0.6 },
+  ];
+}

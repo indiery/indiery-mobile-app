@@ -1,0 +1,21 @@
+
+> @indiery/partner@1.0.0 start
+> expo start --clear --port 8082
+
+Starting project at C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8082
+Logs for your project will appear below.
+Android Bundled 8855ms apps\partner\index.ts (980 modules)
+ WARN  This method is deprecated (as well as all React Native Firebase namespaced API) and will be removed in the next major release as part of move to match Firebase Web modular SDK API. Please see migration guide for more details: https://rnfirebase.io/migrating-to-v22 Please use `getApp()` instead.
+ WARN  This method is deprecated (as well as all React Native Firebase namespaced API) and will be removed in the next major release as part of move to match Firebase Web modular SDK API. Please see migration guide for more details: https://rnfirebase.io/migrating-to-v22 Please use `getApp()` instead.
+ WARN  This method is deprecated (as well as all React Native Firebase namespaced API) and will be removed in the next major release as part of move to match Firebase Web modular SDK API. Please see migration guide for more details: https://rnfirebase.io/migrating-to-v22. Method called was `signInWithPhoneNumber`. Please use `signInWithPhoneNumber()` instead.
+ WARN  This method is deprecated (as well as all React Native Firebase namespaced API) and will be removed in the next major release as part of move to match Firebase Web modular SDK API. Please see migration guide for more details: https://rnfirebase.io/migrating-to-v22. Method called was `getIdToken`. Please use `getIdToken()` instead.
+Android Bundled 37ms apps\partner\index.ts (1 module)
+Android Bundled 35ms apps\partner\index.ts (1 module)
+Android Bundled 44ms apps\partner\index.ts (1 module)
+Android Bundled 32ms apps\partner\index.ts (1 module)
+ WARN  This method is deprecated (as well as all React Native Firebase namespaced API) and will be removed in the next major release as part of move to match Firebase Web modular SDK API. Please see migration guide for more details: https://rnfirebase.io/migrating-to-v22. Method called was `getIdToken`. Please use `getIdToken()` instead.

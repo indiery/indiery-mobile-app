@@ -1,0 +1,55 @@
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\bike.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\loader.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\mini500.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\mini700.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\loader.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\bike.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\mini500.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\bike.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\loader.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\mini500.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)
+Error: Asset not found: C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner\assets\mini700.png for platform: android
+    at getAbsoluteAssetRecord (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:133:11)
+    at async getAsset (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Assets.js:232:18)
+    at async Server._processSingleAssetRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:443:20)
+    at async Server._processRequest (C:\Users\DELL\OneDrive\Desktop\indiery\node_modules\metro\src\Server.js:550:7)

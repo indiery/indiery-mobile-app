@@ -362,6 +362,10 @@ customerRouter.post(
     });
     const pickupOtp = makeTripOtp();
     const dropOtp = makeTripOtp();
+    const [pickupOtpHash, dropOtpHash] = await Promise.all([
+      hashOtp(pickupOtp),
+      hashOtp(dropOtp)
+    ]);
 
     const order = await Order.create({
       orderNo,
@@ -405,8 +409,8 @@ customerRouter.post(
       verification: {
         pickupOtp,
         dropOtp,
-        pickupOtpHash: await hashOtp(pickupOtp),
-        dropOtpHash: await hashOtp(dropOtp)
+        pickupOtpHash,
+        dropOtpHash
       }
     });
 
@@ -446,35 +450,19 @@ customerRouter.post(
     const payload = serializeOrder(fullOrder);
     const customerPayload = serializeOrder(fullOrder, { includeTripOtp: true });
     emitOrderChanged(payload, String(user._id));
-    await sendPush(
-      user.expoPushTokens,
-      paymentIntent.provider === 'razorpay' && paymentIntent.status === 'pending' ? 'Complete payment' : 'Order placed',
-      paymentIntent.provider === 'razorpay' && paymentIntent.status === 'pending'
-        ? `Finish payment for ${order.orderNo} to start driver search.`
-        : `${order.orderNo} is confirmed. We are finding a driver now.`,
-      {
-        event: paymentIntent.provider === 'razorpay' && paymentIntent.status === 'pending' ? 'payment_pending' : 'order_created',
-        role: 'customer',
-        screen: 'orders',
-        orderId: String(order._id),
-        orderNo: order.orderNo,
-        status: order.status,
-        paymentStatus: paymentIntent.status
-      },
-      { ttl: 1800, collapseId: `order-${String(order._id)}-created-${Date.now()}` }
-    );
-    const dispatchPayload =
-      paymentIntent.provider === 'cash' || paymentIntent.status === 'paid'
-        ? await offerOrderToNextDrivers(order._id, { reason: 'new' })
-        : undefined;
     res.status(201).json({
-      order: dispatchPayload ? { ...dispatchPayload, tripOtp: customerPayload.tripOtp } : customerPayload,
+      order: customerPayload,
       paymentIntent,
       tripOtp: {
         pickup: pickupOtp,
         drop: dropOtp
       }
     });
+    if (paymentIntent.provider === 'cash' || paymentIntent.status === 'paid') {
+      void offerOrderToNextDrivers(order._id, { reason: 'new' }).catch((error) => {
+        console.error('Unable to dispatch newly created order', error);
+      });
+    }
   })
 );
 
@@ -550,7 +538,8 @@ customerRouter.post(
     const customerPayload = fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : { id: String(order._id), tripOtp: undefined };
     emitOrderChanged(payload, req.auth!.userId, order.partner ? String(order.partner) : undefined);
     const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
-    await sendPush(
+    res.json({ order: customerPayload });
+    void sendPush(
       customer?.expoPushTokens,
       'Payment received',
       `${order.orderNo} is paid. We are finding a driver now.`,
@@ -564,9 +553,12 @@ customerRouter.post(
         paymentStatus: 'paid'
       },
       { ttl: 1800, collapseId: `order-${String(order._id)}-payment-${Date.now()}` }
-    );
-    const dispatchPayload = await offerOrderToNextDrivers(order._id, { reason: 'payment' });
-    res.json({ order: dispatchPayload ? { ...dispatchPayload, tripOtp: customerPayload.tripOtp } : customerPayload });
+    ).catch((error) => {
+      console.error('Unable to send payment-received notification', error);
+    });
+    void offerOrderToNextDrivers(order._id, { reason: 'payment' }).catch((error) => {
+      console.error('Unable to dispatch paid order', error);
+    });
   })
 );
 

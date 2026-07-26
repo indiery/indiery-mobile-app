@@ -1,0 +1,13 @@
+
+> @indiery/partner@1.0.0 start
+> expo start --clear --port 8081
+
+Starting project at C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner
+Expo Autolinking module resolution enabled
+Starting Metro Bundler
+
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+Android Bundled 11824ms apps\partner\index.ts (980 modules)
+ WARN  This method is deprecated (as well as all React Native Firebase namespaced API) and will be removed in the next major release as part of move to match Firebase Web modular SDK API. Please see migration guide for more details: https://rnfirebase.io/migrating-to-v22 Please use `getApp()` instead.

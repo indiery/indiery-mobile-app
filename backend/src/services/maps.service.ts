@@ -47,6 +47,10 @@ export interface LocationDetailsResult {
   lng: number;
 }
 
+const ROUTE_METRICS_CACHE_TTL_MS = 2 * 60_000;
+const ROUTE_METRICS_CACHE_MAX_ENTRIES = 300;
+const routeMetricsCache = new Map<string, { metrics: RouteMetrics; expiresAt: number }>();
+
 function coordinatePair(lat?: number, lng?: number) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return undefined;
   return `${lat},${lng}`;
@@ -79,6 +83,32 @@ function routePointsFor(input: DistanceInput) {
     ...stops.map(routePointValue),
     coordinatePair(input.dropLat, input.dropLng) ?? input.drop
   ];
+}
+
+function routeMetricsCacheKey(input: DistanceInput) {
+  return JSON.stringify(routePointsFor(input).map((point) => point.trim().toLowerCase()));
+}
+
+function cachedRouteMetrics(input: DistanceInput) {
+  const key = routeMetricsCacheKey(input);
+  const cached = routeMetricsCache.get(key);
+  if (!cached) return { key };
+  if (cached.expiresAt <= Date.now()) {
+    routeMetricsCache.delete(key);
+    return { key };
+  }
+  return { key, metrics: cached.metrics };
+}
+
+function rememberRouteMetrics(key: string, metrics: RouteMetrics) {
+  if (routeMetricsCache.size >= ROUTE_METRICS_CACHE_MAX_ENTRIES) {
+    const oldestKey = routeMetricsCache.keys().next().value as string | undefined;
+    if (oldestKey) routeMetricsCache.delete(oldestKey);
+  }
+  routeMetricsCache.set(key, {
+    metrics,
+    expiresAt: Date.now() + ROUTE_METRICS_CACHE_TTL_MS
+  });
 }
 
 function coordinateRoutePointsFor(input: DistanceInput): RoutePathCoordinate[] {
@@ -357,18 +387,24 @@ async function resolveDistanceMatrixMetrics(input: DistanceInput, mapsKey: strin
 }
 
 export async function resolveRouteMetrics(input: DistanceInput): Promise<RouteMetrics> {
+  const cached = cachedRouteMetrics(input);
+  if (cached.metrics) return cached.metrics;
   const fallback: RouteMetrics = {
     distanceKm: fallbackDistanceKm(input),
     source: 'fallback'
   };
   const mapsKey = env.GOOGLE_MAPS_API_KEY;
-  if (!mapsKey) return fallback;
+  if (!mapsKey) {
+    rememberRouteMetrics(cached.key, fallback);
+    return fallback;
+  }
 
-  return (
+  const metrics =
     (await resolveDirectionsMetrics(input, mapsKey)) ??
     (await resolveDistanceMatrixMetrics(input, mapsKey)) ??
-    fallback
-  );
+    fallback;
+  rememberRouteMetrics(cached.key, metrics);
+  return metrics;
 }
 
 export async function resolveDistanceKm(input: DistanceInput) {

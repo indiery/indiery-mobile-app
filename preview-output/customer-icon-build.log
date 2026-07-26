@@ -1,0 +1,41 @@
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>if "Windows_NT" == "Windows_NT" setlocal
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set DIRNAME=C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1\bin\ 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>if "C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1\bin\" == "" set DIRNAME=. 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set APP_BASE_NAME=gradle 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set APP_HOME=C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1\bin\.. 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>for %i in ("C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1\bin\..") do set APP_HOME=%~fi 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set APP_HOME=C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m" "-javaagent:C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1/lib/agents/gradle-instrumentation-agent-9.3.1.jar" 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>if defined JAVA_HOME goto findJavaFromJavaHome 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set JAVA_HOME=C:\Program Files\Android\Android Studio\jbr 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set JAVA_EXE=C:\Program Files\Android\Android Studio\jbr/bin/java.exe 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>if exist "C:\Program Files\Android\Android Studio\jbr/bin/java.exe" goto execute 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>"C:\Program Files\Android\Android Studio\jbr/bin/java.exe" "-Xmx64m" "-Xms64m" "-javaagent:C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1/lib/agents/gradle-instrumentation-agent-9.3.1.jar"   "-Dorg.gradle.appname=gradle" -jar "C:\Users\DELL\.gradle\wrapper\dists\gradle-9.3.1-bin\23ovyewtku6u96viwx3xl3oks\gradle-9.3.1\lib\gradle-gradle-cli-main-9.3.1.jar" app:assembleDebug -x lint -x test --configure-on-demand --build-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=arm64-v8a 
+Configuration on demand is an incubating feature.
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>if 1 EQU 0 goto mainEnd 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>rem Set variable GRADLE_EXIT_CONSOLE if you need the _script_ return code instead of 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>rem the _cmd.exe /c_ return code! 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>set EXIT_CODE=1 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>if 1 EQU 0 set EXIT_CODE=1 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>if not "" == "" exit 1 
+
+C:\Users\DELL\OneDrive\Desktop\indiery\apps\customer\android>exit /b 1 

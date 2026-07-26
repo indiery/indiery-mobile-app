@@ -1610,7 +1610,7 @@ export default function App() {
   }
 
   async function placeOrder() {
-    if (!booking.vehicleId) return;
+    if (busy || !booking.vehicleId) return;
     setBusy(true);
     try {
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
@@ -1674,7 +1674,19 @@ export default function App() {
       if (tripOtp?.pickup || tripOtp?.drop) {
         setTripOtpByOrder((current) => ({ ...current, [result.order.id]: tripOtp }));
       }
-      await refresh();
+      setData((current) => {
+        if (!current) return current;
+        const orders = [confirmedOrder, ...current.orders.filter((order) => order.id !== confirmedOrder.id)];
+        const activeOrders = isActiveOrder(confirmedOrder)
+          ? [confirmedOrder, ...current.activeOrders.filter((order) => order.id !== confirmedOrder.id)]
+          : current.activeOrders.filter((order) => order.id !== confirmedOrder.id);
+        return {
+          ...current,
+          activeOrder: activeOrders[0],
+          activeOrders,
+          orders
+        };
+      });
       setStep(1);
       estimateRequestSeqRef.current += 1;
       setFare(null);
@@ -1683,6 +1695,7 @@ export default function App() {
       setBooking((current) => ({ ...initialBooking, vehicleId: current.vehicleId }));
       setTab('orders');
       showToast(`${confirmedOrder.orderNo} booked`);
+      void refresh();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Booking failed');
     } finally {

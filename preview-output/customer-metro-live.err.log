@@ -1,0 +1,6 @@
+[debugger-shell stderr] [16312:0726/193451.092:ERROR:chrome\browser\process_singleton_win.cc:454] Lock file can not be created! Error code: 5
+
+[debugger-shell stderr] [16312:0726/193451.113:ERROR:components\os_crypt\sync\os_crypt_win.cc:105] Failed to decrypt: Key not valid for use in specified state. (0x8009000B)
+
+[debugger-shell stderr] [16312:0726/193451.312:ERROR:content\browser\gpu\gpu_process_host.cc:999] GPU process exited unexpectedly: exit_code=-1073741515
+

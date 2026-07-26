@@ -110,6 +110,10 @@ const enCopy = {
   welcomeBack: 'Welcome Back',
   loginSubtitle: 'Login to manage your deliveries',
   loginHeroCaption: 'Delivering trust, every mile.',
+  byContinuingAgree: 'By continuing, you agree to the',
+  termsAndConditions: 'Terms & Conditions',
+  and: 'and',
+  privacyPolicy: 'Privacy Policy',
   mobileNumber: 'Mobile Number',
   enterMobileNumber: 'Enter your mobile number',
   otpSent: 'OTP sent. Enter the code to verify.',
@@ -433,6 +437,10 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   welcomeBack: 'वापसी पर स्वागत है',
   loginSubtitle: 'अपनी डिलीवरी संभालने के लिए लॉगिन करें',
   loginHeroCaption: 'हर सफर में भरोसेमंद डिलीवरी.',
+  byContinuingAgree: 'जारी रखकर, आप सहमत हैं',
+  termsAndConditions: 'नियम एवं शर्तों',
+  and: 'और',
+  privacyPolicy: 'गोपनीयता नीति',
   mobileNumber: 'मोबाइल नंबर',
   enterMobileNumber: 'अपना मोबाइल नंबर डालें',
   otpSent: 'OTP भेज दिया गया है. सत्यापन के लिए कोड डालें.',
@@ -2004,6 +2012,7 @@ function LoginScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
   const [resendSeconds, setResendSeconds] = useState(0);
+  const [loginPolicy, setLoginPolicy] = useState<LegalPolicy | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const loginScrollRef = useRef<ScrollView | null>(null);
@@ -2077,10 +2086,18 @@ function LoginScreen({
   }
 
   useAndroidBackHandler(() => {
+    if (loginPolicy) {
+      setLoginPolicy(null);
+      return true;
+    }
     if (!confirmation) return false;
     changePhoneNumber();
     return true;
-  }, [confirmation]);
+  }, [confirmation, loginPolicy]);
+
+  function openLoginPolicy(policyId: LegalPolicy['id']) {
+    setLoginPolicy(legalPolicies.find((policy) => policy.id === policyId) ?? null);
+  }
 
   async function sendOtp() {
     if (!phoneReady || busy) return;
@@ -2117,6 +2134,7 @@ function LoginScreen({
 
   if (confirmation) {
     return (
+      <>
       <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
         <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
         <KeyboardAvoidingView
@@ -2143,10 +2161,13 @@ function LoginScreen({
           />
         </KeyboardAvoidingView>
       </SafeAreaView>
+      <LoginPolicyModal policy={loginPolicy} onClose={() => setLoginPolicy(null)} />
+      </>
     );
   }
 
   return (
+    <>
     <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
       <KeyboardAvoidingView
@@ -2170,10 +2191,63 @@ function LoginScreen({
             onChangePhone={setPhone}
             onChangeLanguage={onChangeLanguage}
             onContinue={sendOtp}
+            onOpenPolicy={openLoginPolicy}
             onKeyboardFocus={() => setKeyboardVisible(true)}
           />
       </KeyboardAvoidingView>
     </SafeAreaView>
+    <LoginPolicyModal policy={loginPolicy} onClose={() => setLoginPolicy(null)} />
+    </>
+  );
+}
+
+function LoginPolicyModal({
+  policy,
+  onClose
+}: {
+  policy: LegalPolicy | null;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      visible={Boolean(policy)}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.loginPolicyShell}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+        {policy ? <LoginPolicyDetail policy={policy} onBack={onClose} /> : null}
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function LoginPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: () => void }) {
+  const copy = useCopy();
+  const responsive = useResponsiveLayout();
+  return (
+    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+      <AccountDetailHeader title={policy.title} subtitle={`${copy.updated} ${policy.updatedAt}`} onBack={onBack} />
+      <View style={[styles.policyDetailHero, responsive.isCompact && styles.policyDetailHeroCompact]}>
+        <Ionicons
+          name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'}
+          size={responsive.isCompact ? 21 : 24}
+          color={colors.partner}
+        />
+        <Text style={[styles.policyDetailSummary, responsive.isCompact && styles.policyDetailSummaryCompact]}>
+          {policy.summary}
+        </Text>
+      </View>
+      {policy.sections.map((section) => (
+        <View key={section.heading} style={[styles.policyDetailSection, responsive.isCompact && styles.policyDetailSectionCompact]}>
+          <Text style={[styles.policyHeading, responsive.isCompact && styles.policyHeadingCompact]}>{section.heading}</Text>
+          {section.body.map((line) => (
+            <Text key={line} style={[styles.policyText, responsive.isCompact && styles.policyTextCompact]}>{line}</Text>
+          ))}
+        </View>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -2189,6 +2263,7 @@ function PartnerLoginPhoneStep({
   onChangePhone,
   onChangeLanguage,
   onContinue,
+  onOpenPolicy,
   onKeyboardFocus
 }: {
   phone: string;
@@ -2202,6 +2277,7 @@ function PartnerLoginPhoneStep({
   onChangePhone: (value: string) => void;
   onChangeLanguage: (language: AppLanguage) => void;
   onContinue: () => void;
+  onOpenPolicy: (policyId: LegalPolicy['id']) => void;
   onKeyboardFocus: () => void;
 }) {
   const copy = useCopy();
@@ -2212,6 +2288,19 @@ function PartnerLoginPhoneStep({
   const heroVisibleHeight = keyboardVisible
     ? Math.round(heroHeight * (compactKeyboardLayout ? 0.86 : 0.9))
     : heroHeight;
+  const consent = (
+    <View style={[styles.loginConsent, keyboardVisible && styles.loginPhoneKeyboardConsent]}>
+      <Text style={styles.loginConsentText}>{copy.byContinuingAgree}</Text>
+      <Pressable accessibilityRole="link" hitSlop={5} onPress={() => onOpenPolicy('terms')}>
+        <Text style={styles.loginConsentLink}>{copy.termsAndConditions}</Text>
+      </Pressable>
+      <Text style={styles.loginConsentText}>{copy.and}</Text>
+      <Pressable accessibilityRole="link" hitSlop={5} onPress={() => onOpenPolicy('privacy')}>
+        <Text style={styles.loginConsentLink}>{copy.privacyPolicy}</Text>
+      </Pressable>
+      <Text style={styles.loginConsentText}>.</Text>
+    </View>
+  );
 
   return (
     <View style={styles.loginPhoneLayout}>
@@ -2308,6 +2397,7 @@ function PartnerLoginPhoneStep({
                   onPress={onContinue}
                   disabled={!phoneReady || busy}
                 />
+                {consent}
                 <AuthDivider />
                 <LoginFeatureRow />
               </>
@@ -2331,6 +2421,7 @@ function PartnerLoginPhoneStep({
               onPress={onContinue}
               disabled={!phoneReady || busy}
             />
+            {!compactKeyboardLayout ? consent : null}
           </View>
         </View>
       ) : null}
@@ -5422,6 +5513,11 @@ const styles = StyleSheet.create({
   loginPhoneKeyboardFooterCompact: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 7 },
   loginPhoneKeyboardFooterSmall: { paddingHorizontal: 14, paddingTop: 7, paddingBottom: 6 },
   loginPhoneKeyboardFooterInner: { width: '100%', alignSelf: 'center' },
+  loginConsent: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: 4, rowGap: 2, marginTop: 12, marginBottom: 0, paddingHorizontal: 6 },
+  loginPhoneKeyboardConsent: { marginTop: 9 },
+  loginConsentText: { color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15 },
+  loginConsentLink: { color: colors.partner, fontSize: 10, fontWeight: '700', lineHeight: 15, textDecorationLine: 'underline' },
+  loginPolicyShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
   loginLanguageToggle: {
     minHeight: 32,
     maxWidth: 124,
@@ -6452,6 +6548,12 @@ const styles = StyleSheet.create({
   policyText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 4 },
   policyTextCompact: { fontSize: 10, lineHeight: 15, marginBottom: 3 },
   policyTextSmall: { fontSize: 9, lineHeight: 14, marginBottom: 2 },
+  policyDetailHero: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 15, marginBottom: 12, gap: 8 },
+  policyDetailHeroCompact: { borderRadius: 14, padding: 11, marginBottom: 9, gap: 6 },
+  policyDetailSummary: { color: colors.ink, fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  policyDetailSummaryCompact: { fontSize: 11, lineHeight: 16 },
+  policyDetailSection: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14, marginBottom: 10 },
+  policyDetailSectionCompact: { borderRadius: 13, padding: 10, marginBottom: 8 },
   flex: { flex: 1 },
   tabs: { height: 68, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.white },
   tabsCompact: { height: 62 },

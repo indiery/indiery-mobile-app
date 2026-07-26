@@ -2,12 +2,14 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
   Image,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -16,6 +18,7 @@ import {
   Text,
   TextInput,
   useWindowDimensions,
+  Vibration,
   View
 } from 'react-native';
 import { SafeAreaView, type Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -181,6 +184,9 @@ const enCopy = {
   syncing: 'SYNCING',
   online: 'ONLINE',
   offline: 'OFFLINE',
+  goOnline: 'GO ONLINE',
+  goOffline: 'GO OFFLINE',
+  slideToConfirm: 'Slide to confirm',
   rechargeStatus: 'RECHARGE',
   receivingNearbyOrders: 'Receiving nearby orders',
   tapToStartReceivingOrders: 'Tap to start receiving orders',
@@ -493,6 +499,9 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   syncing: 'सिंक हो रहा है',
   online: 'ऑनलाइन',
   offline: 'ऑफलाइन',
+  goOnline: 'ऑनलाइन हों',
+  goOffline: 'ऑफलाइन हों',
+  slideToConfirm: 'पुष्टि के लिए स्लाइड करें',
   rechargeStatus: 'रिचार्ज',
   receivingNearbyOrders: 'पास के ऑर्डर मिल रहे हैं',
   tapToStartReceivingOrders: 'ऑर्डर पाने के लिए टैप करें',
@@ -1086,6 +1095,9 @@ export default function App() {
   const locationSyncInFlightRef = useRef(false);
   const pendingLocationRef = useRef<PendingLocationUpdate | null>(null);
   const exitBackPressedAtRef = useRef(0);
+  const knownAvailableOrderIdsRef = useRef<Set<string>>(new Set());
+  const availableOrderTrackingReadyRef = useRef(false);
+  const previousOnlineRef = useRef(false);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [language, setLanguage] = useState<AppLanguage>('en');
   const [data, setData] = useState<PartnerBootstrap | null>(null);
@@ -1102,6 +1114,7 @@ export default function App() {
     screen?: string;
   } | null>(null);
   const activeOrderIds = (data?.activeOrders ?? []).map((order) => order.id).join('|');
+  const availableOrderIds = (data?.availableOrders ?? []).map((order) => order.id).join('|');
 
   useEffect(() => {
     boot();
@@ -1171,6 +1184,29 @@ export default function App() {
       stopLocationStream();
     }
   }, [data?.user.partnerProfile?.online, activeOrderIds]);
+
+  useEffect(() => {
+    if (!data) return;
+    const online = Boolean(data.user.partnerProfile?.online);
+    const currentOrderIds = new Set(data.availableOrders.map((order) => order.id));
+
+    if (!availableOrderTrackingReadyRef.current || !online || !previousOnlineRef.current) {
+      knownAvailableOrderIdsRef.current = currentOrderIds;
+      availableOrderTrackingReadyRef.current = true;
+      previousOnlineRef.current = online;
+      return;
+    }
+
+    const hasNewOrder = data.availableOrders.some(
+      (order) => !knownAvailableOrderIdsRef.current.has(order.id)
+    );
+    knownAvailableOrderIdsRef.current = currentOrderIds;
+    previousOnlineRef.current = online;
+
+    if (hasNewOrder) {
+      Vibration.vibrate([0, 700, 250, 700, 250, 900]);
+    }
+  }, [availableOrderIds, data?.user.partnerProfile?.online]);
 
   useEffect(() => {
     if (!data?.activeOrders.length) {
@@ -3359,6 +3395,222 @@ function BrandLogo({ title, accentColor }: { title: string; accentColor: string 
   );
 }
 
+function AvailabilitySlider({
+  online,
+  busy,
+  disabled,
+  compact,
+  onlineActionLabel,
+  offlineActionLabel,
+  rechargeLabel,
+  slideHint,
+  onSlide,
+  onDisabledPress
+}: {
+  online: boolean;
+  busy: boolean;
+  disabled: boolean;
+  compact: boolean;
+  onlineActionLabel: string;
+  offlineActionLabel: string;
+  rechargeLabel: string;
+  slideHint: string;
+  onSlide: () => void;
+  onDisabledPress: () => void;
+}) {
+  const thumbPosition = useRef(new Animated.Value(0)).current;
+  const [trackWidth, setTrackWidth] = useState(0);
+  const thumbSize = compact ? 42 : 50;
+  const trackInset = 4;
+  const travelDistance = Math.max(0, trackWidth - thumbSize - trackInset * 2);
+  const actionColor = disabled ? colors.amber : online ? colors.red : colors.partner;
+  const actionLabel = busy
+    ? undefined
+    : disabled
+      ? rechargeLabel
+      : online
+        ? offlineActionLabel
+        : onlineActionLabel;
+
+  function resetThumb() {
+    Animated.spring(thumbPosition, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 24,
+      bounciness: 5
+    }).start();
+  }
+
+  useEffect(() => {
+    thumbPosition.setValue(0);
+  }, [disabled, online, thumbPosition, travelDistance]);
+
+  const panResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => !busy && !disabled && travelDistance > 0,
+    onMoveShouldSetPanResponder: (_, gesture) => (
+      !busy && !disabled && travelDistance > 0 && gesture.dx > 3 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+    ),
+    onPanResponderGrant: () => thumbPosition.stopAnimation(),
+    onPanResponderMove: (_, gesture) => {
+      thumbPosition.setValue(Math.max(0, Math.min(travelDistance, gesture.dx)));
+    },
+    onPanResponderRelease: (_, gesture) => {
+      const confirmed = gesture.dx >= Math.max(46, travelDistance * 0.58);
+      if (!confirmed) {
+        resetThumb();
+        return;
+      }
+      Animated.timing(thumbPosition, {
+        toValue: travelDistance,
+        duration: 120,
+        useNativeDriver: true
+      }).start(() => {
+        onSlide();
+        setTimeout(resetThumb, 260);
+      });
+    },
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderTerminate: resetThumb
+  }), [busy, disabled, onSlide, thumbPosition, travelDistance]);
+
+  return (
+    <Pressable
+      style={[
+        styles.availabilitySlider,
+        compact && styles.availabilitySliderCompact,
+        { borderColor: actionColor },
+        disabled && styles.availabilitySliderDisabled
+      ]}
+      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+      onPress={disabled ? onDisabledPress : undefined}
+      accessibilityRole="adjustable"
+      accessibilityLabel={actionLabel ?? slideHint}
+      accessibilityHint={disabled ? rechargeLabel : slideHint}
+      accessibilityActions={[{ name: 'activate', label: actionLabel ?? slideHint }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName !== 'activate' || busy) return;
+        if (disabled) onDisabledPress();
+        else onSlide();
+      }}
+    >
+      <View style={[styles.availabilitySliderLabelWrap, { paddingLeft: thumbSize + 18 }]} pointerEvents="none">
+        {busy ? <ActivityIndicator size="small" color={actionColor} /> : null}
+        <Text style={[styles.availabilitySliderLabel, compact && styles.availabilitySliderLabelCompact, { color: actionColor }]}>
+          {actionLabel ?? slideHint}
+        </Text>
+        {!busy && !disabled ? (
+          <View style={styles.availabilitySliderChevrons}>
+            <Ionicons name="chevron-forward" size={compact ? 13 : 15} color={actionColor} />
+            <Ionicons name="chevron-forward" size={compact ? 13 : 15} color={actionColor} style={styles.availabilitySliderChevronOverlap} />
+          </View>
+        ) : null}
+      </View>
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.availabilitySliderThumb,
+          compact && styles.availabilitySliderThumbCompact,
+          { backgroundColor: actionColor, transform: [{ translateX: thumbPosition }] }
+        ]}
+      >
+        <Ionicons name={disabled ? 'wallet-outline' : 'power'} size={compact ? 20 : 23} color={colors.white} />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function AcceptOrderSlider({
+  label,
+  busy,
+  compact,
+  onAccept
+}: {
+  label: string;
+  busy: boolean;
+  compact: boolean;
+  onAccept: () => void;
+}) {
+  const thumbPosition = useRef(new Animated.Value(0)).current;
+  const [trackWidth, setTrackWidth] = useState(0);
+  const thumbSize = compact ? 42 : 48;
+  const trackInset = 4;
+  const travelDistance = Math.max(0, trackWidth - thumbSize - trackInset * 2);
+
+  function resetThumb() {
+    Animated.spring(thumbPosition, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 24,
+      bounciness: 5
+    }).start();
+  }
+
+  useEffect(() => {
+    thumbPosition.setValue(0);
+  }, [busy, thumbPosition, travelDistance]);
+
+  const panResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => !busy && travelDistance > 0,
+    onMoveShouldSetPanResponder: (_, gesture) => (
+      !busy && travelDistance > 0 && gesture.dx > 3 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+    ),
+    onPanResponderGrant: () => thumbPosition.stopAnimation(),
+    onPanResponderMove: (_, gesture) => {
+      thumbPosition.setValue(Math.max(0, Math.min(travelDistance, gesture.dx)));
+    },
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dx < Math.max(56, travelDistance * 0.7)) {
+        resetThumb();
+        return;
+      }
+      Animated.timing(thumbPosition, {
+        toValue: travelDistance,
+        duration: 120,
+        useNativeDriver: true
+      }).start(onAccept);
+    },
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderTerminate: resetThumb
+  }), [busy, onAccept, thumbPosition, travelDistance]);
+
+  return (
+    <View
+      style={[styles.acceptOrderSlider, compact && styles.acceptOrderSliderCompact, busy && styles.acceptOrderSliderBusy]}
+      onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+      accessibilityRole="adjustable"
+      accessibilityLabel={label}
+      accessibilityHint="Slide right to accept this order"
+      accessibilityActions={[{ name: 'activate', label }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === 'activate' && !busy) onAccept();
+      }}
+    >
+      <View style={[styles.acceptOrderSliderLabelWrap, { paddingLeft: thumbSize + 16 }]} pointerEvents="none">
+        {busy ? <ActivityIndicator size="small" color={colors.partner} /> : null}
+        <Text style={[styles.acceptOrderSliderLabel, compact && styles.acceptOrderSliderLabelCompact]} numberOfLines={1}>
+          {label}
+        </Text>
+        {!busy ? (
+          <View style={styles.availabilitySliderChevrons}>
+            <Ionicons name="chevron-forward" size={compact ? 13 : 15} color={colors.partner} />
+            <Ionicons name="chevron-forward" size={compact ? 13 : 15} color={colors.partner} style={styles.availabilitySliderChevronOverlap} />
+          </View>
+        ) : null}
+      </View>
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.acceptOrderSliderThumb,
+          compact && styles.acceptOrderSliderThumbCompact,
+          { transform: [{ translateX: thumbPosition }] }
+        ]}
+      >
+        <Ionicons name="checkmark" size={compact ? 21 : 24} color={colors.white} />
+      </Animated.View>
+    </View>
+  );
+}
+
 function DashboardScreen({
   data,
   busy,
@@ -3386,18 +3638,21 @@ function DashboardScreen({
   const walletReady = balance >= minPartnerWalletBalance;
   const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
   return (
-    <ScrollView
-      contentContainerStyle={[
-        styles.scroll,
-        styles.responsiveScreenContent,
-        responsive.isCompact && styles.scrollCompact,
-        responsive.isSmall && styles.scrollSmall,
-        {
-          maxWidth: responsive.contentMaxWidth,
-          paddingHorizontal: responsive.horizontalPadding
-        }
-      ]}
-    >
+    <View style={styles.dashboardScreen}>
+      <ScrollView
+        style={styles.dashboardScroll}
+        contentContainerStyle={[
+          styles.scroll,
+          styles.responsiveScreenContent,
+          responsive.isCompact && styles.scrollCompact,
+          responsive.isSmall && styles.scrollSmall,
+          styles.dashboardScrollContent,
+          {
+            maxWidth: responsive.contentMaxWidth,
+            paddingHorizontal: responsive.horizontalPadding
+          }
+        ]}
+      >
       {profile?.kycStatus === 'pending' ? (
         <View style={[styles.verificationPendingCard, responsive.isCompact && styles.verificationPendingCardCompact]}>
           <View style={[styles.verificationPendingHeader, responsive.isCompact && styles.verificationPendingHeaderCompact]}>
@@ -3441,20 +3696,6 @@ function DashboardScreen({
         </View>
       ) : null}
 
-      <Pressable
-        style={[
-          styles.onlineCard,
-          responsive.isCompact && styles.onlineCardCompact,
-          responsive.isSmall && styles.onlineCardSmall,
-          online && styles.onlineCardActive,
-          !walletReady && styles.onlineCardDisabled
-        ]}
-        onPress={walletReady ? onToggle : () => onTopup(rechargeAmount)}
-      >
-        <Text style={[styles.onlineText, responsive.isCompact && styles.onlineTextCompact, responsive.isSmall && styles.onlineTextSmall, online && styles.onlineTextActive]}>{busy ? copy.syncing : online ? copy.online : walletReady ? copy.offline : copy.rechargeStatus}</Text>
-        <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact, responsive.isSmall && styles.mutedSmallScreen]}>{walletReady ? (online ? copy.receivingNearbyOrders : copy.tapToStartReceivingOrders) : copy.walletBelowMinimum}</Text>
-      </Pressable>
-
       <View style={[styles.statRow, responsive.isCompact && styles.statRowCompact]}>
         <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
         <StatCard title={copy.orders} value={String(data.stats.completedCount)} tone="blue" />
@@ -3473,7 +3714,51 @@ function DashboardScreen({
         onAccept={onAccept}
         onReject={onReject}
       />
-    </ScrollView>
+      </ScrollView>
+
+      <View style={[styles.availabilityFooter, responsive.isCompact && styles.availabilityFooterCompact]}>
+        <View
+          style={[
+            styles.availabilityFooterInner,
+            {
+              maxWidth: responsive.contentMaxWidth,
+              paddingHorizontal: responsive.horizontalPadding
+            }
+          ]}
+        >
+          <View style={styles.availabilityStatusRow}>
+            <View style={[
+              styles.availabilityStatusDot,
+              online && styles.availabilityStatusDotOnline,
+              !walletReady && styles.availabilityStatusDotBlocked
+            ]} />
+            <Text style={[
+              styles.availabilityStatusText,
+              responsive.isCompact && styles.availabilityStatusTextCompact,
+              online && styles.availabilityStatusTextOnline,
+              !walletReady && styles.availabilityStatusTextBlocked
+            ]}>
+              {online ? copy.online : walletReady ? copy.offline : copy.rechargeStatus}
+            </Text>
+            <Text style={[styles.availabilityStatusMessage, responsive.isCompact && styles.availabilityStatusMessageCompact]} numberOfLines={1}>
+              {walletReady ? (online ? copy.receivingNearbyOrders : copy.tapToStartReceivingOrders) : copy.walletBelowMinimum}
+            </Text>
+          </View>
+          <AvailabilitySlider
+            online={online}
+            busy={busy}
+            disabled={!walletReady}
+            compact={responsive.isCompact}
+            onlineActionLabel={copy.goOnline}
+            offlineActionLabel={copy.goOffline}
+            rechargeLabel={copy.rechargeStatus}
+            slideHint={copy.slideToConfirm}
+            onSlide={onToggle}
+            onDisabledPress={() => onTopup(rechargeAmount)}
+          />
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -3518,8 +3803,13 @@ function AvailableOrdersList({
             </View>
             <View style={[styles.row, responsive.isCompact && styles.rowCompact]}>
               <SecondaryButton title={copy.skip} icon="close" onPress={() => onReject(order.id)} />
-              <PrimaryButton title={busy ? copy.wait : `${copy.accept} ${money(order.fare.partnerNet)}`} icon="checkmark" onPress={() => onAccept(order.id)} />
             </View>
+            <AcceptOrderSlider
+              label={busy ? copy.wait : `${copy.slideToConfirm}: ${copy.accept} ${money(order.fare.partnerNet)}`}
+              busy={busy}
+              compact={responsive.isCompact}
+              onAccept={() => onAccept(order.id)}
+            />
           </View>
         );
       })}
@@ -5661,15 +5951,40 @@ const styles = StyleSheet.create({
   responsiveScreenContent: { width: '100%', alignSelf: 'center' },
   scrollCompact: { paddingTop: 12, paddingBottom: 78 },
   scrollSmall: { paddingTop: 10, paddingBottom: 72 },
-  onlineCard: { borderRadius: 80, borderWidth: 4, borderColor: colors.line, width: 124, height: 124, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
-  onlineCardCompact: { width: 108, height: 108, borderRadius: 54, borderWidth: 3, marginVertical: 5 },
-  onlineCardSmall: { width: 100, height: 100, borderRadius: 50 },
-  onlineCardActive: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
-  onlineCardDisabled: { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' },
-  onlineText: { color: colors.muted, fontWeight: '900', fontSize: 16 },
-  onlineTextCompact: { fontSize: 13 },
-  onlineTextSmall: { fontSize: 11 },
-  onlineTextActive: { color: colors.partner },
+  dashboardScreen: { flex: 1 },
+  dashboardScroll: { flex: 1 },
+  dashboardScrollContent: { paddingBottom: 24 },
+  availabilityFooter: { flexShrink: 0, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.white, paddingTop: 10, paddingBottom: 10 },
+  availabilityFooterCompact: { paddingTop: 7, paddingBottom: 7 },
+  availabilityFooterInner: { width: '100%', alignSelf: 'center', gap: 8 },
+  availabilityStatusRow: { minHeight: 22, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 4 },
+  availabilityStatusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#94A3B8' },
+  availabilityStatusDotOnline: { backgroundColor: colors.partner },
+  availabilityStatusDotBlocked: { backgroundColor: colors.amber },
+  availabilityStatusText: { color: colors.ink, fontSize: 12, fontWeight: '900', letterSpacing: 0.55 },
+  availabilityStatusTextCompact: { fontSize: 11 },
+  availabilityStatusTextOnline: { color: colors.partner },
+  availabilityStatusTextBlocked: { color: '#92400E' },
+  availabilityStatusMessage: { flex: 1, color: colors.muted, fontSize: 11, fontWeight: '700', textAlign: 'right' },
+  availabilityStatusMessageCompact: { fontSize: 9 },
+  availabilitySlider: { height: 62, borderRadius: 31, borderWidth: 2, backgroundColor: colors.white, justifyContent: 'center', overflow: 'hidden', padding: 4 },
+  availabilitySliderCompact: { height: 54, borderRadius: 27 },
+  availabilitySliderDisabled: { backgroundColor: '#FFFBEB' },
+  availabilitySliderLabelWrap: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, paddingRight: 14 },
+  availabilitySliderLabel: { fontSize: 14, fontWeight: '900', letterSpacing: 0.8 },
+  availabilitySliderLabelCompact: { fontSize: 12 },
+  availabilitySliderChevrons: { flexDirection: 'row', alignItems: 'center', marginLeft: 3 },
+  availabilitySliderChevronOverlap: { marginLeft: -7 },
+  availabilitySliderThumb: { position: 'absolute', zIndex: 2, left: 4, top: 4, width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+  availabilitySliderThumbCompact: { width: 42, height: 42, borderRadius: 21 },
+  acceptOrderSlider: { height: 60, borderRadius: 30, borderWidth: 2, borderColor: colors.partner, backgroundColor: colors.partnerLight, justifyContent: 'center', overflow: 'hidden', padding: 4, marginBottom: 12 },
+  acceptOrderSliderCompact: { height: 52, borderRadius: 26, marginBottom: 8 },
+  acceptOrderSliderBusy: { opacity: 0.72 },
+  acceptOrderSliderLabelWrap: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, paddingRight: 14 },
+  acceptOrderSliderLabel: { flexShrink: 1, color: colors.partner, fontSize: 13, fontWeight: '900', letterSpacing: 0.35, textAlign: 'center' },
+  acceptOrderSliderLabelCompact: { fontSize: 11 },
+  acceptOrderSliderThumb: { position: 'absolute', zIndex: 2, left: 4, top: 4, width: 48, height: 48, borderRadius: 24, backgroundColor: colors.partner, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+  acceptOrderSliderThumbCompact: { width: 42, height: 42, borderRadius: 21 },
   verificationPendingCard: {
     borderWidth: 1,
     borderColor: '#FDE68A',

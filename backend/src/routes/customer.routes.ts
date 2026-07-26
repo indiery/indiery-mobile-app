@@ -652,7 +652,11 @@ customerRouter.post(
       { ttl: 3600, collapseId: `order-${String(order._id)}-cancel-confirm-${Date.now()}` }
     );
     const fullOrder = await populatedOrder(order._id);
-    emitOrderChanged(fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) }, req.auth!.userId);
+    emitOrderChanged(
+      fullOrder ? serializeOrder(fullOrder) : { id: String(order._id), status: 'cancelled' },
+      req.auth!.userId,
+      order.partner ? String(order.partner) : undefined
+    );
     emitPartnerQueueChanged();
     res.json({ order: fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : undefined });
   })

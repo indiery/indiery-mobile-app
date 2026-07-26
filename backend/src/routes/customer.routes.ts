@@ -228,18 +228,19 @@ function assertVehicleMatchesWeight(vehicle: VehicleDocument | null, requiredVeh
 customerRouter.get(
   '/bootstrap',
   asyncRoute(async (req: AuthRequest, res) => {
-    const user = await User.findById(req.auth!.userId);
+    const [user, vehicles, orders, wallet] = await Promise.all([
+      User.findById(req.auth!.userId),
+      Vehicle.find({ active: true, code: { $in: customerVehicleCodes } }).sort({ capacityKg: 1 }),
+      Order.find({ customer: req.auth!.userId })
+        .sort({ createdAt: -1 })
+        .limit(40)
+        .populate('vehicle')
+        .populate('partner'),
+      getCustomerWallet(req.auth!.userId)
+    ]);
     if (!user) throw new ApiError(404, 'Customer not found');
-    const vehicles = await Vehicle.find({ active: true, code: { $in: customerVehicleCodes } }).sort({ capacityKg: 1 });
-    const orders = await Order.find({ customer: user._id })
-      .sort({ createdAt: -1 })
-      .limit(40)
-      .populate('vehicle')
-      .populate('partner')
-      .populate('customer');
     const activeOrders = orders.filter((order) => !['delivered', 'cancelled'].includes(order.status));
     const activeOrder = activeOrders[0];
-    const wallet = await getCustomerWallet(user._id);
     res.json({
       user: serializeUser(user),
       wallet,
@@ -310,12 +311,14 @@ customerRouter.post(
   '/estimate',
   asyncRoute(async (req: AuthRequest, res) => {
     const body = EstimateSchema.parse(req.body);
-    const user = await User.findById(req.auth!.userId);
-    const vehicle = await Vehicle.findById(body.vehicleId);
+    const [user, vehicle, requiredVehicle, routeMetrics] = await Promise.all([
+      User.findById(req.auth!.userId),
+      Vehicle.findById(body.vehicleId),
+      customerVehicleForWeight(body.weightKg),
+      resolveRouteMetrics(body)
+    ]);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
-    const requiredVehicle = await customerVehicleForWeight(body.weightKg);
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
-    const routeMetrics = await resolveRouteMetrics(body);
     const fare = estimateFare({
       pickup: body.pickup,
       drop: body.drop,
@@ -334,13 +337,15 @@ customerRouter.post(
   '/orders',
   asyncRoute(async (req: AuthRequest, res) => {
     const body = CreateOrderSchema.parse(req.body);
-    const user = await User.findById(req.auth!.userId);
-    const vehicle = await Vehicle.findById(body.vehicleId);
+    const [user, vehicle, requiredVehicle, routeMetrics] = await Promise.all([
+      User.findById(req.auth!.userId),
+      Vehicle.findById(body.vehicleId),
+      customerVehicleForWeight(body.weightKg),
+      resolveRouteMetrics(body)
+    ]);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
-    const requiredVehicle = await customerVehicleForWeight(body.weightKg);
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
 
-    const routeMetrics = await resolveRouteMetrics(body);
     const fare = estimateFare({
       pickup: body.pickup,
       drop: body.drop,
@@ -600,49 +605,11 @@ customerRouter.post(
     const pushRecipientIds = order.partner
       ? [String(order.partner)]
       : ((order.offeredPartnerIds ?? []) as unknown[]).map(String);
-    if (pushRecipientIds.length) {
-      const recipients = await User.find({ _id: { $in: pushRecipientIds } }).select('expoPushTokens');
-      await sendPush(
-        recipients.flatMap((recipient) => recipient.expoPushTokens ?? []),
-        'Order cancelled',
-        `${order.orderNo} is no longer available`,
-        {
-          event: 'order_cancelled',
-          role: 'partner',
-          screen: 'dashboard',
-          orderId: String(order._id),
-          orderNo: order.orderNo,
-          status: 'cancelled'
-        },
-        {
-          ttl: 3600,
-          collapseId: `order-${String(order._id)}-customer-cancel-${Date.now()}`,
-          channelId: 'driver-orders',
-          priority: 'high'
-        }
-      );
-    }
-    const customerForPush = await User.findById(req.auth!.userId).select('expoPushTokens');
     const refundText = walletRefundAmount > 0
       ? ` Refund of INR ${walletRefundAmount} has been added to your wallet.`
       : shouldRefundCoins
         ? ' Coins used on this order were returned.'
         : '';
-    await sendPush(
-      customerForPush?.expoPushTokens,
-      'Order cancelled',
-      `${order.orderNo} has been cancelled.${refundText}`,
-      {
-        event: 'customer_order_cancelled',
-        role: 'customer',
-        screen: 'orders',
-        orderId: String(order._id),
-        orderNo: order.orderNo,
-        status: 'cancelled',
-        paymentStatus: order.paymentStatus
-      },
-      { ttl: 3600, collapseId: `order-${String(order._id)}-cancel-confirm-${Date.now()}` }
-    );
     const fullOrder = await populatedOrder(order._id);
     emitOrderChanged(
       fullOrder ? serializeOrder(fullOrder) : { id: String(order._id), status: 'cancelled' },
@@ -651,6 +618,49 @@ customerRouter.post(
     );
     emitPartnerQueueChanged();
     res.json({ order: fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : undefined });
+
+    void (async () => {
+      if (pushRecipientIds.length) {
+        const recipients = await User.find({ _id: { $in: pushRecipientIds } }).select('expoPushTokens');
+        await sendPush(
+          recipients.flatMap((recipient) => recipient.expoPushTokens ?? []),
+          'Order cancelled',
+          `${order.orderNo} is no longer available`,
+          {
+            event: 'order_cancelled',
+            role: 'partner',
+            screen: 'dashboard',
+            orderId: String(order._id),
+            orderNo: order.orderNo,
+            status: 'cancelled'
+          },
+          {
+            ttl: 3600,
+            collapseId: `order-${String(order._id)}-customer-cancel-${Date.now()}`,
+            channelId: 'driver-orders',
+            priority: 'high'
+          }
+        );
+      }
+      const customerForPush = await User.findById(req.auth!.userId).select('expoPushTokens');
+      await sendPush(
+        customerForPush?.expoPushTokens,
+        'Order cancelled',
+        `${order.orderNo} has been cancelled.${refundText}`,
+        {
+          event: 'customer_order_cancelled',
+          role: 'customer',
+          screen: 'orders',
+          orderId: String(order._id),
+          orderNo: order.orderNo,
+          status: 'cancelled',
+          paymentStatus: order.paymentStatus
+        },
+        { ttl: 3600, collapseId: `order-${String(order._id)}-cancel-confirm-${Date.now()}` }
+      );
+    })().catch((error) => {
+      console.error('Unable to send order-cancelled notifications', error);
+    });
   })
 );
 

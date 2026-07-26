@@ -115,7 +115,6 @@ export interface FareBreakup {
   billableWaitingMinutes?: number;
   waitingFreeMinutes?: number;
   waitingPerMinute?: number;
-  gst: number;
   coins: number;
   total: number;
   driverCommission: number;

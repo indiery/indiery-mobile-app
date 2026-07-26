@@ -101,6 +101,7 @@ type PartnerProfileInput = { name: string; email: string; city: string; vehicleI
 type OnboardingStepId = 1 | 2 | 3;
 type AppLanguage = 'en' | 'hi';
 type ProfilePage = 'overview' | 'personal' | 'training' | 'vehicle' | 'documents' | 'bank' | 'language' | 'legal';
+type OrderHistoryDateFilter = 'all' | 'today' | 'last7Days';
 
 const enCopy = {
   appName: 'Indiery Partner',
@@ -212,9 +213,21 @@ const enCopy = {
   noActiveDelivery: 'No active delivery',
   acceptOrderFromHome: 'Accept an order from Home to start a delivery.',
   refresh: 'Refresh',
+  refreshing: 'Refreshing...',
+  dataRefreshed: 'Latest data loaded',
   activeOrders: 'Active Orders',
   activeTrips: 'Active Trips',
   orderHistory: 'Order History',
+  allOrders: 'All',
+  last7Days: 'Last 7 days',
+  filters: 'Filters',
+  filterOrders: 'Filter orders',
+  filterOrdersSubtitle: 'Choose when the deliveries were completed.',
+  date: 'Date',
+  applyFilters: 'Apply filters',
+  noMatchingOrders: 'No matching orders',
+  adjustOrderFilters: 'Try a different date filter.',
+  clearFilters: 'Clear filters',
   noOrderHistory: 'No completed deliveries yet',
   completedDeliveriesAppearHere: 'Your completed deliveries will appear here.',
   to: 'to',
@@ -432,6 +445,8 @@ const enCopy = {
 } as const;
 
 const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
+  refreshing: 'रिफ्रेश हो रहा है...',
+  dataRefreshed: 'नई जानकारी लोड हो गई',
   loadingPartner: 'Indiery Partner लोड हो रहा है',
   partnerSetup: 'पार्टनर सेटअप',
   welcomeBack: 'वापसी पर स्वागत है',
@@ -1095,6 +1110,7 @@ export default function App() {
   const pushTokenRef = useRef<string | undefined>(undefined);
   const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshInFlightRef = useRef(false);
   const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const locationStreamModeRef = useRef<'online' | 'active' | null>(null);
   const locationStreamGenerationRef = useRef(0);
@@ -1111,6 +1127,7 @@ export default function App() {
   const [data, setData] = useState<PartnerBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
@@ -1271,12 +1288,19 @@ export default function App() {
       .catch(() => undefined);
   }
 
-  async function refresh() {
+  async function refresh(interactive = false) {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    if (interactive) setRefreshing(true);
     try {
       const bootstrap = await api.partnerBootstrap();
       setData((current) => current ? bootstrap : current);
+      if (interactive) showToast(copyFor(language, 'dataRefreshed'));
     } catch (err) {
       showToast(err instanceof Error ? err.message : copyFor(language, 'refreshFailed'));
+    } finally {
+      refreshInFlightRef.current = false;
+      if (interactive) setRefreshing(false);
     }
   }
 
@@ -1317,6 +1341,7 @@ export default function App() {
 
   function connectRealtime(token: string) {
     socketRef.current?.disconnect();
+    let hasConnectedOnce = false;
     const socket = io(socketUrl, {
       auth: { token },
       transports: ['websocket', 'polling'],
@@ -1327,16 +1352,14 @@ export default function App() {
     });
     socketRef.current = socket;
     socket.on('connect', () => {
-      scheduleRefresh(200);
+      if (hasConnectedOnce) scheduleRefresh(100);
+      hasConnectedOnce = true;
     });
     socket.on('order:changed', (order: Order) => {
       mergeRealtimeOrder(order);
     });
     socket.on('partner:queue_changed', () => {
       scheduleRefresh();
-    });
-    socket.on('connect_error', () => {
-      scheduleRefresh(1000);
     });
   }
 
@@ -1600,14 +1623,14 @@ export default function App() {
 
   async function captureKycDocument(doc: KycDoc) {
     const photoUrl = await captureAndUploadImage({ purpose: 'kyc', documentKey: doc });
-    await api.uploadKyc(doc, { photoUrl });
-    await refresh();
+    const result = await api.uploadKyc(doc, { photoUrl });
+    setData((current) => current ? { ...current, user: result.user } : current);
     showToast(copyFor(language, 'kycPhotoCaptured'));
   }
 
   async function submitKycBankDetails(bankDetails: BankDetailsInput) {
-    await api.uploadKyc('bank', { bankDetails });
-    await refresh();
+    const result = await api.uploadKyc('bank', { bankDetails });
+    setData((current) => current ? { ...current, user: result.user } : current);
     showToast(copyFor(language, 'bankDetailsSaved'));
   }
 
@@ -1648,7 +1671,6 @@ export default function App() {
         razorpaySignature: payment.razorpay_signature
       });
       setData((current) => current ? { ...current, user: verified.user } : current);
-      await refresh();
       showToast(copyFor(language, 'walletRecharged'));
     } catch (err) {
       showToast(err instanceof Error ? err.message : copyFor(language, 'walletRechargeFailed'));
@@ -1828,15 +1850,26 @@ export default function App() {
                 <Ionicons name="alert-circle" size={responsive.isSmall ? 14 : responsive.isCompact ? 16 : 18} color={colors.white} />
                 <Text style={[styles.panicButtonText, responsive.isCompact && styles.panicButtonTextCompact, responsive.isSmall && styles.panicButtonTextSmall]}>{copyFor(language, 'panic')}</Text>
               </Pressable>
-              <View style={[styles.avatar, responsive.isCompact && styles.avatarCompact, responsive.isSmall && styles.avatarSmall]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={copyFor(language, 'profile')}
+                style={[styles.avatar, responsive.isCompact && styles.avatarCompact, responsive.isSmall && styles.avatarSmall]}
+                onPress={() => setTab('profile')}
+              >
                 <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact, responsive.isSmall && styles.avatarTextSmall]}>{data.user.initials}</Text>
-              </View>
+              </Pressable>
             </View>
           </View>
         </View>
       ) : null}
 
-      <View style={[styles.content, tab === 'profile' && styles.accountContent, { maxWidth: responsive.contentMaxWidth }]}>
+      <View style={[
+        styles.content,
+        tab !== 'profile' && styles.partnerPageContent,
+        tab === 'profile' && styles.accountContent,
+        { maxWidth: responsive.contentMaxWidth }
+      ]}>
+        {tab !== 'profile' ? <View pointerEvents="none" style={styles.partnerPageCurveSurface} /> : null}
         {tab === 'dashboard' && (
           <DashboardScreen
             data={data}
@@ -1848,7 +1881,7 @@ export default function App() {
                 const result = await api.setAvailability(online);
                 setData((current) => current ? { ...current, user: result.user } : current);
                 showToast(online ? copyFor(language, 'youAreOnline') : copyFor(language, 'youAreOffline'));
-                scheduleRefresh(250);
+                scheduleRefresh(50);
               })
             }
             onActive={() => setTab('active')}
@@ -1862,7 +1895,8 @@ export default function App() {
                 }
                 const accepted = await api.acceptOrder(orderId);
                 setSelectedActiveOrderId(accepted.order.id);
-                await refresh();
+                mergeRealtimeOrder(accepted.order);
+                scheduleRefresh(50);
                 setTab('active');
                 showToast(copyFor(language, 'orderAccepted'));
               })
@@ -1870,7 +1904,15 @@ export default function App() {
             onReject={(orderId) =>
               withBusy(async () => {
                 await api.rejectOrder(orderId);
-                await refresh();
+                setData((current) => current ? {
+                  ...current,
+                  stats: {
+                    ...current.stats,
+                    availableCount: Math.max(0, current.stats.availableCount - 1)
+                  },
+                  availableOrders: current.availableOrders.filter((order) => order.id !== orderId)
+                } : current);
+                scheduleRefresh(50);
                 showToast(copyFor(language, 'orderSkipped'));
               })
             }
@@ -1884,27 +1926,29 @@ export default function App() {
             selectedOrderId={activeOrder?.id}
             cancellationsRemaining={data.stats.cancellationsRemaining}
             busy={busy}
-            refresh={refresh}
+            refreshing={refreshing}
+            refresh={() => void refresh(true)}
             onSelectOrder={setSelectedActiveOrderId}
             onOtp={(orderId, type, otp) =>
               withBusy(async () => {
-                await api.verifyOrderOtp(orderId, type, otp);
-                await refresh();
+                const result = await api.verifyOrderOtp(orderId, type, otp);
+                mergeRealtimeOrder(result.order);
                 showToast(`${type === 'pickup' ? copyFor(language, 'pickup') : copyFor(language, 'drop')} ${copyFor(language, 'otpVerified')}`);
               })
             }
             onPod={(orderId, type) =>
               withBusy(async () => {
                 const photoUrl = await captureAndUploadImage({ purpose: 'pod', orderId, documentKey: type });
-                await api.uploadPod(orderId, type, photoUrl);
-                await refresh();
+                const result = await api.uploadPod(orderId, type, photoUrl);
+                mergeRealtimeOrder(result.order);
                 showToast(`${type === 'pickup' ? copyFor(language, 'pickup') : copyFor(language, 'drop')} ${copyFor(language, 'podCaptured')}`);
               })
             }
             onStatus={(orderId, status) =>
               withBusy(async () => {
-                await api.updateOrderStatus(orderId, status);
-                await refresh();
+                const result = await api.updateOrderStatus(orderId, status);
+                mergeRealtimeOrder(result.order);
+                if (status === 'delivered') scheduleRefresh(50);
                 showToast(`${copyFor(language, 'orderUpdated')}: ${orderStatusLabel(language, status)}`);
               })
             }
@@ -1922,7 +1966,17 @@ export default function App() {
                     onPress: () =>
                       withBusy(async () => {
                         const result = await api.cancelPartnerOrder(order.id, 'Cancelled by driver');
-                        await refresh();
+                        setData((current) => current ? {
+                          ...current,
+                          stats: {
+                            ...current.stats,
+                            activeCount: Math.max(0, current.stats.activeCount - 1),
+                            cancellationsToday: current.stats.cancellationsToday + 1,
+                            cancellationsRemaining: result.cancellationsRemaining
+                          },
+                          activeOrders: current.activeOrders.filter((item) => item.id !== order.id)
+                        } : current);
+                        scheduleRefresh(50);
                         showToast(
                           `${copyFor(language, 'driverCancellationSubmitted')} ${fillCopy(
                             copyFor(language, 'cancellationsRemaining'),
@@ -1943,8 +1997,9 @@ export default function App() {
             onPayout={() =>
               withBusy(async () => {
                 const balance = data.user.partnerProfile?.walletBalance ?? 0;
-                await api.requestPayout(balance);
-                await refresh();
+                const result = await api.requestPayout(balance);
+                setData((current) => current ? { ...current, user: result.user } : current);
+                scheduleRefresh(50);
                 showToast(copyFor(language, 'payoutRequested'));
               })
             }
@@ -3915,6 +3970,7 @@ function ActiveScreen({
   selectedOrderId,
   cancellationsRemaining,
   busy,
+  refreshing,
   refresh,
   onSelectOrder,
   onOtp,
@@ -3928,6 +3984,7 @@ function ActiveScreen({
   selectedOrderId?: string;
   cancellationsRemaining: number;
   busy: boolean;
+  refreshing: boolean;
   refresh: () => void;
   onSelectOrder: (orderId: string) => void;
   onOtp: (orderId: string, type: 'pickup' | 'drop', otp: string) => void;
@@ -3938,14 +3995,51 @@ function ActiveScreen({
   const copy = useCopy();
   const language = useLanguage();
   const responsive = useResponsiveLayout();
+  const { bottom: bottomInset, left: leftInset, right: rightInset } = useSafeAreaInsets();
   const [otp, setOtp] = useState('');
+  const [historyDateFilter, setHistoryDateFilter] = useState<OrderHistoryDateFilter>('all');
+  const [draftHistoryDateFilter, setDraftHistoryDateFilter] = useState<OrderHistoryDateFilter>('all');
+  const [historyFilterOpen, setHistoryFilterOpen] = useState(false);
   const order = orders.find((item) => item.id === selectedOrderId) ?? orders[0];
   const nextActions = order ? getNextActions(order, copy) : [];
   const needsPickupOtp = order?.status === 'arrived_pickup' && !order.pod.pickupOtpVerified;
   const needsDropOtp = order?.status === 'in_transit' && !order.pod.dropOtpVerified;
   const canCancelOrder = Boolean(order && ['accepted', 'arrived_pickup'].includes(order.status));
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const lastSevenDaysStart = new Date(todayStart);
+  lastSevenDaysStart.setDate(lastSevenDaysStart.getDate() - 6);
+  const matchesHistoryDateFilter = (historyOrder: Order, filter: OrderHistoryDateFilter) => {
+    if (filter === 'all') return true;
+    const completedAt = new Date(historyOrder.updatedAt || historyOrder.createdAt).getTime();
+    if (!Number.isFinite(completedAt)) return false;
+    if (filter === 'today') {
+      return completedAt >= todayStart.getTime() && completedAt < tomorrowStart.getTime();
+    }
+    return completedAt >= lastSevenDaysStart.getTime() && completedAt < tomorrowStart.getTime();
+  };
+  const todayOrderCount = completedOrders.filter((item) => matchesHistoryDateFilter(item, 'today')).length;
+  const lastSevenDaysOrderCount = completedOrders.filter((item) => matchesHistoryDateFilter(item, 'last7Days')).length;
+  const filteredCompletedOrders = completedOrders.filter((item) => matchesHistoryDateFilter(item, historyDateFilter));
+  const historyDateFilterOptions: Array<{ id: OrderHistoryDateFilter; label: string; count: number }> = [
+    { id: 'all', label: copy.allOrders, count: completedOrders.length },
+    { id: 'today', label: copy.today, count: todayOrderCount },
+    { id: 'last7Days', label: copy.last7Days, count: lastSevenDaysOrderCount }
+  ];
+  const historyFiltersActive = historyDateFilter !== 'all';
+
+  function clearHistoryFilters() {
+    setHistoryDateFilter('all');
+    setDraftHistoryDateFilter('all');
+    setHistoryFilterOpen(false);
+  }
+
   return (
+    <View style={styles.partnerCurvedScrollViewport}>
     <ScrollView
+      style={styles.partnerCurvedScroll}
       contentContainerStyle={[
         styles.scroll,
         styles.responsiveScreenContent,
@@ -3954,7 +4048,8 @@ function ActiveScreen({
         {
           maxWidth: responsive.contentMaxWidth,
           paddingHorizontal: responsive.horizontalPadding
-        }
+        },
+        styles.partnerCurvedScrollContent
       ]}
       keyboardShouldPersistTaps="handled"
     >
@@ -3962,7 +4057,7 @@ function ActiveScreen({
       {!order ? (
         <>
           <Empty icon="navigate-outline" title={copy.noActiveDelivery} subtitle={copy.acceptOrderFromHome} />
-          <SecondaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
+          <SecondaryButton title={refreshing ? copy.refreshing : copy.refresh} icon="refresh" onPress={refresh} disabled={refreshing} loading={refreshing} />
         </>
       ) : (
         <>
@@ -4071,18 +4166,110 @@ function ActiveScreen({
           </View>
         </Pressable>
       ) : null}
-      <SecondaryButton title={copy.refresh} icon="refresh" onPress={refresh} />
+      <SecondaryButton title={refreshing ? copy.refreshing : copy.refresh} icon="refresh" onPress={refresh} disabled={refreshing} loading={refreshing} />
         </>
       )}
 
-      <SectionTitle title={`${copy.orderHistory} (${completedOrders.length})`} />
+      <View style={styles.orderHistoryHeader}>
+        <SectionTitle title={`${copy.orderHistory} (${filteredCompletedOrders.length})`} />
+        {completedOrders.length ? (
+          <Pressable
+            style={[styles.orderHistoryFilterButton, historyFiltersActive && styles.orderHistoryFilterButtonActive]}
+            onPress={() => {
+              setDraftHistoryDateFilter(historyDateFilter);
+              setHistoryFilterOpen(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={copy.filterOrders}
+          >
+            <Ionicons name="options-outline" size={15} color={historyFiltersActive ? colors.white : colors.partner} />
+            <Text style={[styles.orderHistoryFilterButtonText, historyFiltersActive && styles.orderHistoryFilterButtonTextActive]}>
+              {copy.filters}
+            </Text>
+            {historyFiltersActive ? (
+              <View style={styles.orderHistoryFilterBadge}>
+                <Text style={styles.orderHistoryFilterBadgeText}>1</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
+      </View>
       {completedOrders.length === 0 ? (
         <Empty icon="time-outline" title={copy.noOrderHistory} subtitle={copy.completedDeliveriesAppearHere} />
       ) : null}
-      {completedOrders.map((completedOrder) => (
+      {completedOrders.length > 0 && filteredCompletedOrders.length === 0 ? (
+        <View style={styles.orderHistoryEmpty}>
+          <Ionicons name="filter-outline" size={28} color={colors.muted} />
+          <Text style={styles.emptyTitle}>{copy.noMatchingOrders}</Text>
+          <Text style={styles.muted}>{copy.adjustOrderFilters}</Text>
+          <Pressable style={styles.orderHistoryClearButton} onPress={clearHistoryFilters}>
+            <Ionicons name="refresh" size={15} color={colors.partner} />
+            <Text style={styles.orderHistoryClearButtonText}>{copy.clearFilters}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {filteredCompletedOrders.map((completedOrder) => (
         <OrderCard key={completedOrder.id} order={completedOrder} />
       ))}
+      <Modal visible={historyFilterOpen} transparent animationType="slide" onRequestClose={() => setHistoryFilterOpen(false)}>
+        <View style={styles.orderHistoryFilterOverlay}>
+          <Pressable style={styles.orderHistoryFilterBackdrop} onPress={() => setHistoryFilterOpen(false)} />
+          <View style={[
+            styles.orderHistoryFilterSheet,
+            {
+              paddingBottom: Math.max(22, bottomInset + 12),
+              paddingLeft: Math.max(16, leftInset + 12),
+              paddingRight: Math.max(16, rightInset + 12)
+            }
+          ]}>
+            <View style={styles.orderHistoryFilterHandle} />
+            <View style={styles.orderHistoryFilterSheetHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.orderHistoryFilterTitle}>{copy.filterOrders}</Text>
+                <Text style={styles.orderHistoryFilterSubtitle}>{copy.filterOrdersSubtitle}</Text>
+              </View>
+              <Pressable style={styles.orderHistoryFilterClose} onPress={() => setHistoryFilterOpen(false)}>
+                <Ionicons name="close" size={20} color={colors.ink} />
+              </Pressable>
+            </View>
+            <Text style={styles.orderHistoryFilterGroupTitle}>{copy.date}</Text>
+            <View style={styles.orderHistoryFilterOptionGrid}>
+              {historyDateFilterOptions.map((option) => {
+                const selected = draftHistoryDateFilter === option.id;
+                return (
+                  <Pressable
+                    key={option.id}
+                    style={[styles.orderHistoryFilterOption, selected && styles.orderHistoryFilterOptionActive]}
+                    onPress={() => setDraftHistoryDateFilter(option.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.orderHistoryFilterOptionText, selected && styles.orderHistoryFilterOptionTextActive]}>
+                      {option.label}
+                    </Text>
+                    <Text style={[styles.orderHistoryFilterOptionCount, selected && styles.orderHistoryFilterOptionCountActive]}>
+                      {option.count}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.orderHistoryFilterActions}>
+              <SecondaryButton title={copy.clearFilters} icon="refresh" onPress={clearHistoryFilters} />
+              <PrimaryButton
+                title={copy.applyFilters}
+                icon="checkmark"
+                onPress={() => {
+                  setHistoryDateFilter(draftHistoryDateFilter);
+                  setHistoryFilterOpen(false);
+                }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
+    </View>
   );
 }
 
@@ -4104,7 +4291,9 @@ function EarningsScreen({
   const walletReady = balance >= minPartnerWalletBalance;
   const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
   return (
+    <View style={styles.partnerCurvedScrollViewport}>
     <ScrollView
+      style={styles.partnerCurvedScroll}
       contentContainerStyle={[
         styles.scroll,
         styles.responsiveScreenContent,
@@ -4113,7 +4302,8 @@ function EarningsScreen({
         {
           maxWidth: responsive.contentMaxWidth,
           paddingHorizontal: responsive.horizontalPadding
-        }
+        },
+        styles.partnerCurvedScrollContent
       ]}
     >
       <View style={[styles.walletCard, responsive.isCompact && styles.walletCardCompact]}>
@@ -4149,6 +4339,7 @@ function EarningsScreen({
         </View>
       ))}
     </ScrollView>
+    </View>
   );
 }
 
@@ -4921,11 +5112,32 @@ function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof ty
   );
 }
 
-function SecondaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+function SecondaryButton({
+  title,
+  icon,
+  onPress,
+  disabled = false,
+  loading = false
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
   const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.secondaryButton, responsive.isCompact && styles.secondaryButtonCompact, responsive.isSmall && styles.secondaryButtonSmall]} onPress={onPress}>
-      <Ionicons name={icon} size={responsive.isSmall ? 13 : responsive.isCompact ? 15 : 17} color={colors.ink} />
+    <Pressable
+      style={[styles.secondaryButton, responsive.isCompact && styles.secondaryButtonCompact, responsive.isSmall && styles.secondaryButtonSmall, disabled && { opacity: 0.65 }]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ disabled, busy: loading }}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.ink} />
+      ) : (
+        <Ionicons name={icon} size={responsive.isSmall ? 13 : responsive.isCompact ? 15 : 17} color={colors.ink} />
+      )}
       <Text style={[styles.secondaryButtonText, responsive.isCompact && styles.secondaryButtonTextCompact, responsive.isSmall && styles.secondaryButtonTextSmall]}>{title}</Text>
     </Pressable>
   );
@@ -5977,11 +6189,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
     backgroundColor: colors.partner,
-    paddingTop: 16,
-    paddingBottom: 22
+    paddingTop: 15,
+    paddingBottom: 28
   },
-  appHeaderCompact: { paddingTop: 10, paddingBottom: 16 },
-  appHeaderSmall: { paddingTop: 8, paddingBottom: 14 },
+  appHeaderCompact: { paddingTop: 10, paddingBottom: 22 },
+  appHeaderSmall: { paddingTop: 8, paddingBottom: 20 },
   appHeaderInner: {
     width: '100%',
     alignSelf: 'center',
@@ -5991,16 +6203,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   appHeaderInnerCompact: { paddingHorizontal: 16 },
-  appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 10 },
-  eyebrow: { color: '#D1FAE5', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  eyebrowCompact: { fontSize: 9, letterSpacing: 0.8 },
-  eyebrowSmall: { fontSize: 8, letterSpacing: 0.6 },
+  appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
+  eyebrow: { color: '#D1FAE5', fontSize: 11, fontWeight: '700', letterSpacing: 0.35 },
+  eyebrowCompact: { fontSize: 9, letterSpacing: 0.25 },
+  eyebrowSmall: { fontSize: 8, letterSpacing: 0.2 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
   eyebrowDarkCompact: { fontSize: 9, letterSpacing: 0.8 },
   eyebrowDarkSmall: { fontSize: 8, letterSpacing: 0.6 },
-  headerTitle: { color: colors.white, fontSize: 21, fontWeight: '800' },
-  headerTitleCompact: { fontSize: 18 },
-  headerTitleSmall: { fontSize: 15 },
+  headerTitle: { color: colors.white, fontSize: 23, fontWeight: '800', marginTop: 2 },
+  headerTitleCompact: { fontSize: 20, marginTop: 1 },
+  headerTitleSmall: { fontSize: 18 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerActionsCompact: { gap: 7 },
   panicButton: { minHeight: 42, borderRadius: 14, backgroundColor: colors.red, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)' },
@@ -6035,13 +6247,54 @@ const styles = StyleSheet.create({
   panicCallNowText: { color: colors.white, fontSize: 11, fontWeight: '900' },
   panicCancelButton: { minHeight: 46, borderRadius: 15, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   panicCancelText: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  avatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.34)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#064E3B',
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2
+  },
   avatarCompact: { width: 38, height: 38, borderRadius: 12 },
   avatarSmall: { width: 34, height: 34, borderRadius: 11 },
-  avatarText: { color: colors.white, fontWeight: '800' },
+  avatarText: { color: colors.white, fontWeight: '700' },
   avatarTextCompact: { fontSize: 13 },
   avatarTextSmall: { fontSize: 11 },
   content: { flex: 1, width: '100%', alignSelf: 'center', marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
+  partnerPageContent: {
+    marginTop: -20,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    backgroundColor: 'transparent',
+    overflow: 'hidden'
+  },
+  partnerPageCurveSurface: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    top: 0,
+    bottom: 0,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    backgroundColor: colors.white,
+    overflow: 'hidden'
+  },
+  partnerCurvedScrollViewport: {
+    flex: 1,
+    marginHorizontal: 14,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    overflow: 'hidden'
+  },
+  partnerCurvedScroll: { flex: 1 },
+  partnerCurvedScrollContent: { paddingHorizontal: 0 },
   accountContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
   scroll: { padding: 16, paddingBottom: 96 },
   responsiveScreenContent: { width: '100%', alignSelf: 'center' },
@@ -6525,6 +6778,33 @@ const styles = StyleSheet.create({
   otpInput: { flex: 1, borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 12, minHeight: 46, color: colors.ink, fontWeight: '800' },
   otpInputCompact: { minHeight: 42, borderRadius: 10, paddingHorizontal: 10, fontSize: 12 },
   otpInputSmall: { minHeight: 39, paddingHorizontal: 9, fontSize: 11 },
+  orderHistoryHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  orderHistoryFilterButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: colors.partner, borderRadius: 10, backgroundColor: colors.white, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 10 },
+  orderHistoryFilterButtonActive: { backgroundColor: colors.partner },
+  orderHistoryFilterButtonText: { color: colors.partner, fontSize: 12, fontWeight: '700' },
+  orderHistoryFilterButtonTextActive: { color: colors.white },
+  orderHistoryFilterBadge: { minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  orderHistoryFilterBadgeText: { color: colors.partner, fontSize: 9, fontWeight: '700' },
+  orderHistoryEmpty: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 7, marginBottom: 12 },
+  orderHistoryClearButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: colors.partnerLight, paddingHorizontal: 14, marginTop: 8 },
+  orderHistoryClearButtonText: { color: colors.partner, fontSize: 12, fontWeight: '700' },
+  orderHistoryFilterOverlay: { flex: 1, justifyContent: 'flex-end' },
+  orderHistoryFilterBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
+  orderHistoryFilterSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.white, paddingTop: 10 },
+  orderHistoryFilterHandle: { width: 44, height: 4, borderRadius: 4, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 12 },
+  orderHistoryFilterSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18 },
+  orderHistoryFilterTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
+  orderHistoryFilterSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  orderHistoryFilterClose: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  orderHistoryFilterGroupTitle: { color: colors.ink, fontSize: 13, fontWeight: '700', marginBottom: 9 },
+  orderHistoryFilterOptionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  orderHistoryFilterOption: { flexGrow: 1, flexShrink: 1, flexBasis: '30%', minWidth: 92, minHeight: 54, borderWidth: 1, borderColor: colors.line, borderRadius: 13, backgroundColor: colors.white, paddingHorizontal: 11, paddingVertical: 9, justifyContent: 'center' },
+  orderHistoryFilterOptionActive: { borderColor: colors.partner, backgroundColor: colors.partnerLight },
+  orderHistoryFilterOptionText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
+  orderHistoryFilterOptionTextActive: { color: colors.partner, fontWeight: '700' },
+  orderHistoryFilterOptionCount: { color: colors.muted, fontSize: 10, fontWeight: '600', marginTop: 3 },
+  orderHistoryFilterOptionCountActive: { color: colors.partner },
+  orderHistoryFilterActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   docCard: { width: '48%', borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, alignItems: 'center', gap: 6 },
   docCardDone: { backgroundColor: colors.partnerLight, borderColor: colors.partner },

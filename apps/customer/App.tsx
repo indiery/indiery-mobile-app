@@ -227,6 +227,8 @@ const enCopy = {
   saving: 'Saving',
   later: 'Later',
   refresh: 'Refresh',
+  refreshing: 'Refreshing...',
+  dataRefreshed: 'Latest data loaded',
   share: 'Share',
   cancelling: 'Cancelling',
   booking: 'Booking',
@@ -302,7 +304,7 @@ const enCopy = {
   chooseVehicle: 'Choose vehicle',
   suggested: 'Suggested',
   unavailableForWeight: 'Too heavy',
-  fareBeforeTax: 'Fare',
+  fareEstimate: 'Fare',
   settingPickupLocation: 'Setting current pickup location',
   allVehiclePrices: 'All vehicle prices',
   changeRoute: 'Change route',
@@ -418,7 +420,7 @@ const enCopy = {
   verified: 'Verified',
   done: 'Done',
   enterprisesTitle: 'Indiery Enterprises',
-  enterprisesText: 'Bulk orders, recurring routes, GST invoices, and dedicated logistics support.',
+  enterprisesText: 'Bulk orders, recurring routes, monthly billing, and dedicated logistics support.',
   savedAddresses: 'Saved Addresses',
   noSavedAddresses: 'No saved addresses',
   savePickupDropAddresses: 'Save pickup or drop addresses while booking.',
@@ -451,8 +453,8 @@ const enCopy = {
   bestFor: 'Best For',
   recurringRoutes: 'Recurring routes',
   recurringRoutesText: 'Set frequent pickup and drop lanes for daily business movement.',
-  gstInvoices: 'GST invoices',
-  gstInvoicesText: 'Cleaner billing records for monthly logistics and accounting.',
+  monthlyBilling: 'Monthly billing',
+  monthlyBillingText: 'Cleaner billing records for monthly logistics and accounting.',
   bulkOrders: 'Bulk orders',
   bulkOrdersText: 'Move business stock, documents, parcels, and store inventory.',
   prioritySupport: 'Priority support',
@@ -516,6 +518,8 @@ const enCopy = {
 } as const;
 
 const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
+  refreshing: 'रिफ्रेश हो रहा है...',
+  dataRefreshed: 'नई जानकारी लोड हो गई',
   hi: 'नमस्ते',
   loading: 'Indiery लोड हो रहा है',
   continue: 'जारी रखें',
@@ -686,7 +690,7 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   verified: 'वेरिफाइड',
   done: 'पूरा',
   enterprisesTitle: 'Indiery Enterprises',
-  enterprisesText: 'बल्क ऑर्डर, रेकरिंग रूट, GST इनवॉइस और डेडिकेटेड लॉजिस्टिक्स सपोर्ट.',
+  enterprisesText: 'बल्क ऑर्डर, रेकरिंग रूट, मंथली बिलिंग और डेडिकेटेड लॉजिस्टिक्स सपोर्ट.',
   savedAddresses: 'सेव पते',
   noSavedAddresses: 'कोई सेव पता नहीं',
   savePickupDropAddresses: 'बुकिंग करते समय पिकअप या ड्रॉप पता सेव करें.',
@@ -716,8 +720,8 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   bestFor: 'इनके लिए बेहतर',
   recurringRoutes: 'रेकरिंग रूट',
   recurringRoutesText: 'रोजाना बिजनेस मूवमेंट के लिए फिक्स पिकअप और ड्रॉप लेन सेट करें.',
-  gstInvoices: 'GST इनवॉइस',
-  gstInvoicesText: 'मासिक लॉजिस्टिक्स और अकाउंटिंग के लिए साफ बिलिंग रिकॉर्ड.',
+  monthlyBilling: 'मंथली बिलिंग',
+  monthlyBillingText: 'मासिक लॉजिस्टिक्स और अकाउंटिंग के लिए साफ बिलिंग रिकॉर्ड.',
   bulkOrders: 'बल्क ऑर्डर',
   bulkOrdersText: 'बिजनेस स्टॉक, डॉक्यूमेंट, पार्सल और स्टोर इन्वेंट्री भेजें.',
   prioritySupport: 'प्रायोरिटी सपोर्ट',
@@ -1364,10 +1368,12 @@ export default function App() {
   const pushTokenRef = useRef<string | undefined>(undefined);
   const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
   const exitBackPressedAtRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
   const [tab, setTab] = useState<Tab>('home');
   const [data, setData] = useState<CustomerBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [step, setStep] = useState(1);
@@ -1528,6 +1534,7 @@ export default function App() {
 
   function connectRealtime(token: string) {
     socketRef.current?.disconnect();
+    let hasConnectedOnce = false;
     const socket = io(socketUrl, {
       auth: { token },
       transports: ['websocket', 'polling'],
@@ -1538,22 +1545,27 @@ export default function App() {
     });
     socketRef.current = socket;
     socket.on('connect', () => {
-      refresh();
+      if (hasConnectedOnce) void refresh();
+      hasConnectedOnce = true;
     });
     socket.on('order:changed', (order: Order) => {
       mergeRealtimeOrder(order);
     });
-    socket.on('connect_error', () => {
-      refresh();
-    });
   }
 
-  async function refresh() {
+  async function refresh(interactive = false) {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    if (interactive) setRefreshing(true);
     try {
       const bootstrap = await api.customerBootstrap();
       setData((current) => current ? bootstrap : current);
+      if (interactive) showToast(copyFor(language, 'dataRefreshed'));
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Refresh failed');
+    } finally {
+      refreshInFlightRef.current = false;
+      if (interactive) setRefreshing(false);
     }
   }
 
@@ -1579,6 +1591,7 @@ export default function App() {
     if (!vehicleId || !booking.pickup || !booking.drop) return;
     const requestId = ++estimateRequestSeqRef.current;
     const routeKey = bookingFareRouteKey(booking);
+    setStep(nextStep);
     setBusy(true);
     try {
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
@@ -1599,7 +1612,6 @@ export default function App() {
       setFare(result.fare);
       setFareVehicleId(vehicleId);
       setFareRouteKey(routeKey);
-      setStep(nextStep);
     } catch (err) {
       if (requestId === estimateRequestSeqRef.current) {
         showToast(err instanceof Error ? err.message : 'Fare estimate failed');
@@ -1695,7 +1707,6 @@ export default function App() {
       setBooking((current) => ({ ...initialBooking, vehicleId: current.vehicleId }));
       setTab('orders');
       showToast(`${confirmedOrder.orderNo} booked`);
-      void refresh();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Booking failed');
     } finally {
@@ -1839,7 +1850,6 @@ export default function App() {
                   orders: [result.order, ...current.orders.filter((item) => item.id !== result.order?.id)]
                 };
               });
-              await refresh();
               showToast('Booking cancelled');
               setTab('orders');
             } catch (err) {
@@ -1962,13 +1972,24 @@ export default function App() {
               {copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}
             </Text>
           </View>
-          <View style={[styles.avatar, responsive.isCompact && styles.avatarCompact]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={copyFor(language, 'account')}
+            style={[styles.avatar, responsive.isCompact && styles.avatarCompact]}
+            onPress={() => setTab('account')}
+          >
             <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact]}>{data.user.initials}</Text>
-          </View>
+          </Pressable>
         </View>
       </View>
 
-      <View style={[styles.content, { maxWidth: responsive.contentMaxWidth }]}>
+      <View style={[
+        styles.content,
+        tab === 'home' && styles.homeContent,
+        tab !== 'home' && styles.otherPageContent,
+        { maxWidth: responsive.contentMaxWidth }
+      ]}>
+        {tab !== 'home' ? <View pointerEvents="none" style={styles.otherPageCurveSurface} /> : null}
         {tab === 'home' && (
           <HomeScreen
             api={api}
@@ -2006,8 +2027,9 @@ export default function App() {
             activeOrder={activeOrder}
             tripOtp={visibleTripOtp(activeOrder, activeOrder ? tripOtpByOrder[activeOrder.id] : undefined)}
             busy={busy}
+            refreshing={refreshing}
             onBook={() => openBook()}
-            onRefresh={refresh}
+            onRefresh={() => void refresh(true)}
             onSelectActiveOrder={setSelectedActiveOrderId}
             detailOrderRequestId={requestedOrderDetailId}
             onDetailOrderRequestHandled={() => setRequestedOrderDetailId(undefined)}
@@ -2031,7 +2053,14 @@ export default function App() {
               setBusy(true);
               try {
                 const result = await api.applyCoupon('FIRST50');
-                await refresh();
+                setData((current) => current ? {
+                  ...current,
+                  user: result.user,
+                  wallet: {
+                    ...current.wallet,
+                    coins: result.user.customerProfile?.coins ?? current.wallet.coins
+                  }
+                } : current);
                 return result;
               } finally {
                 setBusy(false);
@@ -3401,10 +3430,12 @@ function HomeScreen({
 
   return (
     <View style={styles.homeShell}>
-      <View pointerEvents="none" style={styles.homeMapPattern}>
-        <View style={[styles.homePatternRoad, styles.homePatternRoadOne]} />
-        <View style={[styles.homePatternRoad, styles.homePatternRoadTwo]} />
-        <View style={[styles.homePatternRoad, styles.homePatternRoadThree]} />
+      <View pointerEvents="none" style={styles.homeCurveSurface}>
+        <View style={styles.homeMapPattern}>
+          <View style={[styles.homePatternRoad, styles.homePatternRoadOne]} />
+          <View style={[styles.homePatternRoad, styles.homePatternRoadTwo]} />
+          <View style={[styles.homePatternRoad, styles.homePatternRoadThree]} />
+        </View>
       </View>
       <ScrollView
         contentContainerStyle={[
@@ -3575,7 +3606,7 @@ function PickupSearchModal({
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
       }
-    }, 320);
+    }, 220);
 
     return () => clearTimeout(timer);
   }, [api, query]);
@@ -3792,7 +3823,7 @@ function LocationPickerField({
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
       }
-    }, 320);
+    }, 220);
 
     return () => clearTimeout(timer);
   }, [api, focused, value]);
@@ -4005,7 +4036,7 @@ function VehicleChoiceCard({
           selected && styles.vehiclePriceLineSelected
         ]}
       >
-        {copy.fareBeforeTax}: {money(price ?? porterVehicleQuote(vehicle))}
+        {copy.fareEstimate}: {money(price ?? porterVehicleQuote(vehicle))}
       </Text>
       {selected ? <Text style={styles.vehicleSelectedText}>{copy.selected}</Text> : null}
       {disabled ? <Text style={styles.vehicleUnavailableText}>{copy.unavailableForWeight}</Text> : null}
@@ -4542,7 +4573,8 @@ function BookScreen({
       contentContainerStyle={[
         styles.scroll,
         responsive.isCompact && styles.scrollCompact,
-        showGoodsKeyboardFooter && styles.bookingScreenScrollKeyboard
+        showGoodsKeyboardFooter && styles.bookingScreenScrollKeyboard,
+        styles.bookingCurveScrollContent
       ]}
       keyboardShouldPersistTaps="always"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -5211,7 +5243,7 @@ function InlineExactLocationPicker({
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
       }
-    }, 320);
+    }, 220);
 
     return () => clearTimeout(timer);
   }, [api, pinLabel, query]);
@@ -5903,7 +5935,7 @@ function MapLocationPicker({
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
       }
-    }, 320);
+    }, 220);
 
     return () => clearTimeout(timer);
   }, [api, pinLabel, query]);
@@ -6115,6 +6147,7 @@ function OrdersScreen({
   activeOrder,
   tripOtp,
   busy,
+  refreshing,
   onBook,
   onRefresh,
   onSelectActiveOrder,
@@ -6129,6 +6162,7 @@ function OrdersScreen({
   activeOrder?: Order;
   tripOtp?: TripOtp;
   busy: boolean;
+  refreshing: boolean;
   onBook: () => void;
   onRefresh: () => void;
   onSelectActiveOrder: (orderId: string) => void;
@@ -6249,7 +6283,12 @@ function OrdersScreen({
   return (
     <ScrollView
       ref={ordersScrollRef}
-      contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
+      style={styles.ordersScrollViewport}
+      contentContainerStyle={[
+        styles.scroll,
+        responsive.isCompact && styles.scrollCompact,
+        styles.ordersScrollContent
+      ]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
     >
@@ -6258,6 +6297,7 @@ function OrdersScreen({
           order={detailOrder}
           tripOtp={detailTripOtp}
           busy={busy}
+          refreshing={refreshing}
           onRefresh={onRefresh}
           onShare={onShare ? () => onShare(detailOrder) : undefined}
           onCancel={onCancel ? () => onCancel(detailOrder) : undefined}
@@ -6486,6 +6526,7 @@ function OrderDetailsPanel({
   order,
   tripOtp,
   busy,
+  refreshing,
   onRefresh,
   onShare,
   onCancel,
@@ -6494,6 +6535,7 @@ function OrderDetailsPanel({
   order: Order;
   tripOtp?: TripOtp;
   busy: boolean;
+  refreshing: boolean;
   onRefresh: () => void;
   onShare?: () => void;
   onCancel?: () => void;
@@ -6650,7 +6692,14 @@ function OrderDetailsPanel({
         ) : null}
 
         <View style={[styles.orderActionBar, responsive.isCompact && styles.orderActionBarCompact]}>
-          <OrderActionButton title={copy.refresh} icon="refresh" tone="primary" onPress={onRefresh} />
+          <OrderActionButton
+            title={refreshing ? copy.refreshing : copy.refresh}
+            icon="refresh"
+            tone="primary"
+            onPress={onRefresh}
+            disabled={refreshing}
+            loading={refreshing}
+          />
           {onShare && orderActive ? <OrderActionButton title={copy.share} icon="share-social" onPress={onShare} /> : null}
           {onCancel && cancellable ? (
             <OrderActionButton title={busy ? copy.cancelling : copy.cancel} icon="close-circle" tone="danger" onPress={onCancel} />
@@ -6675,12 +6724,14 @@ function TrackScreen({
   order,
   tripOtp,
   busy,
+  refreshing,
   onRefresh,
   onCancel
 }: {
   order?: Order;
   tripOtp?: TripOtp;
   busy: boolean;
+  refreshing: boolean;
   onRefresh: () => void;
   onCancel?: () => void;
 }) {
@@ -6691,7 +6742,7 @@ function TrackScreen({
         <Ionicons name="cube-outline" size={42} color={colors.muted} />
         <Text style={styles.emptyTitle}>{copy.noActiveDelivery}</Text>
         <Text style={styles.muted}>{copy.liveTrackingAppear}</Text>
-        <PrimaryButton title={copy.refresh} icon="refresh" onPress={onRefresh} />
+        <PrimaryButton title={refreshing ? copy.refreshing : copy.refresh} icon="refresh" onPress={onRefresh} disabled={refreshing} loading={refreshing} />
       </View>
     );
   }
@@ -6702,6 +6753,7 @@ function TrackScreen({
         order={order}
         tripOtp={tripOtp}
         busy={busy}
+        refreshing={refreshing}
         onRefresh={onRefresh}
         onCancel={onCancel && isCustomerCancellableOrder(order) ? () => onCancel() : undefined}
       />
@@ -7181,8 +7233,8 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
     },
     {
       icon: 'receipt-outline',
-      title: copy.gstInvoices,
-      subtitle: copy.gstInvoicesText
+      title: copy.monthlyBilling,
+      subtitle: copy.monthlyBillingText
     },
     {
       icon: 'cube-outline',
@@ -7556,11 +7608,32 @@ function BottomTabs({
   );
 }
 
-function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+function PrimaryButton({
+  title,
+  icon,
+  onPress,
+  disabled = false,
+  loading = false
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
   const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.primaryButton, responsive.isCompact && styles.primaryButtonCompact]} onPress={onPress}>
-      <Ionicons name={icon} size={responsive.isCompact ? 15 : 17} color={colors.white} />
+    <Pressable
+      style={[styles.primaryButton, responsive.isCompact && styles.primaryButtonCompact, disabled && { opacity: 0.65 }]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ disabled, busy: loading }}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.white} />
+      ) : (
+        <Ionicons name={icon} size={responsive.isCompact ? 15 : 17} color={colors.white} />
+      )}
       <Text style={[styles.primaryButtonText, responsive.isCompact && styles.primaryButtonTextCompact]}>{title}</Text>
     </Pressable>
   );
@@ -7771,12 +7844,16 @@ function OrderActionButton({
   title,
   icon,
   tone = 'default',
-  onPress
+  onPress,
+  disabled = false,
+  loading = false
 }: {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   tone?: 'default' | 'primary' | 'danger';
   onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
 }) {
   const responsive = useResponsiveLayout();
   return (
@@ -7785,15 +7862,22 @@ function OrderActionButton({
         styles.orderActionButton,
         responsive.isCompact && styles.orderActionButtonCompact,
         tone === 'primary' && styles.orderActionButtonPrimary,
-        tone === 'danger' && styles.orderActionButtonDanger
+        tone === 'danger' && styles.orderActionButtonDanger,
+        disabled && { opacity: 0.65 }
       ]}
       onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ disabled, busy: loading }}
     >
-      <Ionicons
-        name={icon}
-        size={responsive.isCompact ? 14 : 16}
-        color={tone === 'primary' ? colors.white : tone === 'danger' ? colors.red : colors.ink}
-      />
+      {loading ? (
+        <ActivityIndicator size="small" color={tone === 'primary' ? colors.white : colors.ink} />
+      ) : (
+        <Ionicons
+          name={icon}
+          size={responsive.isCompact ? 14 : 16}
+          color={tone === 'primary' ? colors.white : tone === 'danger' ? colors.red : colors.ink}
+        />
+      )}
       <Text
         style={[
           styles.orderActionButtonText,
@@ -8014,7 +8098,6 @@ function FareCard({ fare }: { fare: FareBreakup }) {
           value={`+${money(waitingCharge)}`}
         />
       ) : null}
-      <FareRow label="GST" value={money(fare.gst)} />
       <FareRow label="Coins" value={`-${money(fare.coins)}`} />
       {hasWaitingPolicy ? (
         <Text style={[styles.farePolicyText, responsive.isCompact && styles.farePolicyTextCompact]}>
@@ -8375,11 +8458,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
     backgroundColor: colors.customer,
-    paddingTop: 16,
-    paddingBottom: 22
+    paddingTop: 15,
+    paddingBottom: 28
   },
-  appHeaderCompact: { paddingTop: 10, paddingBottom: 16 },
-  appHeaderSmall: { paddingTop: 8, paddingBottom: 14 },
+  appHeaderCompact: { paddingTop: 10, paddingBottom: 22 },
+  appHeaderSmall: { paddingTop: 8, paddingBottom: 20 },
   appHeaderInner: {
     width: '100%',
     alignSelf: 'center',
@@ -8390,26 +8473,70 @@ const styles = StyleSheet.create({
   },
   appHeaderInnerCompact: { paddingHorizontal: 16 },
   appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
-  eyebrow: { color: '#DDD6FE', fontSize: 11, fontWeight: '600', letterSpacing: 1 },
-  eyebrowCompact: { fontSize: 9, letterSpacing: 0.8 },
+  eyebrow: { color: '#E9D5FF', fontSize: 11, fontWeight: '700', letterSpacing: 0.35 },
+  eyebrowCompact: { fontSize: 9, letterSpacing: 0.25 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
-  headerTitle: { color: colors.white, fontSize: 22, fontWeight: '700' },
-  headerTitleCompact: { fontSize: 19 },
+  headerTitle: { color: colors.white, fontSize: 23, fontWeight: '800', marginTop: 2 },
+  headerTitleCompact: { fontSize: 20, marginTop: 1 },
   headerTitleSmall: { fontSize: 18 },
   avatar: {
     width: 44,
     height: 44,
     borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.34)',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    shadowColor: '#4C1D95',
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2
   },
   avatarCompact: { width: 38, height: 38, borderRadius: 12 },
-  avatarText: { color: colors.white, fontWeight: '600' },
+  avatarText: { color: colors.white, fontWeight: '700' },
   avatarTextCompact: { fontSize: 13 },
   content: { flex: 1, width: '100%', alignSelf: 'center', marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
-  homeContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F8FAFC' },
-  homeShell: { flex: 1, backgroundColor: '#F8FAFC', overflow: 'hidden' },
+  homeContent: {
+    width: '100%',
+    alignSelf: 'center',
+    marginTop: -20,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    backgroundColor: 'transparent',
+    overflow: 'visible'
+  },
+  otherPageContent: {
+    marginTop: -20,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    backgroundColor: 'transparent',
+    overflow: 'hidden'
+  },
+  otherPageCurveSurface: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    top: 0,
+    bottom: 0,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    backgroundColor: colors.white,
+    overflow: 'hidden'
+  },
+  homeShell: { flex: 1, backgroundColor: 'transparent', overflow: 'hidden' },
+  homeCurveSurface: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    top: 0,
+    bottom: 0,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    backgroundColor: '#F8FAFC',
+    overflow: 'hidden'
+  },
   homeMapPattern: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.55 },
   homePatternRoad: { position: 'absolute', height: 18, borderRadius: 18, backgroundColor: '#E4EAF2' },
   homePatternRoadOne: { left: -56, right: 16, top: 118, transform: [{ rotate: '-31deg' }] },
@@ -8427,6 +8554,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 14,
+    marginHorizontal: 8,
     marginBottom: 18,
     shadowColor: '#0F172A',
     shadowOpacity: 0.06,
@@ -8561,6 +8689,16 @@ const styles = StyleSheet.create({
   homeActiveVehicle: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   scroll: { width: '100%', maxWidth: 1040, alignSelf: 'center', padding: 16, paddingBottom: 28 },
   scrollCompact: { padding: 12, paddingBottom: 18 },
+  ordersScrollViewport: {
+    flex: 1,
+    marginHorizontal: 14,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    overflow: 'hidden'
+  },
+  ordersScrollContent: {
+    paddingHorizontal: 0
+  },
   customerHero: { backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 14 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
   heroTitle: { color: colors.ink, fontSize: 22, fontWeight: '700', lineHeight: 27, maxWidth: 230 },
@@ -8763,8 +8901,15 @@ const styles = StyleSheet.create({
   emptyHistoryCardCompact: { borderRadius: 13, padding: 13, marginBottom: 8 },
   priceText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   priceTextCompact: { fontSize: 12 },
-  bookingScreenKeyboard: { flex: 1, backgroundColor: colors.white },
-  bookingScreenScroll: { flex: 1 },
+  bookingScreenKeyboard: { flex: 1, backgroundColor: 'transparent' },
+  bookingScreenScroll: {
+    flex: 1,
+    marginHorizontal: 14,
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    overflow: 'hidden'
+  },
+  bookingCurveScrollContent: { paddingHorizontal: 0 },
   bookingScreenScrollKeyboard: { paddingBottom: 18 },
   bookingKeyboardFooter: {
     flexShrink: 0,

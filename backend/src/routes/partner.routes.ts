@@ -147,16 +147,19 @@ function assertMinimumPartnerWallet(partner: Awaited<ReturnType<typeof loadPartn
   }
 }
 
-async function getPartnerStats(userId: string, availableQuery?: ReturnType<typeof availableOrderQueryForVehicle>) {
+async function getPartnerStats(
+  userId: string,
+  partner: Awaited<ReturnType<typeof loadPartner>>,
+  availableQuery?: ReturnType<typeof availableOrderQueryForVehicle>
+) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const [availableCount, activeCount, completedCount, ledger, completedToday, partner] = await Promise.all([
+  const [availableCount, activeCount, completedCount, ledger, completedToday] = await Promise.all([
     availableQuery ? Order.countDocuments(availableQuery) : Promise.resolve(0),
     Order.countDocuments({ partner: userId, status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } }),
     Order.countDocuments({ partner: userId, status: 'delivered' }),
     WalletLedger.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
-    Order.find({ partner: userId, status: 'delivered', updatedAt: { $gte: todayStart } }).select('fare settlement'),
-    User.findById(userId).select('partnerProfile.cancellationDay partnerProfile.cancellationsToday')
+    Order.find({ partner: userId, status: 'delivered', updatedAt: { $gte: todayStart } }).select('fare settlement')
   ]);
 
   const todayEarn = completedToday.reduce((sum, item) => sum + (item.settlement?.partnerCredit ?? item.fare?.partnerNet ?? 0), 0);
@@ -196,11 +199,13 @@ partnerRouter.get(
     const vehicleId = partnerVehicleId(partner);
     const canReceiveOrders = partner.partnerProfile?.kycStatus === 'verified' && hasMinimumPartnerWallet(partner);
     if (canReceiveOrders && vehicleId) {
-      await advanceExpiredOrderOffers(vehicleId).catch(() => undefined);
+      void advanceExpiredOrderOffers(vehicleId).catch((error) => {
+        console.error('Unable to advance expired order offers during partner refresh', error);
+      });
     }
     const availableQuery = canReceiveOrders ? availableOrderQueryForVehicle(vehicleId, req.auth!.userId) : undefined;
-    const stats = await getPartnerStats(req.auth!.userId, availableQuery);
-    const [vehicles, availableOrders, activeOrders, completedOrders] = await Promise.all([
+    const [stats, vehicles, availableOrders, activeOrders, completedOrders] = await Promise.all([
+      getPartnerStats(req.auth!.userId, partner, availableQuery),
       Vehicle.find({ active: true }).sort({ capacityKg: 1 }),
       availableQuery
         ? Order.find(availableQuery)
@@ -208,19 +213,16 @@ partnerRouter.get(
             .limit(30)
             .populate('vehicle')
             .populate('customer')
-            .populate('partner')
         : Promise.resolve([]),
       Order.find({ partner: req.auth!.userId, status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } })
         .sort({ updatedAt: -1 })
         .populate('vehicle')
-        .populate('customer')
-        .populate('partner'),
+        .populate('customer'),
       Order.find({ partner: req.auth!.userId, status: 'delivered' })
         .sort({ updatedAt: -1 })
         .limit(20)
         .populate('vehicle')
         .populate('customer')
-        .populate('partner')
     ]);
 
     res.json({
@@ -441,25 +443,30 @@ partnerRouter.post(
     const fullOrder = await loadOrderForPartner(String(acceptedOrder._id));
     const payload = fullOrder ? serializeOrder(fullOrder) : { id: String(order._id) };
     const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
-    const assignedPushResult = await sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${acceptedOrder.orderNo}`, {
+    emitOrderChanged(payload, String(acceptedOrder.customer), String(partner._id));
+    emitPartnerQueueChanged();
+    res.json({ order: payload });
+    void sendPush(customer?.expoPushTokens, 'Driver assigned', `${partner.name} accepted ${acceptedOrder.orderNo}`, {
       event: 'driver_assigned',
       role: 'customer',
       screen: 'orders',
       orderId: String(acceptedOrder._id),
       orderNo: acceptedOrder.orderNo,
       status: 'accepted'
-    }, { ttl: 3600, collapseId: `order-${String(acceptedOrder._id)}-driver-assigned-${Date.now()}` });
-    if (!assignedPushResult.accepted) {
-      console.warn('Customer driver-assigned push was not accepted by Expo', {
-        orderId: String(acceptedOrder._id),
-        attempted: assignedPushResult.attempted,
-        rejected: assignedPushResult.rejected,
-        removedTokens: assignedPushResult.removedTokens
+    }, { ttl: 3600, collapseId: `order-${String(acceptedOrder._id)}-driver-assigned-${Date.now()}` })
+      .then((assignedPushResult) => {
+        if (!assignedPushResult.accepted) {
+          console.warn('Customer driver-assigned push was not accepted by Expo', {
+            orderId: String(acceptedOrder._id),
+            attempted: assignedPushResult.attempted,
+            rejected: assignedPushResult.rejected,
+            removedTokens: assignedPushResult.removedTokens
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Unable to send driver-assigned notification', error);
       });
-    }
-    emitOrderChanged(payload, String(acceptedOrder.customer), String(partner._id));
-    emitPartnerQueueChanged();
-    res.json({ order: payload });
   })
 );
 
@@ -543,7 +550,16 @@ partnerRouter.post(
     const customerForPush = populatedCustomer?.expoPushTokens
       ? populatedCustomer
       : await User.findById(transitionedOrder.customer).select('expoPushTokens');
-    const pushResult = await sendPush(
+    emitOrderChanged(payload, String(transitionedOrder.customer), req.auth!.userId);
+    emitPartnerQueueChanged();
+
+    const cancellationsUsed = claim.partner.partnerProfile?.cancellationsToday ?? MAX_DAILY_PARTNER_CANCELLATIONS;
+    res.json({
+      ok: true,
+      cancellationsRemaining: Math.max(0, MAX_DAILY_PARTNER_CANCELLATIONS - cancellationsUsed)
+    });
+
+    void sendPush(
       customerForPush?.expoPushTokens,
       'Finding another driver',
       `Your driver cancelled ${transitionedOrder.orderNo}. We are finding a replacement now.`,
@@ -556,25 +572,22 @@ partnerRouter.post(
         status: 'searching'
       },
       { ttl: 3600, collapseId: `order-${String(transitionedOrder._id)}-driver-cancel-${cancelledAt.getTime()}` }
-    );
-    if (!pushResult.accepted) {
-      console.warn('Customer driver-cancel push was not accepted by Expo', {
-        orderId: String(transitionedOrder._id),
-        attempted: pushResult.attempted,
-        rejected: pushResult.rejected,
-        removedTokens: pushResult.removedTokens
+    )
+      .then((pushResult) => {
+        if (!pushResult.accepted) {
+          console.warn('Customer driver-cancel push was not accepted by Expo', {
+            orderId: String(transitionedOrder._id),
+            attempted: pushResult.attempted,
+            rejected: pushResult.rejected,
+            removedTokens: pushResult.removedTokens
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Unable to send driver-cancel notification', error);
       });
-    }
-    emitOrderChanged(payload, String(transitionedOrder.customer), req.auth!.userId);
-    emitPartnerQueueChanged();
-    await offerOrderToNextDrivers(transitionedOrder._id, { force: true, reason: 'driver_cancel' }).catch((error) => {
+    void offerOrderToNextDrivers(transitionedOrder._id, { force: true, reason: 'driver_cancel' }).catch((error) => {
       console.error('Unable to immediately reassign driver-cancelled order', error);
-    });
-
-    const cancellationsUsed = claim.partner.partnerProfile?.cancellationsToday ?? MAX_DAILY_PARTNER_CANCELLATIONS;
-    res.json({
-      ok: true,
-      cancellationsRemaining: Math.max(0, MAX_DAILY_PARTNER_CANCELLATIONS - cancellationsUsed)
     });
   })
 );
@@ -710,7 +723,10 @@ partnerRouter.post(
       }
     };
     const notification = customerNotification[body.status];
-    const statusPushResult = await sendPush(
+    emitOrderChanged(payload, String(order.customer), req.auth!.userId);
+    emitPartnerQueueChanged();
+    res.json({ order: payload });
+    void sendPush(
       customer?.expoPushTokens,
       notification.title,
       notification.body,
@@ -723,19 +739,21 @@ partnerRouter.post(
         status: body.status
       },
       { ttl: 3600, collapseId: `order-${String(order._id)}-${body.status}-${Date.now()}` }
-    );
-    if (!statusPushResult.accepted) {
-      console.warn('Customer order-status push was not accepted by Expo', {
-        orderId: String(order._id),
-        status: body.status,
-        attempted: statusPushResult.attempted,
-        rejected: statusPushResult.rejected,
-        removedTokens: statusPushResult.removedTokens
+    )
+      .then((statusPushResult) => {
+        if (!statusPushResult.accepted) {
+          console.warn('Customer order-status push was not accepted by Expo', {
+            orderId: String(order._id),
+            status: body.status,
+            attempted: statusPushResult.attempted,
+            rejected: statusPushResult.rejected,
+            removedTokens: statusPushResult.removedTokens
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Unable to send order-status notification', error);
       });
-    }
-    emitOrderChanged(payload, String(order.customer), req.auth!.userId);
-    emitPartnerQueueChanged();
-    res.json({ order: payload });
   })
 );
 

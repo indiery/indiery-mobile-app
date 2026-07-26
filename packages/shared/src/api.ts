@@ -34,6 +34,8 @@ export class ApiError extends Error {
 export class IndieryApi {
   private baseUrl: string;
   private token?: string;
+  private inFlightRequests = new Map<string, Promise<unknown>>();
+  private responseCache = new Map<string, { value: unknown; expiresAt: number }>();
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -43,7 +45,55 @@ export class IndieryApi {
     this.token = token;
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const method = (options.method ?? 'GET').toUpperCase();
+    const dedupeInFlight = method === 'GET' || (method === 'POST' && path === '/customer/estimate');
+    if (!dedupeInFlight) return this.performRequest<T>(path, options);
+
+    const requestBody = typeof options.body === 'string' ? options.body : '';
+    const requestKey = `${this.token ?? 'public'}:${method}:${path}:${requestBody}`;
+    if (method === 'GET') {
+      const cached = this.responseCache.get(requestKey);
+      if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+      if (cached) this.responseCache.delete(requestKey);
+    }
+
+    const existing = this.inFlightRequests.get(requestKey);
+    if (existing) return existing as Promise<T>;
+
+    const request = this.performRequest<T>(path, options)
+      .then((value) => {
+        const ttl = method === 'GET' ? this.cacheTtl(path) : 0;
+        if (ttl > 0) {
+          const now = Date.now();
+          for (const [key, entry] of this.responseCache) {
+            if (entry.expiresAt <= now) this.responseCache.delete(key);
+          }
+          if (this.responseCache.size >= 100) {
+            const oldestKey = this.responseCache.keys().next().value;
+            if (oldestKey) this.responseCache.delete(oldestKey);
+          }
+          this.responseCache.set(requestKey, { value, expiresAt: now + ttl });
+        }
+        return value;
+      })
+      .finally(() => {
+        if (this.inFlightRequests.get(requestKey) === request) {
+          this.inFlightRequests.delete(requestKey);
+        }
+      });
+    this.inFlightRequests.set(requestKey, request);
+    return request;
+  }
+
+  private cacheTtl(path: string) {
+    if (path === '/meta/vehicles') return 5 * 60_000;
+    if (path.startsWith('/maps/place-details?')) return 5 * 60_000;
+    if (path.startsWith('/maps/autocomplete?')) return 15_000;
+    return 0;
+  }
+
+  private async performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string> | undefined)
     };
@@ -51,10 +101,23 @@ export class IndieryApi {
     if (options.body !== undefined && !hasContentType) headers['Content-Type'] = 'application/json';
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...options,
-      headers
-    });
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), 15_000);
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        ...options,
+        headers,
+        signal: options.signal ?? timeoutController.signal
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new ApiError(0, 'The server is taking too long. Please try again.', {});
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const responseText = await response.text().catch(() => '');
     let payload: unknown = {};
@@ -255,7 +318,7 @@ export class IndieryApi {
   }
 
   partnerBootstrap() {
-    return this.request<PartnerBootstrap>(`/partner/bootstrap?refresh=${Date.now()}`, {
+    return this.request<PartnerBootstrap>('/partner/bootstrap', {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache'

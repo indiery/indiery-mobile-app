@@ -14,5 +14,8 @@ const WalletLedgerSchema = new Schema(
   { timestamps: true }
 );
 
+WalletLedgerSchema.index({ user: 1, bucket: 1, createdAt: -1 });
+WalletLedgerSchema.index({ user: 1, createdAt: -1 });
+
 export type WalletLedgerDocument = HydratedDocument<InferSchemaType<typeof WalletLedgerSchema>>;
 export const WalletLedger = model('WalletLedger', WalletLedgerSchema);

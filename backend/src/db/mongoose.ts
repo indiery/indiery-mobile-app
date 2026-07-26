@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 import { env } from '../config/env';
+import { Order } from '../models/Order';
+import { User } from '../models/User';
+import { Vehicle } from '../models/Vehicle';
+import { WalletLedger } from '../models/WalletLedger';
 
 export async function connectMongo() {
   mongoose.set('strictQuery', true);
@@ -19,4 +23,13 @@ export async function connectMongo() {
 
     throw new Error(`${localMessage}\nOriginal error: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+export async function ensureDatabaseIndexes() {
+  await Promise.all([
+    User.createIndexes(),
+    Vehicle.createIndexes(),
+    Order.createIndexes(),
+    WalletLedger.createIndexes()
+  ]);
 }

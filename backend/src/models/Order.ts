@@ -24,7 +24,6 @@ const FareSchema = new Schema(
     billableWaitingMinutes: { type: Number, default: 0 },
     waitingFreeMinutes: { type: Number },
     waitingPerMinute: { type: Number },
-    gst: { type: Number, required: true },
     coins: { type: Number, default: 0 },
     total: { type: Number, required: true },
     driverCommission: { type: Number, required: true },
@@ -157,6 +156,9 @@ const OrderSchema = new Schema(
 
 export type OrderDocument = HydratedDocument<InferSchemaType<typeof OrderSchema>>;
 OrderSchema.index({ 'partnerCancellationHistory.partner': 1, 'partnerCancellationHistory.at': 1 });
+OrderSchema.index({ customer: 1, createdAt: -1 });
+OrderSchema.index({ partner: 1, status: 1, updatedAt: -1 });
+OrderSchema.index({ vehicle: 1, status: 1, offeredPartnerIds: 1, createdAt: -1 });
 OrderSchema.pre('validate', function normalizeLegacyFare(next) {
   if (this.fare) {
     this.set('fare', normalizeFareBreakup(this.fare, this.distanceKm));

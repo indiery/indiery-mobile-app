@@ -8,6 +8,8 @@ export default function sitemap() {
   return [
     { url: baseUrl, changeFrequency: "monthly", priority: 1 },
     { url: `${baseUrl}/privacy`, changeFrequency: "yearly", priority: 0.6 },
+    { url: `${baseUrl}/terms`, changeFrequency: "yearly", priority: 0.6 },
+    { url: `${baseUrl}/refunds`, changeFrequency: "yearly", priority: 0.6 },
     { url: `${baseUrl}/account-deletion`, changeFrequency: "yearly", priority: 0.6 },
   ];
 }

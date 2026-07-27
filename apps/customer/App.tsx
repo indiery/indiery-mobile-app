@@ -511,6 +511,11 @@ const enCopy = {
   confirmLocation: 'Confirm location',
   confirmPickupLocation: 'Confirm pickup location',
   confirmDropLocation: 'Confirm drop location',
+  locationDisclosureTitle: 'How Indiery uses your location',
+  locationDisclosureBody: 'Indiery accesses your precise location only while the app is in use to fill your pickup point. If you continue with that point, its coordinates are sent to Indiery to calculate routes and fares and manage your delivery. After booking, the pickup coordinates are shared with the assigned delivery partner so they can complete the delivery. Indiery does not request background location or sell location data.',
+  allowLocation: 'Allow location',
+  notNow: 'Not now',
+  locationPermissionRequired: 'Location permission is required to use your current location',
   selected: 'Selected',
   selectOnMap: 'Select on map',
   useTypedLocation: 'Use typed location',
@@ -1155,14 +1160,70 @@ function withLocationTimeout<T>(promise: Promise<T>, timeoutMs: number, message:
   });
 }
 
-async function readDeviceLocation() {
-  const existingPermission = await Location.getForegroundPermissionsAsync();
-  const permission =
-    existingPermission.status === 'granted'
-      ? existingPermission
-      : await Location.requestForegroundPermissionsAsync();
+function showAndroidPermissionDisclosure(input: {
+  title: string;
+  message: string;
+  allowLabel: string;
+  cancelLabel: string;
+}) {
+  if (Platform.OS !== 'android') return Promise.resolve(true);
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (accepted: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(accepted);
+    };
+
+    Alert.alert(
+      input.title,
+      input.message,
+      [
+        { text: input.cancelLabel, style: 'cancel', onPress: () => finish(false) },
+        { text: input.allowLabel, onPress: () => finish(true) }
+      ],
+      { cancelable: true, onDismiss: () => finish(false) }
+    );
+  });
+}
+
+let customerLocationPermissionRequest:
+  | Promise<Awaited<ReturnType<typeof Location.getForegroundPermissionsAsync>>>
+  | null = null;
+
+function requestCustomerLocationPermission(language: AppLanguage) {
+  if (customerLocationPermissionRequest) return customerLocationPermissionRequest;
+
+  const request = (async () => {
+    const existingPermission = await Location.getForegroundPermissionsAsync();
+    if (existingPermission.status === 'granted' || !existingPermission.canAskAgain) {
+      return existingPermission;
+    }
+
+    const accepted = await showAndroidPermissionDisclosure({
+      title: copyFor(language, 'locationDisclosureTitle'),
+      message: copyFor(language, 'locationDisclosureBody'),
+      allowLabel: copyFor(language, 'allowLocation'),
+      cancelLabel: copyFor(language, 'notNow')
+    });
+    if (!accepted) return existingPermission;
+
+    return Location.requestForegroundPermissionsAsync();
+  })();
+
+  customerLocationPermissionRequest = request;
+  const clearRequest = () => {
+    if (customerLocationPermissionRequest === request) customerLocationPermissionRequest = null;
+  };
+  void request.then(clearRequest, clearRequest);
+  return request;
+}
+
+async function readDeviceLocation(language: AppLanguage = 'en') {
+  const permission = await requestCustomerLocationPermission(language);
   if (permission.status !== 'granted') {
-    throw new Error('Location permission is required');
+    throw new Error(copyFor(language, 'locationPermissionRequired'));
   }
 
   const servicesEnabled = await Location.hasServicesEnabledAsync();
@@ -1183,8 +1244,8 @@ async function readDeviceLocation() {
   }
 }
 
-async function readCurrentLocationDetails(): Promise<LocationDetails> {
-  const current = await readDeviceLocation();
+async function readCurrentLocationDetails(language: AppLanguage = 'en'): Promise<LocationDetails> {
+  const current = await readDeviceLocation(language);
   const lat = current.coords.latitude;
   const lng = current.coords.longitude;
   const reverse = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }).catch(() => []);
@@ -1301,20 +1362,13 @@ function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
   );
 }
 
-async function requestCustomerAppPermissions(api: IndieryApi, onMessage: (message: string) => void) {
+async function requestCustomerAppPermissions(
+  api: IndieryApi,
+  onMessage: (message: string) => void,
+  _language: AppLanguage
+) {
   const denied: string[] = [];
   let registeredPushToken: string | undefined;
-
-  try {
-    const locationPermission = await Location.getForegroundPermissionsAsync();
-    const locationStatus =
-      locationPermission.status === 'granted'
-        ? locationPermission
-        : await Location.requestForegroundPermissionsAsync();
-    if (locationStatus.status !== 'granted') denied.push('location');
-  } catch {
-    denied.push('location');
-  }
 
   try {
     if (Platform.OS === 'android') {
@@ -1379,6 +1433,7 @@ export default function App() {
   const [step, setStep] = useState(1);
   const [booking, setBooking] = useState(initialBooking);
   const [fare, setFare] = useState<FareBreakup | null>(null);
+  const [fareQuoteId, setFareQuoteId] = useState<string | undefined>();
   const [fareVehicleId, setFareVehicleId] = useState<string | undefined>();
   const [fareRouteKey, setFareRouteKey] = useState<string | undefined>();
   const [language, setLanguage] = useState<AppLanguage>('en');
@@ -1499,7 +1554,7 @@ export default function App() {
   }
 
   function requestPermissionsAfterLogin() {
-    requestCustomerAppPermissions(api, showToast)
+    requestCustomerAppPermissions(api, showToast, language)
       .then((token) => {
         pushTokenRef.current = token;
       })
@@ -1592,6 +1647,7 @@ export default function App() {
     const requestId = ++estimateRequestSeqRef.current;
     const routeKey = bookingFareRouteKey(booking);
     setStep(nextStep);
+    setFareQuoteId(undefined);
     setBusy(true);
     try {
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
@@ -1610,6 +1666,7 @@ export default function App() {
       });
       if (requestId !== estimateRequestSeqRef.current) return;
       setFare(result.fare);
+      setFareQuoteId(result.quoteId);
       setFareVehicleId(vehicleId);
       setFareRouteKey(routeKey);
     } catch (err) {
@@ -1628,6 +1685,7 @@ export default function App() {
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
       const drop = composeBookingAddress(booking.drop, booking.dropAddressLine);
       const input: CreateOrderInput = {
+        quoteId: fareRouteKey === bookingFareRouteKey(booking) ? fareQuoteId : undefined,
         pickup,
         drop,
         vehicleId: booking.vehicleId,
@@ -1702,6 +1760,7 @@ export default function App() {
       setStep(1);
       estimateRequestSeqRef.current += 1;
       setFare(null);
+      setFareQuoteId(undefined);
       setFareVehicleId(undefined);
       setFareRouteKey(undefined);
       setBooking((current) => ({ ...initialBooking, vehicleId: current.vehicleId }));
@@ -1777,6 +1836,7 @@ export default function App() {
     setStep(1);
     estimateRequestSeqRef.current += 1;
     setFare(null);
+    setFareQuoteId(undefined);
     setFareVehicleId(undefined);
     setFareRouteKey(undefined);
     setBooking(initialBooking);
@@ -2416,6 +2476,7 @@ function LoginScreen({
           ref={loginScrollRef}
           style={styles.authScrollViewport}
           contentContainerStyle={[styles.authScroll, styles.authScrollOtp]}
+          showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         >
@@ -3321,6 +3382,7 @@ function HomeScreen({
   onBook: (nextStep?: number) => void;
 }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
   const compact = responsive.isCompact;
   const small = responsive.isSmall;
@@ -3397,7 +3459,7 @@ function HomeScreen({
     async function setCurrentPickup() {
       setAutoPickupLoading(true);
       try {
-        const location = await readCurrentLocationDetails();
+        const location = await readCurrentLocationDetails(language);
         if (cancelled) return;
         setBooking((current) => (
           current.pickup
@@ -3566,6 +3628,7 @@ function PickupSearchModal({
   onSelectTyped: (value: string) => void;
 }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
@@ -3630,7 +3693,7 @@ function PickupSearchModal({
     setLocating(true);
     setLocalError('');
     try {
-      const location = await readCurrentLocationDetails();
+      const location = await readCurrentLocationDetails(language);
       onUseCurrentLocation(location);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Could not read current location');
@@ -4254,7 +4317,7 @@ function BookScreen({
     async function setCurrentPickup() {
       setAutoPickupLoading(true);
       try {
-        const location = await readCurrentLocationDetails();
+        const location = await readCurrentLocationDetails(language);
         if (cancelled) return;
         setBooking((currentBooking) => (
           currentBooking.pickup
@@ -4576,6 +4639,7 @@ function BookScreen({
         showGoodsKeyboardFooter && styles.bookingScreenScrollKeyboard,
         styles.bookingCurveScrollContent
       ]}
+      showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="always"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
     >
@@ -5179,6 +5243,7 @@ function InlineExactLocationPicker({
   onLocationChange: (location: LocationDetails) => void;
 }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
   const hasInitialPin = hasValidCoordinates(lat, lng);
   const initialRegion: Region = {
@@ -5304,7 +5369,7 @@ function InlineExactLocationPicker({
     setLocating(true);
     setLocalError('');
     try {
-      const current = await readDeviceLocation();
+      const current = await readDeviceLocation(language);
       const nextLat = current.coords.latitude;
       const nextLng = current.coords.longitude;
       const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
@@ -5889,6 +5954,7 @@ function MapLocationPicker({
   onConfirm: (location: LocationDetails) => void;
 }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
   const initialRegion: Region = {
     latitude: initialLat ?? defaultMapCenter.lat,
@@ -5967,7 +6033,7 @@ function MapLocationPicker({
     setLocating(true);
     setLocalError('');
     try {
-      const current = await readDeviceLocation();
+      const current = await readDeviceLocation(language);
       const nextLat = current.coords.latitude;
       const nextLng = current.coords.longitude;
       const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
@@ -6289,6 +6355,7 @@ function OrdersScreen({
         responsive.isCompact && styles.scrollCompact,
         styles.ordersScrollContent
       ]}
+      showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
     >
@@ -6748,7 +6815,7 @@ function TrackScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll}>
+    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <OrderDetailsPanel
         order={order}
         tripOtp={tripOtp}
@@ -6795,7 +6862,10 @@ function WalletScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+    <ScrollView
+      contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
+      showsVerticalScrollIndicator={false}
+    >
         <View style={[styles.walletCoinsCard, responsive.isCompact && styles.walletCoinsCardCompact]}>
           <View style={[styles.walletCoinsHeader, responsive.isCompact && styles.walletCoinsHeaderCompact]}>
             <View style={[styles.walletCoinsIcon, responsive.isCompact && styles.walletCoinsIconCompact]}>
@@ -7014,7 +7084,11 @@ function AccountScreen({
 
     return (
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <AccountDetailHeader title={title} subtitle={subtitle} onBack={() => openPage('overview')} />
 
           {page === 'personal' ? (
@@ -7100,7 +7174,10 @@ function AccountScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+    <ScrollView
+      contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={[styles.accountHero, responsive.isCompact && styles.accountHeroCompact]}>
         <View style={[styles.accountHeroTop, responsive.isCompact && styles.accountHeroTopCompact]}>
           <View>
@@ -7250,7 +7327,10 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   const businessTypes = [copy.retailStores, copy.wholesalers, copy.restaurants, copy.manufacturers, copy.offices, copy.ecommerceSellers];
 
   return (
-    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+    <ScrollView
+      contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={[styles.enterprisePageHeader, responsive.isCompact && styles.enterprisePageHeaderCompact]}>
         <Pressable
           style={[styles.mapPickerClose, responsive.isCompact && styles.mapPickerCloseCompact]}
@@ -7540,7 +7620,10 @@ function AccountPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: 
   const copy = useCopy();
   const responsive = useResponsiveLayout();
   return (
-    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+    <ScrollView
+      contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
+      showsVerticalScrollIndicator={false}
+    >
       <AccountDetailHeader title={policy.title} subtitle={`${copy.updated} ${policy.updatedAt}`} onBack={onBack} />
       <View style={[styles.policyDetailHero, responsive.isCompact && styles.policyDetailHeroCompact]}>
         <Ionicons name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'} size={responsive.isCompact ? 21 : 24} color={colors.customer} />

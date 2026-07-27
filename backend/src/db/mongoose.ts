@@ -4,6 +4,7 @@ import { Order } from '../models/Order';
 import { User } from '../models/User';
 import { Vehicle } from '../models/Vehicle';
 import { WalletLedger } from '../models/WalletLedger';
+import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
 
 export async function connectMongo() {
   mongoose.set('strictQuery', true);
@@ -30,6 +31,7 @@ export async function ensureDatabaseIndexes() {
     User.createIndexes(),
     Vehicle.createIndexes(),
     Order.createIndexes(),
-    WalletLedger.createIndexes()
+    WalletLedger.createIndexes(),
+    AccountDeletionRequest.createIndexes()
   ]);
 }

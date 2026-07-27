@@ -221,7 +221,7 @@ export class IndieryApi {
     dropLat?: number;
     dropLng?: number;
   }) {
-    return this.request<{ fare: FareBreakup; vehicle: Vehicle }>('/customer/estimate', {
+    return this.request<{ fare: FareBreakup; vehicle: Vehicle; quoteId?: string }>('/customer/estimate', {
       method: 'POST',
       body: JSON.stringify(input)
     });

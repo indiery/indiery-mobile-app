@@ -60,6 +60,8 @@ export default function RootLayout({ children }) {
           </div>
           <div className="footerLinks">
             <a href="/privacy">Privacy policy</a>
+            <a href="/terms">Terms of service</a>
+            <a href="/refunds">Refund and cancellation rules</a>
             <a href="/account-deletion">Account deletion</a>
             <a href="mailto:support@indiery.in">support@indiery.in</a>
           </div>

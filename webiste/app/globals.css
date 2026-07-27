@@ -682,8 +682,14 @@ h2 {
 }
 
 .updated {
-  margin-bottom: 50px;
+  margin-bottom: 18px;
   color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.legalSummary {
+  margin: 0 0 50px;
+  color: #4f606a;
   font-size: 1.05rem;
 }
 
@@ -701,8 +707,12 @@ h2 {
 }
 
 .legalPage section p {
-  margin-bottom: 0;
+  margin: 0 0 12px;
   color: #4f606a;
+}
+
+.legalPage section p:last-child {
+  margin-bottom: 0;
 }
 
 .legalPage section a {
@@ -716,6 +726,13 @@ h2 {
 
 .steps li {
   padding: 4px 0 4px 6px;
+}
+
+.legalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
 }
 
 footer {

@@ -1,6 +1,10 @@
+const deletionFormUrl =
+  "https://indiery-mobile-app-bp9h.onrender.com/account-deletion";
+
 export const metadata = {
   title: "Account Deletion",
-  description: "How to request deletion of an Indiery account and associated data.",
+  description:
+    "Request deletion of an Indiery customer or partner account and learn what data is deleted or retained.",
 };
 
 export default function AccountDeletionPage() {
@@ -14,27 +18,71 @@ export default function AccountDeletionPage() {
       </p>
 
       <section>
-        <h2>Request by email</h2>
-        <ol className="steps">
-          <li>Email <a href="mailto:support@indiery.in?subject=Indiery%20Account%20Deletion%20Request">support@indiery.in</a> from the address connected to your account.</li>
-          <li>Use the subject “Indiery Account Deletion Request.”</li>
-          <li>Include the phone number used for your Indiery account and state whether you use the customer or partner app.</li>
-          <li>Complete any reasonable identity-verification step requested to protect your account.</li>
-        </ol>
-      </section>
-      <section>
-        <h2>What happens next</h2>
+        <h2>Request deletion</h2>
         <p>
-          After verification, we will process the deletion request and remove
-          or anonymize personal information that is no longer required. Some
-          transaction or compliance records may be retained when required by
-          law, for fraud prevention, dispute resolution, or legitimate
-          accounting purposes.
+          In either app, open <strong>Account</strong>, choose{" "}
+          <strong>Delete account</strong>, review the information shown, and
+          confirm the request.
+        </p>
+        <p>
+          If you cannot sign in, use our secure public request form. Enter the
+          mobile number connected to the account and state whether it is a
+          customer or partner account. We may contact you to verify ownership.
+        </p>
+        <p>
+          You can also email{" "}
+          <a href="mailto:support@indiery.in?subject=Indiery%20Account%20Deletion%20Request">
+            support@indiery.in
+          </a>{" "}
+          with the same details. Never send an OTP, PIN, password, CVV, or full
+          card number.
         </p>
       </section>
-      <a className="button primary" href="mailto:support@indiery.in?subject=Indiery%20Account%20Deletion%20Request">
-        Request account deletion
-      </a>
+
+      <section>
+        <h2>What is deleted</h2>
+        <p>
+          After ownership verification, we process eligible requests without
+          unreasonable delay. We delete or irreversibly de-identify account,
+          profile, contact, device-token, and other personal data that is no
+          longer required to operate the service or meet a legal obligation.
+        </p>
+        <p>
+          Partner KYC and bank details, uploaded media, and operational location
+          data are deleted or de-identified when they are no longer required
+          for verification, payment, safety, dispute, fraud-prevention, or legal
+          purposes.
+        </p>
+      </section>
+
+      <section>
+        <h2>What may be retained</h2>
+        <p>
+          Limited order, payment, refund, wallet, payout, tax, accounting,
+          safety, fraud-prevention, audit, and dispute records may be retained
+          for the period required by law or a documented operational need.
+          Access is restricted to that purpose, and the data is deleted or
+          de-identified when the need ends.
+        </p>
+        <p>
+          Deleting the app from your phone does not delete your account. A
+          submitted request is not completed until ownership is verified and
+          the eligible deletion process finishes.
+        </p>
+      </section>
+
+      <div className="legalActions">
+        <a
+          className="button primary"
+          href={deletionFormUrl}
+          rel="noopener noreferrer"
+        >
+          Open account-deletion form
+        </a>
+        <a className="button secondary" href="/privacy">
+          Read the Privacy Policy
+        </a>
+      </div>
     </main>
   );
 }

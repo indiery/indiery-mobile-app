@@ -25,6 +25,13 @@
           "color": "#059669",
           "defaultChannel": "orders"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Indiery Partner uses your camera to capture KYC documents and proof of delivery.",
+          "microphonePermission": false
+        }
       ]
     ],
     "extra": {
@@ -46,10 +53,16 @@
     },
     "android": {
       "package": "com.indeiry.driver",
+      "allowBackup": false,
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "usesCleartextTraffic": false,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/app-icon.png",
         "backgroundColor": "#ffffff"

@@ -415,6 +415,9 @@ const enCopy = {
   invalidOtp: 'Invalid OTP',
   enterValidMobile: 'Enter a valid mobile number',
   locationPermissionRequired: 'Location permission is required to receive nearby orders',
+  locationDisclosureTitle: 'How Indiery Partner uses your location',
+  locationDisclosureBody: 'Indiery Partner collects your precise location while this app is in use whenever you are online or handling an active delivery. It is sent to Indiery to show nearby orders, assign deliveries, update trips, and support safety. During an active delivery, it is shared with the customer for live tracking. The app does not request background location, and Indiery does not sell location data.',
+  allowLocation: 'Allow location',
   turnOnGps: 'Turn on device location/GPS to receive nearby orders',
   gpsTakingTooLong: 'GPS is taking too long',
   notificationRegisterLater: 'Notifications allowed. Driver alerts will register when network is available',
@@ -424,6 +427,10 @@ const enCopy = {
   permissionCamera: 'camera',
   orderAlerts: 'Order alerts',
   cameraPermissionRequired: 'Camera permission is required to capture proof',
+  cameraDisclosureTitle: 'How Indiery Partner uses your camera',
+  cameraDisclosureBody: 'Indiery Partner accesses your camera only when you choose to take a photo. Photos are uploaded to Indiery and stored with our media-storage provider for KYC or vehicle verification, pickup or delivery proof, safety, fraud prevention, and dispute handling. Delivery-proof photos may be accessed by the relevant customer and Indiery support. Indiery does not sell these photos.',
+  allowCamera: 'Allow camera',
+  notNow: 'Not now',
   noImageCaptured: 'No image captured',
   missingPhoto: 'Captured photo is missing. Please retake the photo.',
   onlyImageSupported: 'Only image capture is supported for proof upload.',
@@ -940,15 +947,103 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
+function showAndroidPermissionDisclosure(input: {
+  title: string;
+  message: string;
+  allowLabel: string;
+  cancelLabel: string;
+}) {
+  if (Platform.OS !== 'android') return Promise.resolve(true);
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (accepted: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(accepted);
+    };
+
+    Alert.alert(
+      input.title,
+      input.message,
+      [
+        { text: input.cancelLabel, style: 'cancel', onPress: () => finish(false) },
+        { text: input.allowLabel, onPress: () => finish(true) }
+      ],
+      { cancelable: true, onDismiss: () => finish(false) }
+    );
+  });
+}
+
+let partnerLocationPermissionRequest:
+  | Promise<Awaited<ReturnType<typeof Location.getForegroundPermissionsAsync>>>
+  | null = null;
+
+function requestPartnerLocationPermission(language: AppLanguage) {
+  if (partnerLocationPermissionRequest) return partnerLocationPermissionRequest;
+
+  const request = (async () => {
+    const existingPermission = await Location.getForegroundPermissionsAsync();
+    if (existingPermission.status === 'granted' || !existingPermission.canAskAgain) {
+      return existingPermission;
+    }
+
+    const accepted = await showAndroidPermissionDisclosure({
+      title: copyFor(language, 'locationDisclosureTitle'),
+      message: copyFor(language, 'locationDisclosureBody'),
+      allowLabel: copyFor(language, 'allowLocation'),
+      cancelLabel: copyFor(language, 'notNow')
+    });
+    if (!accepted) return existingPermission;
+
+    return Location.requestForegroundPermissionsAsync();
+  })();
+
+  partnerLocationPermissionRequest = request;
+  const clearRequest = () => {
+    if (partnerLocationPermissionRequest === request) partnerLocationPermissionRequest = null;
+  };
+  void request.then(clearRequest, clearRequest);
+  return request;
+}
+
+let partnerCameraPermissionRequest:
+  | Promise<Awaited<ReturnType<typeof ImagePicker.getCameraPermissionsAsync>>>
+  | null = null;
+
+function requestPartnerCameraPermission(language: AppLanguage) {
+  if (partnerCameraPermissionRequest) return partnerCameraPermissionRequest;
+
+  const request = (async () => {
+    const existingPermission = await ImagePicker.getCameraPermissionsAsync();
+    if (existingPermission.status === 'granted' || !existingPermission.canAskAgain) {
+      return existingPermission;
+    }
+
+    const accepted = await showAndroidPermissionDisclosure({
+      title: copyFor(language, 'cameraDisclosureTitle'),
+      message: copyFor(language, 'cameraDisclosureBody'),
+      allowLabel: copyFor(language, 'allowCamera'),
+      cancelLabel: copyFor(language, 'notNow')
+    });
+    if (!accepted) return existingPermission;
+
+    return ImagePicker.requestCameraPermissionsAsync();
+  })();
+
+  partnerCameraPermissionRequest = request;
+  const clearRequest = () => {
+    if (partnerCameraPermissionRequest === request) partnerCameraPermissionRequest = null;
+  };
+  void request.then(clearRequest, clearRequest);
+  return request;
+}
+
 async function readDeviceLocation(
   language: AppLanguage = 'en',
   accuracy: Location.Accuracy = Location.Accuracy.Balanced
 ) {
-  const existingPermission = await Location.getForegroundPermissionsAsync();
-  const permission =
-    existingPermission.status === 'granted'
-      ? existingPermission
-      : await Location.requestForegroundPermissionsAsync();
+  const permission = await requestPartnerLocationPermission(language);
   if (permission.status !== 'granted') {
     throw new Error(copyFor(language, 'locationPermissionRequired'));
   }
@@ -977,17 +1072,6 @@ async function readDeviceLocation(
 async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message: string) => void, language: AppLanguage) {
   const denied: string[] = [];
   let registeredPushToken: string | undefined;
-
-  try {
-    const locationPermission = await Location.getForegroundPermissionsAsync();
-    const locationStatus =
-      locationPermission.status === 'granted'
-        ? locationPermission
-        : await Location.requestForegroundPermissionsAsync();
-    if (locationStatus.status !== 'granted') denied.push(copyFor(language, 'permissionLocation'));
-  } catch {
-    denied.push(copyFor(language, 'permissionLocation'));
-  }
 
   try {
     if (Platform.OS === 'android') {
@@ -1037,17 +1121,6 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
     }
   } catch {
     denied.push(copyFor(language, 'permissionNotifications'));
-  }
-
-  try {
-    const cameraPermission = await ImagePicker.getCameraPermissionsAsync();
-    const cameraStatus =
-      cameraPermission.status === 'granted'
-        ? cameraPermission
-        : await ImagePicker.requestCameraPermissionsAsync();
-    if (cameraStatus.status !== 'granted') denied.push(copyFor(language, 'permissionCamera'));
-  } catch {
-    denied.push(copyFor(language, 'permissionCamera'));
   }
 
   if (denied.length) {
@@ -1576,7 +1649,7 @@ export default function App() {
   }
 
   async function captureAndUploadImage(input: { purpose: 'pod' | 'kyc' | 'profile'; orderId?: string; documentKey?: string }) {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    const permission = await requestPartnerCameraPermission(language);
     if (permission.status !== 'granted') {
       throw new Error(copyFor(language, 'cameraPermissionRequired'));
     }
@@ -2282,7 +2355,10 @@ function LoginPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: ()
   const copy = useCopy();
   const responsive = useResponsiveLayout();
   return (
-    <ScrollView contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}>
+    <ScrollView
+      contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
+      showsVerticalScrollIndicator={false}
+    >
       <AccountDetailHeader title={policy.title} subtitle={`${copy.updated} ${policy.updatedAt}`} onBack={onBack} />
       <View style={[styles.policyDetailHero, responsive.isCompact && styles.policyDetailHeroCompact]}>
         <Ionicons
@@ -3420,7 +3496,11 @@ function ProfileSetupScreen({
   return (
     <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.profileSetupScroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.profileSetupScroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.authHero}>
             <View style={styles.authTrackOne} />
             <View style={styles.authTrackTwo} />
@@ -3798,6 +3878,7 @@ function DashboardScreen({
             paddingHorizontal: responsive.horizontalPadding
           }
         ]}
+        showsVerticalScrollIndicator={false}
       >
       {profile?.kycStatus === 'pending' ? (
         <View style={[styles.verificationPendingCard, responsive.isCompact && styles.verificationPendingCardCompact]}>
@@ -4051,6 +4132,7 @@ function ActiveScreen({
         },
         styles.partnerCurvedScrollContent
       ]}
+      showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
       <SectionTitle title={`${copy.activeOrders} (${orders.length})`} />
@@ -4305,6 +4387,7 @@ function EarningsScreen({
         },
         styles.partnerCurvedScrollContent
       ]}
+      showsVerticalScrollIndicator={false}
     >
       <View style={[styles.walletCard, responsive.isCompact && styles.walletCardCompact]}>
         <Text style={[styles.eyebrowDark, responsive.isCompact && styles.eyebrowDarkCompact, responsive.isSmall && styles.eyebrowDarkSmall]}>{copy.walletBalance}</Text>
@@ -4527,6 +4610,7 @@ function ProfileScreen({
             paddingHorizontal: responsive.horizontalPadding
           }
         ]}
+        showsVerticalScrollIndicator={false}
       >
         <View style={[styles.accountHero, responsive.isCompact && styles.accountHeroCompact, responsive.isSmall && styles.accountHeroSmall]}>
           <View style={styles.accountHeroGlow} />
@@ -4633,6 +4717,7 @@ function ProfileScreen({
             paddingHorizontal: responsive.horizontalPadding
           }
         ]}
+        showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >

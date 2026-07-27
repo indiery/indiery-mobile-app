@@ -111,4 +111,6 @@ Partner payout requests are recorded and deducted from the partner wallet as `pe
 
 If your MongoDB password contains symbols such as `@`, URL-encode the password before placing it in `MONGODB_URI`.
 
-Legal policy content lives in `packages/shared/src/legal.ts` and is shown inside both mobile apps. Treat it as a starter policy set and have it reviewed for your final company name, address, grievance contact, refund fees, tax handling, and operating jurisdictions before launch.
+Canonical legal policy content lives in `packages/shared/src/legal.ts` and is shown inside both mobile apps and the public website. The backend also serves production public pages at `/privacy`, `/terms`, `/refunds`, and `/account-deletion`.
+
+Before a store submission, confirm that `Indiery` is the exact developer/operator name used in Google Play Console, that `support@indiery.in` is monitored, and that any legally required business address or named grievance officer is added for the actual operating entity. Complete the Play Console declarations from `docs/PLAY_STORE_RELEASE_CHECKLIST.md`; policy text does not replace an accurate Data safety form or an operating account-deletion process.

@@ -270,6 +270,7 @@ export interface PartnerBootstrap {
 }
 
 export interface CreateOrderInput {
+  quoteId?: string;
   pickup: string;
   drop: string;
   vehicleId: string;

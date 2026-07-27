@@ -9,6 +9,7 @@ import { verifyFirebasePhoneToken } from '../services/firebase.service';
 import { initialsFromName } from '../services/profile.service';
 import { normalizePhone } from '../services/phone.service';
 import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
+import { submitAccountDeletionRequest } from '../services/account-deletion.service';
 
 export const authRouter = Router();
 
@@ -110,17 +111,46 @@ authRouter.post(
     const body = z.object({ reason: z.string().trim().max(800).optional() }).parse(req.body);
     const user = await User.findById(req.auth!.userId);
     if (!user) throw new ApiError(404, 'User not found');
+    const role = req.auth!.role;
+    if (role === 'admin') throw new ApiError(403, 'Forbidden');
 
-    await AccountDeletionRequest.create({
-      role: req.auth!.role,
-      user: user._id,
+    const result = await submitAccountDeletionRequest({
+      role,
       name: user.name,
       phone: user.phone,
-      email: user.email,
+      email: user.email ?? undefined,
       reason: body.reason,
-      source: 'in_app'
+      source: 'in_app',
+      authenticatedUser: user
     });
 
-    res.status(201).json({ ok: true, status: 'requested' });
+    res.status(result.created ? 201 : 200).json({
+      ok: true,
+      status: result.request.status,
+      requestId: String(result.request._id)
+    });
+  })
+);
+
+authRouter.get(
+  '/account-deletion-request',
+  requireAuth(['customer', 'partner']),
+  asyncRoute<AuthRequest>(async (req, res) => {
+    const request = await AccountDeletionRequest.findOne({ user: req.auth!.userId })
+      .sort({ createdAt: -1 })
+      .select('status verificationStatus createdAt lastRequestedAt completedAt');
+
+    if (!request) {
+      return res.json({ status: 'none' });
+    }
+
+    return res.json({
+      requestId: String(request._id),
+      status: request.status,
+      verificationStatus: request.verificationStatus,
+      requestedAt: request.createdAt,
+      lastRequestedAt: request.lastRequestedAt,
+      completedAt: request.completedAt
+    });
   })
 );

@@ -10,6 +10,7 @@ import { Counter } from '../models/Counter';
 import { WalletLedger, type WalletLedgerDocument } from '../models/WalletLedger';
 import { estimateFare } from '../services/fare.service';
 import { resolveRouteMetrics } from '../services/maps.service';
+import { createFareQuote, verifyFareQuote } from '../services/fare-quote.service';
 import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { hashOtp, makeTripOtp } from '../services/otp.service';
 import { createTimeline, setOrderStatusTimeline } from '../services/timeline.service';
@@ -54,6 +55,7 @@ const EstimateSchema = z.object({
 });
 
 const CreateOrderSchema = EstimateSchema.extend({
+  quoteId: z.string().min(20).optional(),
   pickupContactName: z.string().optional(),
   pickupContactPhone: z.string().optional(),
   dropContactName: z.string().optional(),
@@ -329,7 +331,8 @@ customerRouter.post(
       distanceKm: routeMetrics.distanceKm,
       routeDurationMinutes: routeMetrics.durationMinutes
     });
-    res.json({ fare, vehicle: serializeVehicle(vehicle) });
+    const quoteId = createFareQuote(req.auth!.userId, body, routeMetrics);
+    res.json({ fare, vehicle: serializeVehicle(vehicle), quoteId });
   })
 );
 
@@ -337,11 +340,14 @@ customerRouter.post(
   '/orders',
   asyncRoute(async (req: AuthRequest, res) => {
     const body = CreateOrderSchema.parse(req.body);
+    const routeMetricsPromise = body.quoteId
+      ? Promise.resolve(verifyFareQuote(body.quoteId, req.auth!.userId, body))
+      : resolveRouteMetrics(body);
     const [user, vehicle, requiredVehicle, routeMetrics] = await Promise.all([
       User.findById(req.auth!.userId),
       Vehicle.findById(body.vehicleId),
       customerVehicleForWeight(body.weightKg),
-      resolveRouteMetrics(body)
+      routeMetricsPromise
     ]);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
@@ -359,17 +365,20 @@ customerRouter.post(
     if (body.paymentMode === 'wallet' && (user.customerProfile?.walletBalance ?? 0) < fare.total) {
       throw new ApiError(400, 'Insufficient wallet balance');
     }
-    const orderNo = await nextOrderNo();
-    const paymentIntent = await createPaymentIntent({
-      orderNo,
-      amount: fare.total,
-      paymentMode: body.paymentMode
-    });
     const pickupOtp = makeTripOtp();
     const dropOtp = makeTripOtp();
-    const [pickupOtpHash, dropOtpHash] = await Promise.all([
+    const otpHashesPromise = Promise.all([
       hashOtp(pickupOtp),
       hashOtp(dropOtp)
+    ]);
+    const orderNo = await nextOrderNo();
+    const [paymentIntent, [pickupOtpHash, dropOtpHash]] = await Promise.all([
+      createPaymentIntent({
+        orderNo,
+        amount: fare.total,
+        paymentMode: body.paymentMode
+      }),
+      otpHashesPromise
     ]);
 
     const order = await Order.create({

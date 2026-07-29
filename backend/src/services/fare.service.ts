@@ -4,8 +4,10 @@ const DRIVER_COMMISSION_RATE = 0.8;
 const PLATFORM_COMMISSION_RATE = 0.15;
 const RESERVE_RATE = 0.05;
 const DELAY_PENALTY_RATE = 0.05;
-const BIKE_WAITING_FREE_MINUTES = 10;
+const BIKE_WAITING_FREE_MINUTES = 5;
 const BIKE_WAITING_PER_MINUTE = 2;
+const OTHER_VEHICLE_WAITING_FREE_MINUTES = 30;
+const OTHER_VEHICLE_WAITING_PER_MINUTE = 5;
 
 export interface EstimateInput {
   pickup: string;
@@ -38,12 +40,13 @@ export function normalizeFareBreakup(fareInput: unknown, distanceKmInput: unknow
   const distance = fare.distance ?? 0;
   const orderValue = fare.orderValue ?? base + distance;
   const waitingCharge = fare.waitingCharge ?? 0;
+  const commissionableAmount = orderValue + waitingCharge;
   const waitingMinutes = fare.waitingMinutes ?? 0;
   const billableWaitingMinutes = fare.billableWaitingMinutes ?? Math.max(0, waitingMinutes - (fare.waitingFreeMinutes ?? 0));
   const coins = fare.coins ?? 0;
-  const driverCommission = fare.driverCommission ?? roundMoney(orderValue * DRIVER_COMMISSION_RATE);
-  const platformCommission = fare.platformCommission ?? roundMoney(orderValue * PLATFORM_COMMISSION_RATE);
-  const reserveAmount = fare.reserveAmount ?? roundMoney(orderValue * RESERVE_RATE);
+  const driverCommission = fare.driverCommission ?? roundMoney(commissionableAmount * DRIVER_COMMISSION_RATE);
+  const platformCommission = fare.platformCommission ?? roundMoney(commissionableAmount * PLATFORM_COMMISSION_RATE);
+  const reserveAmount = fare.reserveAmount ?? roundMoney(commissionableAmount * RESERVE_RATE);
   const lateDriverPenalty = fare.lateDriverPenalty ?? roundMoney(driverCommission * DELAY_PENALTY_RATE);
   const latePlatformPenalty = fare.latePlatformPenalty ?? roundMoney(platformCommission * DELAY_PENALTY_RATE);
   const onTimePartnerPayout = fare.onTimePartnerPayout ?? roundMoney(driverCommission + reserveAmount);
@@ -78,13 +81,18 @@ function isIntercityVehicle(vehicle: VehicleDocument) {
 }
 
 function waitingPolicyForVehicle(vehicle: VehicleDocument) {
-  if (vehicle.code !== 'bike') return {};
   return {
     waitingCharge: 0,
     waitingMinutes: 0,
     billableWaitingMinutes: 0,
-    waitingFreeMinutes: BIKE_WAITING_FREE_MINUTES,
-    waitingPerMinute: BIKE_WAITING_PER_MINUTE
+    waitingFreeMinutes:
+      vehicle.code === 'bike'
+        ? BIKE_WAITING_FREE_MINUTES
+        : OTHER_VEHICLE_WAITING_FREE_MINUTES,
+    waitingPerMinute:
+      vehicle.code === 'bike'
+        ? BIKE_WAITING_PER_MINUTE
+        : OTHER_VEHICLE_WAITING_PER_MINUTE
   };
 }
 
@@ -103,8 +111,14 @@ export function applyWaitingChargeToFare(input: {
   const waitingMinutes = Math.max(0, Math.ceil(input.waitingMinutes));
   const billableWaitingMinutes = Math.max(0, waitingMinutes - waitingPolicy.waitingFreeMinutes);
   const waitingCharge = roundMoney(billableWaitingMinutes * waitingPolicy.waitingPerMinute);
-  const payoutWithWaiting = roundMoney(normalized.onTimePartnerPayout + waitingCharge);
-  const latePayoutWithWaiting = roundMoney(normalized.latePartnerPayout + waitingCharge);
+  const commissionableAmount = normalized.orderValue + waitingCharge;
+  const driverCommission = roundMoney(commissionableAmount * DRIVER_COMMISSION_RATE);
+  const platformCommission = roundMoney(commissionableAmount * PLATFORM_COMMISSION_RATE);
+  const reserveAmount = roundMoney(commissionableAmount * RESERVE_RATE);
+  const lateDriverPenalty = roundMoney(driverCommission * DELAY_PENALTY_RATE);
+  const latePlatformPenalty = roundMoney(platformCommission * DELAY_PENALTY_RATE);
+  const onTimePartnerPayout = roundMoney(driverCommission + reserveAmount);
+  const latePartnerPayout = roundMoney(driverCommission - lateDriverPenalty);
 
   return normalizeFareBreakup(
     {
@@ -115,9 +129,14 @@ export function applyWaitingChargeToFare(input: {
       waitingFreeMinutes: waitingPolicy.waitingFreeMinutes,
       waitingPerMinute: waitingPolicy.waitingPerMinute,
       total: roundMoney(Math.max(0, normalized.orderValue + waitingCharge - normalized.coins)),
-      partnerNet: payoutWithWaiting,
-      onTimePartnerPayout: payoutWithWaiting,
-      latePartnerPayout: latePayoutWithWaiting
+      driverCommission,
+      platformCommission,
+      reserveAmount,
+      lateDriverPenalty,
+      latePlatformPenalty,
+      partnerNet: onTimePartnerPayout,
+      onTimePartnerPayout,
+      latePartnerPayout
     },
     input.distanceKm
   );

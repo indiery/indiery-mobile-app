@@ -1,5 +1,9 @@
 import { OrderDocument } from '../models/Order';
 
+function roundMoney(value: number) {
+  return Number(value.toFixed(2));
+}
+
 function orderTimelineTime(order: OrderDocument, key: string) {
   const at = order.timeline?.find((item) => item.key === key)?.at;
   if (!at) return undefined;
@@ -23,5 +27,31 @@ export function calculateDeliverySettlement(order: OrderDocument, deliveredAt = 
     platformPenalty: delayed ? order.fare.latePlatformPenalty : 0,
     reserveReleasedTo: delayed ? ('platform' as const) : ('partner' as const),
     settledAt: deliveredAt
+  };
+}
+
+export function calculatePartnerWalletSettlement(input: {
+  paymentProvider: string;
+  customerTotal: number;
+  partnerCredit: number;
+}) {
+  const partnerCredit = roundMoney(Math.max(0, input.partnerCredit));
+  const cashCollected =
+    input.paymentProvider === 'cash'
+      ? roundMoney(Math.max(0, input.customerTotal))
+      : 0;
+  const walletDelta = roundMoney(partnerCredit - cashCollected);
+
+  return {
+    partnerCredit,
+    cashCollected,
+    walletDelta,
+    ledgerAmount: Math.abs(walletDelta),
+    ledgerKind:
+      walletDelta > 0
+        ? ('credit' as const)
+        : walletDelta < 0
+          ? ('debit' as const)
+          : undefined
   };
 }

@@ -1,7 +1,7 @@
 import { legalPolicies } from "../../../packages/shared/src/legal";
 
-export function LegalPolicyPage({ policyId, eyebrow = "Legal" }) {
-  const policy = legalPolicies.find((item) => item.id === policyId);
+export function LegalPolicyPage({ policyId, policy: providedPolicy, eyebrow = "Legal" }) {
+  const policy = providedPolicy ?? legalPolicies.find((item) => item.id === policyId);
 
   if (!policy) {
     throw new Error(`Unknown legal policy: ${policyId}`);

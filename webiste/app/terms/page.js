@@ -1,9 +1,9 @@
 import { LegalPolicyPage } from "../_components/LegalPolicyPage";
 
 export const metadata = {
-  title: "Terms of Service",
+  title: "Customer Terms and Conditions",
   description:
-    "The terms that apply to customers and delivery partners using Indiery.",
+    "The terms for customer accounts, delivery bookings, payments, tracking, cancellations, and use of Indiery.",
 };
 
 export default function TermsPage() {

@@ -1,0 +1,408 @@
+INDIERY CUSTOMER PRIVACY POLICY
+
+Version: 2.0
+Effective Date: 29 July 2026
+Last Updated: 29 July 2026
+
+
+1. INTRODUCTION
+
+Welcome to Indiery ("Indiery", "we", "our", or "us"). Indiery operates a technology-enabled logistics platform that connects customers with independent delivery partners for transporting parcels and goods.
+
+This Customer Privacy Policy explains how we access, collect, use, store, process, disclose, retain, protect, and delete personal data when a customer uses:
+
+- the Indiery Customer mobile application;
+- the Indiery website at https://www.indiery.com;
+- customer-support and account-deletion services; and
+- related customer-facing products and services operated by Indiery.
+
+This Policy applies to customers. A separate privacy notice may apply to delivery partners. Please read this Policy together with the Terms of Service, Refund and Cancellation Rules, and permission notices shown in the app.
+
+By creating an account or using Indiery, you acknowledge this Policy. Where consent is the applicable basis for processing, we will request it through an appropriate notice or permission flow.
+
+
+2. ABOUT INDIERY
+
+Indiery is an Indian intra-city logistics platform. Current customer vehicle categories may include:
+
+- Bike Delivery, generally up to 20 kg;
+- E-Three Wheeler or Loader Delivery, generally up to 90 kg;
+- Mini Truck, generally up to 500 kg; and
+- Mini Truck, generally up to 750 kg.
+
+Available services, service areas, vehicle names, capacities, and features may change.
+
+
+3. SCOPE
+
+This Policy applies when a customer:
+
+- registers, signs in, or manages an Indiery account;
+- requests a fare estimate or places a booking;
+- enters sender, recipient, pickup, stop, or drop information;
+- uses current location, maps, tracking, or notifications;
+- makes a payment, uses or recharges a Wallet or Indiery Coins, or receives a refund;
+- cancels or disputes a booking;
+- participates in an eligible promotion or referral programme;
+- contacts support or requests account deletion; or
+- uses the Indiery website.
+
+
+4. ELIGIBILITY AND CHILDREN
+
+Indiery is not directed to children under 18. A person who is not legally capable of entering into a binding agreement must use the service only through a parent or lawful guardian where permitted by law.
+
+Customers must provide accurate information. If we learn that personal data was collected from a child contrary to applicable law, we may restrict the account and take appropriate deletion or corrective action.
+
+
+5. DEFINITIONS
+
+For this Policy:
+
+- "Account" means a registered Indiery customer account.
+- "Booking" or "Order" means a delivery request placed through Indiery.
+- "Customer" means the person using the customer-facing service.
+- "Delivery Partner" means an independent partner using the Indiery Partner service.
+- "Indiery Wallet" means the cash-value platform balance used for eligible payments, top-ups, refunds, and credits.
+- "Indiery Coins" means the separate promotional or rechargeable platform balance shown in the customer app.
+- "Personal Data" means data about an identifiable individual.
+- "Processing" includes collecting, recording, organising, storing, using, sharing, updating, analysing, restricting, deleting, or otherwise handling personal data.
+
+
+6. ACCOUNT AND AUTHENTICATION DATA
+
+We may collect and process:
+
+- full name;
+- mobile number;
+- email address;
+- city;
+- preferred language;
+- account role and status;
+- OTP and authentication status;
+- authentication tokens and session-security information;
+- notification preferences; and
+- device push tokens.
+
+Phone authentication may be provided through Firebase. Indiery does not need or intend to store the OTP after it is no longer required for authentication or security records.
+
+Registration is generally required to book a delivery. Guest checkout and social login may not be available.
+
+
+7. BOOKING, CONTACT, AND DELIVERY DATA
+
+When a customer requests an estimate or creates a booking, we may process:
+
+- pickup, intermediate stop, and drop addresses;
+- exact or approximate coordinates associated with selected locations;
+- sender and recipient names and phone numbers;
+- address instructions and access information;
+- parcel or goods type, description, and weight;
+- selected vehicle category;
+- booking instructions and delivery preferences;
+- distance, route, estimated duration, and fare information;
+- pickup and delivery OTP status;
+- order status and timestamps;
+- cancellation reason and cancellation timing;
+- waiting time and waiting-charge records;
+- pickup or delivery proof associated with the booking;
+- assigned-partner and vehicle information; and
+- order history, complaints, ratings, and dispute information.
+
+Customers must share another person's name, phone number, address, or other personal data only when authorised to do so for the delivery.
+
+
+8. LOCATION, MAPS, AND LIVE TRACKING
+
+Customer location:
+
+- The customer app accesses precise or approximate device location only after permission is granted and the customer uses a location-related feature, such as "Use current location".
+- Customer location may be used to fill or confirm a pickup point, search places, reverse-geocode a position, calculate a route or fare, and manage a booking.
+- The customer app does not request continuous background location for customer tracking.
+
+Partner location visible to customers:
+
+- When a delivery partner is online or handling an active booking and has granted location permission, the partner app may send the partner's current location to Indiery while the partner app is in use.
+- During an active delivery, relevant partner location may be shown to the customer and to a person holding a private tracking link created for that order.
+- During an active trip, partner location is normally requested periodically or after meaningful movement. Location can be inaccurate, delayed, or unavailable because of device, GPS, network, battery, permission, or service conditions.
+
+We may process routes and status timestamps to provide dispatch, tracking, safety, support, fraud prevention, waiting-charge calculation, delivery-time review, and dispute resolution.
+
+
+9. PAYMENT, WALLET, COIN, REFUND, AND CANCELLATION DATA
+
+Indiery may support payment methods displayed in the app, including UPI, Razorpay-supported methods, Cash on Delivery, Indiery Wallet, and Indiery Coins.
+
+We may process:
+
+- payment method, amount, status, currency, and timestamps;
+- payment-provider order, payment, and verification references;
+- Wallet and Coin balances and ledger entries;
+- recharge amount and recharge status;
+- promotions, discounts, and Coins applied to an order;
+- waiting charges and cancellation charges;
+- cash-collection and settlement information;
+- refund amount, refund method, and refund status;
+- negative Coin balance and recharge requirements;
+- partner earning and platform-commission records connected to an order; and
+- fraud, reconciliation, accounting, tax, support, and dispute records.
+
+Indiery Wallet and Indiery Coins are separate balances:
+
+- The Indiery Wallet may receive eligible customer top-ups, refunds, compensation, and other approved credits.
+- Indiery Coins may be earned, applied, or recharged through the options shown in the app. The current recharge flow allows a customer to enter a recharge amount within the limits displayed by the app.
+- Eligible post-booking charges may reduce Indiery Coins below zero, but the system is designed not to reduce the Coin balance below minus INR 50. When the balance reaches minus INR 50, a customer must recharge before requesting another estimate or placing another order.
+- A negative Indiery Coin balance is an internal platform balance and is not a bank overdraft or credit product.
+
+Current operational rules recorded by the platform include:
+
+- Bike waiting: the first 5 minutes after the partner records arrival at pickup are free, followed by INR 2 per started minute until pickup.
+- Other supported customer vehicle categories: the first 30 minutes are free, followed by INR 5 per started minute until pickup.
+- For Cash on Delivery, an applicable waiting charge is added to the final cash total. For a qualifying prepaid order, it may be debited from Indiery Coins.
+- Customer cancellation is free before pickup and through the first 5 minutes after pickup. More than 5 minutes after pickup and before delivery, cancellation incurs a charge equal to 10% of the current order total. Cancellation is unavailable after delivery.
+- For an eligible prepaid cancellation, the refundable balance is credited to the Indiery Wallet. For a Cash on Delivery cancellation before cash collection, an applicable cancellation charge may be debited from Indiery Coins.
+
+These commercial rules are summarised here because Indiery creates and retains the associated financial records. The Terms of Service and Refund and Cancellation Rules govern their application and should be consulted for complete conditions.
+
+
+10. PAYMENT CREDENTIALS
+
+Payments are handled through authorised payment providers such as Razorpay. Indiery may receive the provider references and payment status required to create, verify, reconcile, or support a transaction.
+
+Indiery does not intend to collect or store:
+
+- UPI PINs;
+- card PINs;
+- full card numbers;
+- card CVVs;
+- online-banking passwords; or
+- other secret banking credentials.
+
+Never send these credentials to Indiery support.
+
+
+11. DEVICE, APP, AND DIAGNOSTIC DATA
+
+We may automatically process limited technical information needed to operate, secure, diagnose, and improve the service, including:
+
+- device model and manufacturer;
+- operating-system and app versions;
+- device or app identifiers where available and permitted;
+- IP address and IP-derived approximate location;
+- mobile network and connectivity information;
+- language and time-zone settings;
+- notification and permission status;
+- security events;
+- crash and performance information; and
+- browser information for website users.
+
+We do not use this information to sell personal data or for third-party targeted advertising.
+
+
+12. SUPPORT AND COMMUNICATION DATA
+
+When a customer contacts support, we may process:
+
+- account and contact information;
+- order and payment references;
+- complaint or request details;
+- screenshots, photographs, documents, or other evidence voluntarily supplied;
+- email, in-app, or other support communications; and
+- call recordings where used after appropriate notice.
+
+We may contact customers through SMS, phone, email, push notification, or in-app message for OTPs, bookings, status changes, partner updates, payments, refunds, cancellations, safety, account actions, support, and material legal or policy changes. Marketing messages are sent only as permitted by law and applicable preferences.
+
+
+13. HOW WE USE PERSONAL DATA
+
+We process personal data to:
+
+- create, authenticate, secure, and manage accounts;
+- provide fare estimates and bookings;
+- match bookings with delivery partners;
+- provide maps, navigation, route calculation, dispatch, and live tracking;
+- communicate booking and delivery status in real time;
+- verify pickup and delivery;
+- calculate fares, waiting charges, cancellations, refunds, Wallets, Coins, commissions, and settlements;
+- process and reconcile payments and recharges;
+- provide customer support and resolve complaints;
+- detect fraud, abuse, unsafe conduct, duplicate transactions, and unauthorised access;
+- maintain security, diagnostics, and service reliability;
+- exercise or defend legal claims; and
+- comply with legal, regulatory, tax, accounting, safety, and law-enforcement obligations.
+
+We do not sell customer personal data.
+
+
+14. INFORMATION SHARED WITH DELIVERY PARTNERS
+
+To accept and complete a booking, relevant information may be disclosed to the assigned or offered delivery partner, including:
+
+- pickup, stop, and drop locations;
+- sender and recipient names and phone numbers where required;
+- parcel type, weight, instructions, and vehicle requirement;
+- applicable order status and limited payment-mode information; and
+- pickup or delivery verification information needed for the handover.
+
+Delivery partners must use customer information only for the delivery, support, safety, dispute, or legal purpose for which it was disclosed.
+
+
+15. SERVICE PROVIDERS AND OTHER DISCLOSURES
+
+We may use service providers for:
+
+- authentication and security, such as Firebase;
+- push notifications, such as Expo or Firebase services;
+- maps, place search, geocoding, routes, and navigation, such as Google Maps;
+- payments, such as Razorpay;
+- media storage and delivery, such as Cloudinary;
+- cloud and database hosting;
+- analytics, diagnostics, support, and fraud prevention; and
+- professional, accounting, audit, and legal support.
+
+These providers process information under their own terms and privacy practices and may process data in India or another country where they operate, subject to applicable legal restrictions and safeguards.
+
+We may also disclose information to banks, payment providers, insurers, professional advisers, courts, regulators, law-enforcement bodies, or public authorities when reasonably necessary to comply with law, enforce agreements, investigate fraud, protect safety, or establish or defend legal claims.
+
+
+16. PRIVATE TRACKING LINKS
+
+A customer may create or share a private tracking link. A person holding that link may see limited order information and partner location while tracking remains active. Customers must share tracking links only with trusted recipients. Indiery does not display payment credentials, government identification numbers, bank information, authentication secrets, or delivery OTPs on the public tracking page.
+
+
+17. COOKIES AND WEBSITE TECHNOLOGIES
+
+The Indiery website may use essential cookies or similar technologies to maintain sessions, remember preferences, provide security, improve functionality, measure performance, and understand traffic. Disabling essential technology may prevent some website features from working.
+
+
+18. DATA SECURITY
+
+Indiery uses reasonable technical, organisational, and administrative safeguards appropriate to the nature of the service, which may include:
+
+- HTTPS encryption in transit;
+- authentication tokens and OTP verification;
+- role-based access controls;
+- restricted credentials and upload flows;
+- logging, monitoring, and fraud controls;
+- access limitation based on business need;
+- software updates and security patches; and
+- service-provider and employee confidentiality controls where applicable.
+
+No internet-connected service is completely secure. Customers must protect their phones, OTPs, login sessions, private tracking links, and payment credentials and promptly report suspected unauthorised activity.
+
+Where applicable law requires notification of a personal-data breach, Indiery will provide or support the required notices and response steps.
+
+
+19. DATA RETENTION
+
+We retain personal data only for as long as reasonably necessary for the stated purpose or as required or permitted by applicable law. Retention periods may differ by category.
+
+- Account and profile data may be retained while the account is active.
+- Push tokens may be retained while required for notifications and removed when invalidated or unregistered.
+- Booking, route, location, OTP-status, proof, payment, Wallet, Coin, cancellation, settlement, support, security, and audit records may be retained for service delivery, reconciliation, fraud prevention, dispute resolution, tax, accounting, safety, and legal obligations.
+- Pending account-deletion and grievance records may be retained to complete and evidence the request.
+
+When data is no longer required, we will delete it, securely dispose of it, or irreversibly de-identify it, subject to legal and operational retention requirements.
+
+
+20. ACCOUNT DELETION
+
+Customers may request account deletion through the available Account settings, the Indiery account-deletion webpage, or support@indiery.com.
+
+We may verify account ownership before acting. Following an eligible request, we will delete or irreversibly de-identify data that is no longer required. Information that must be retained for payment reconciliation, tax, accounting, fraud prevention, safety, dispute resolution, enforcement, or another legal obligation will be restricted to those purposes and deleted or de-identified when the requirement ends.
+
+Deleting the app from a device does not delete the Indiery account. Account deletion may result in loss of access to bookings and eligible Wallet, Coin, promotional, or referral balances as permitted by applicable law and the governing terms.
+
+
+21. CUSTOMER CHOICES AND PERMISSIONS
+
+Customers may:
+
+- choose whether to use current device location;
+- deny or later disable location and notification permissions in device settings;
+- use a typed or selected address where the app supports it;
+- control eligible marketing preferences; and
+- stop using the service and request account deletion.
+
+Disabling a permission may prevent the related feature from working. For example, current-location selection requires location permission. Unrelated features should remain available where practical.
+
+
+22. PRIVACY RIGHTS
+
+Subject to applicable law and its commencement dates, a customer may request:
+
+- information about the personal data being processed and relevant disclosures;
+- correction, completion, or updating of inaccurate or incomplete personal data;
+- deletion or erasure of eligible personal data;
+- withdrawal of consent where processing depends on consent;
+- grievance redressal; and
+- nomination or other rights made available under applicable law.
+
+We may verify identity and request information reasonably needed to locate the relevant account or records. A request may be limited or declined when processing or retention is required or permitted for law, fraud prevention, security, payment reconciliation, tax, accounting, disputes, safety, or legal claims.
+
+Withdrawal does not affect processing already completed lawfully before withdrawal and may prevent Indiery from providing the related service.
+
+
+23. GRIEVANCE REDRESSAL
+
+Privacy questions, requests, or complaints may be submitted to:
+
+Email: support@indiery.com
+Website: https://www.indiery.com
+
+Please include enough information to identify the account and request, but never send an OTP, UPI PIN, CVV, password, or full card number.
+
+Indiery will acknowledge and address grievances within the timeframe required by applicable law. Where a named Grievance Officer or other prescribed contact must be published, Indiery will make those details available through its app or website.
+
+
+24. FRAUD PREVENTION AND ACCOUNT RESTRICTIONS
+
+We may process relevant data to detect suspicious bookings, payment fraud, manipulated locations, account takeover, promotional abuse, repeated payment failures, unsafe conduct, unlawful goods, and other violations. Accounts may be restricted, suspended, investigated, or terminated where reasonably necessary to protect users, partners, Indiery, or the public or to comply with law.
+
+
+25. INTERNATIONAL PROCESSING
+
+Indiery primarily operates in India. Service providers may process or store information outside India where they operate. Any cross-border processing will be handled subject to applicable Indian law, notified restrictions, and appropriate contractual, organisational, and technical safeguards.
+
+
+26. THIRD-PARTY LINKS AND SERVICES
+
+The Indiery app or website may contain links to independent third-party services. Those services have their own privacy practices. Indiery is not responsible for a third party's separate website, content, security, or privacy practices, except to the extent responsibility cannot legally be excluded.
+
+
+27. CHANGES TO THIS POLICY
+
+We may update this Policy to reflect changes in law, services, providers, security, technology, or business operations. The revised version will show an updated effective date. When a change materially affects customer rights or the way personal data is used, Indiery will provide additional notice through the app, website, email, SMS, or another appropriate channel where required.
+
+
+28. APPLICABLE LAW
+
+This Policy is intended to operate consistently with applicable Indian law, including the Information Technology Act, 2000 and the Digital Personal Data Protection Act, 2023 and Digital Personal Data Protection Rules, 2025 as their respective provisions come into force, together with applicable consumer, payment, tax, and other legal requirements.
+
+Nothing in this Policy limits a right or remedy that cannot lawfully be excluded.
+
+
+29. USER RESPONSIBILITIES
+
+Customers are responsible for:
+
+- providing accurate and current information;
+- having authority to share sender and recipient details;
+- protecting OTPs, account access, devices, and tracking links;
+- promptly reporting suspected unauthorised access;
+- using Indiery only for lawful purposes; and
+- ensuring booked goods and instructions comply with law and platform policies.
+
+
+30. CONTACT US
+
+Privacy, Support, Account Deletion, and Grievances
+Email: support@indiery.com
+Website: https://www.indiery.com
+
+Before publication, Indiery should also publish the full legal name and registered or principal business address of the operating entity and the name or designation of any Grievance Officer required by applicable law.
+
+
+31. SEVERABILITY AND COMPLETE POLICY
+
+If any provision of this Policy is found invalid or unenforceable, the remaining provisions will continue to apply. This Policy is the complete customer privacy notice for the customer-facing services described above and replaces earlier customer privacy policy versions from its effective date.

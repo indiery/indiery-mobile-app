@@ -254,7 +254,14 @@ export class IndieryApi {
   }
 
   cancelOrder(orderId: string, reason: string) {
-    return this.request<{ order?: Order }>(`/customer/orders/${orderId}/cancel`, {
+    return this.request<{
+      order?: Order;
+      cancellationCharge: number;
+      refundAmount: number;
+      coinDebit: number;
+      wallet: CustomerWallet;
+      user?: UserProfile;
+    }>(`/customer/orders/${orderId}/cancel`, {
       method: 'POST',
       body: JSON.stringify({ reason })
     });
@@ -291,6 +298,24 @@ export class IndieryApi {
     razorpaySignature: string;
   }) {
     return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet/topup/verify', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  createCoinTopup(input: { amount: number; paymentMode: 'upi' }) {
+    return this.request<{ wallet: CustomerWallet; paymentIntent: PaymentIntent }>('/customer/wallet/coins/topup', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  verifyCoinTopup(input: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet/coins/topup/verify', {
       method: 'POST',
       body: JSON.stringify(input)
     });

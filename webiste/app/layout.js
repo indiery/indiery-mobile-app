@@ -2,7 +2,7 @@ import "./globals.css";
 
 const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
   ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-  : "https://indiery.in";
+  : "https://www.indiery.com";
 
 export const metadata = {
   metadataBase: new URL(siteUrl),
@@ -41,7 +41,7 @@ export default function RootLayout({ children }) {
             <a href="/#how-it-works">How it works</a>
             <a href="/#customers">Customers</a>
             <a href="/#partners">Partners</a>
-            <a className="headerCta" href="mailto:support@indiery.in">Get support</a>
+            <a className="headerCta" href="mailto:support@indiery.com">Get support</a>
           </nav>
         </header>
         {children}
@@ -59,11 +59,13 @@ export default function RootLayout({ children }) {
             <p>Simple, reliable local delivery.</p>
           </div>
           <div className="footerLinks">
-            <a href="/privacy">Privacy policy</a>
-            <a href="/terms">Terms of service</a>
+            <a href="/privacy">Customer privacy</a>
+            <a href="/partner-privacy">Driver Partner privacy</a>
+            <a href="/terms">Customer terms</a>
+            <a href="/partner-terms">Driver Partner terms</a>
             <a href="/refunds">Refund and cancellation rules</a>
             <a href="/account-deletion">Account deletion</a>
-            <a href="mailto:support@indiery.in">support@indiery.in</a>
+            <a href="mailto:support@indiery.com">support@indiery.com</a>
           </div>
           <p className="copyright">© {new Date().getFullYear()} Indiery. All rights reserved.</p>
         </footer>

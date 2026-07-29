@@ -50,7 +50,7 @@ export default function Home() {
           </p>
           <div className="actions">
             <a className="button primary" href="#how-it-works">See how it works</a>
-            <a className="button secondary" href="mailto:support@indiery.in">Contact support</a>
+            <a className="button secondary" href="mailto:support@indiery.com">Contact support</a>
           </div>
           <div className="heroHighlights" aria-label="Indiery highlights">
             <span>Clear delivery details</span>
@@ -189,7 +189,7 @@ export default function Home() {
           <p>Contact us for app, account, privacy, or delivery-related questions.</p>
         </div>
         <div className="supportActions">
-          <a className="button light" href="mailto:support@indiery.in">Email support</a>
+          <a className="button light" href="mailto:support@indiery.com">Email support</a>
           <a className="textLink" href="/privacy">Read our privacy policy <span aria-hidden="true">→</span></a>
         </div>
       </section>

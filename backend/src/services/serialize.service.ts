@@ -125,6 +125,7 @@ export function serializeOrder(order: OrderDocument, options: { includeTripOtp?:
     tripOtp: options.includeTripOtp ? visibleTripOtp(order) : undefined,
     partnerLocation: orderActive ? order.partnerLocation : undefined,
     settlement: order.settlement,
+    customerCancellation: order.customerCancellation,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt
   };

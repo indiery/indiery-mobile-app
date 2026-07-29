@@ -10,7 +10,10 @@ import { createTimeline, setOrderStatusTimeline } from '../services/timeline.ser
 import { serializeOrder, serializeUser, serializeVehicle } from '../services/serialize.service';
 import { compareOtp } from '../services/otp.service';
 import { requestPartnerPayout } from '../services/payout.service';
-import { calculateDeliverySettlement } from '../services/settlement.service';
+import {
+  calculateDeliverySettlement,
+  calculatePartnerWalletSettlement
+} from '../services/settlement.service';
 import { applyWaitingChargeToFare } from '../services/fare.service';
 import { resolveRoutePath } from '../services/maps.service';
 import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } from '../services/notification.service';
@@ -23,6 +26,7 @@ import {
   offerOrderToNextDrivers,
   rejectDriverOffer
 } from '../services/order-offers.service';
+import { calculateWaitingCoinDebit } from '../services/customer-coins.service';
 
 export const partnerRouter = Router();
 
@@ -125,6 +129,41 @@ function orderTimelineTime(order: Awaited<ReturnType<typeof loadOrderForPartner>
   if (!at) return undefined;
   const time = new Date(at).getTime();
   return Number.isNaN(time) ? undefined : time;
+}
+
+async function debitPrepaidWaitingChargeFromCoins(input: {
+  customerId: unknown;
+  orderId: unknown;
+  orderNo: string;
+  amount: number;
+}) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const customer = await User.findById(input.customerId).select('customerProfile.coins');
+    if (!customer) throw new ApiError(404, 'Customer not found');
+    const currentCoins = customer.customerProfile?.coins ?? 0;
+    const debit = calculateWaitingCoinDebit(currentCoins, input.amount);
+    if (debit.amount <= 0) return 0;
+
+    const result = await User.updateOne(
+      { _id: customer._id, 'customerProfile.coins': currentCoins },
+      { $inc: { 'customerProfile.coins': -debit.amount } }
+    );
+    if (result.modifiedCount !== 1) continue;
+
+    await WalletLedger.create({
+      user: customer._id,
+      order: input.orderId,
+      amount: debit.amount,
+      kind: 'debit',
+      bucket: 'coins',
+      title: `Waiting charge ${input.orderNo}`,
+      reference: input.orderNo,
+      settled: true
+    });
+    return debit.amount;
+  }
+
+  throw new ApiError(409, 'Coin balance changed. Please retry the pickup update.');
 }
 
 function availableOrderQueryForVehicle(vehicleId?: string, partnerId?: string) {
@@ -642,15 +681,30 @@ partnerRouter.post(
       const arrivedPickupAt = orderTimelineTime(order, 'arrived_pickup');
       const pickedUpAt = orderTimelineTime(order, 'picked_up') ?? Date.now();
       if (vehicle && arrivedPickupAt) {
+        const previousWaitingCharge = order.fare.waitingCharge ?? 0;
+        const updatedFare = applyWaitingChargeToFare({
+          fare: order.fare,
+          distanceKm: order.distanceKm,
+          vehicle,
+          waitingMinutes: (pickedUpAt - arrivedPickupAt) / 60000
+        });
         order.set(
           'fare',
-          applyWaitingChargeToFare({
-            fare: order.fare,
-            distanceKm: order.distanceKm,
-            vehicle,
-            waitingMinutes: (pickedUpAt - arrivedPickupAt) / 60000
-          })
+          updatedFare
         );
+        const addedWaitingCharge = Math.max(0, updatedFare.waitingCharge - previousWaitingCharge);
+        const isPrepaid =
+          order.paymentStatus === 'paid' &&
+          order.paymentMode !== 'cash' &&
+          order.paymentProvider !== 'cash';
+        if (isPrepaid && addedWaitingCharge > 0) {
+          await debitPrepaidWaitingChargeFromCoins({
+            customerId: order.customer,
+            orderId: order._id,
+            orderNo: order.orderNo,
+            amount: addedWaitingCharge
+          });
+        }
       }
     }
     await order.save();
@@ -663,40 +717,38 @@ partnerRouter.post(
       }
       await order.save();
 
-      const isCashOrder = order.paymentMode === 'cash' || order.paymentProvider === 'cash';
-      const platformCommission = Number((order.fare.platformCommission ?? 0).toFixed(2));
-      const walletDelta = isCashOrder ? -platformCommission : settlement.partnerCredit;
+      const walletSettlement = calculatePartnerWalletSettlement({
+        paymentProvider: order.paymentProvider,
+        customerTotal: order.fare.total,
+        partnerCredit: settlement.partnerCredit
+      });
       await User.updateOne(
         { _id: req.auth!.userId },
         {
           $inc: {
-            'partnerProfile.walletBalance': walletDelta,
+            'partnerProfile.walletBalance': walletSettlement.walletDelta,
             'partnerProfile.weeklyOrders': 1
           }
         }
       );
-      if (isCashOrder) {
-        if (platformCommission > 0) {
-          await WalletLedger.create({
-            user: req.auth!.userId,
-            order: order._id,
-            amount: platformCommission,
-            kind: 'debit',
-            bucket: 'cash',
-            title: `Indiery commission ${order.orderNo}`,
-            reference: order.orderNo,
-            settled: true
-          });
-        }
-      } else {
+      if (walletSettlement.ledgerKind) {
+        const isCashCollection = walletSettlement.cashCollected > 0;
+        const title = isCashCollection
+          ? walletSettlement.ledgerKind === 'credit'
+            ? `Coin-funded cash settlement ${order.orderNo}`
+            : `Cash settlement deduction ${order.orderNo}`
+          : settlement.delayed
+            ? `Order ${order.orderNo} delayed payout`
+            : `Order ${order.orderNo} on-time payout`;
         await WalletLedger.create({
           user: req.auth!.userId,
           order: order._id,
-          amount: settlement.partnerCredit,
-          kind: 'credit',
+          amount: walletSettlement.ledgerAmount,
+          kind: walletSettlement.ledgerKind,
           bucket: 'cash',
-          title: settlement.delayed ? `Order ${order.orderNo} delayed payout` : `Order ${order.orderNo} on-time payout`,
-          reference: order.orderNo
+          title,
+          reference: order.orderNo,
+          settled: true
         });
       }
     }

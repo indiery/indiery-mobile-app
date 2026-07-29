@@ -23,20 +23,24 @@ async function settleWalletTopup(razorpayOrderId: string) {
     {
       reference: razorpayOrderId,
       kind: 'credit',
-      bucket: 'cash',
       settled: false
     },
-    {
-      title: 'Wallet top-up',
-      settled: true
-    },
+    { settled: true },
     { new: true }
   );
   if (!ledger) return;
   const user = await User.findById(ledger.user).select('role');
   if (user?.role === 'partner') {
+    ledger.title = 'Partner wallet top-up';
+    await ledger.save();
     await User.updateOne({ _id: ledger.user }, { $inc: { 'partnerProfile.walletBalance': ledger.amount } });
+  } else if (ledger.bucket === 'coins') {
+    ledger.title = 'Indiery Coins recharge';
+    await ledger.save();
+    await User.updateOne({ _id: ledger.user }, { $inc: { 'customerProfile.coins': ledger.amount } });
   } else {
+    ledger.title = 'Wallet top-up';
+    await ledger.save();
     await User.updateOne({ _id: ledger.user }, { $inc: { 'customerProfile.walletBalance': ledger.amount } });
   }
 }

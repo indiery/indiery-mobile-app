@@ -189,6 +189,19 @@ export interface Order {
     reserveReleasedTo: 'partner' | 'platform' | 'customer';
     settledAt?: string;
   };
+  customerCancellation?: {
+    policy:
+      | 'free_before_pickup'
+      | 'free_within_five_minutes_after_pickup'
+      | 'ten_percent_after_five_minutes';
+    charge: number;
+    refundAmount: number;
+    partnerCredit: number;
+    platformCommission: number;
+    coinDebit: number;
+    pickedUpElapsedMinutes?: number;
+    cancelledAt: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

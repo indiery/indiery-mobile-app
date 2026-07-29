@@ -30,8 +30,8 @@
     "extra": {
       "apiBaseUrl": "https://indiery-mobile-app-bp9h.onrender.com/api",
       "allowInsecureApiBaseUrl": false,
-      "privacyPolicyUrl": "https://indiery-mobile-app-bp9h.onrender.com/privacy",
-      "accountDeletionUrl": "https://indiery-mobile-app-bp9h.onrender.com/account-deletion",
+      "privacyPolicyUrl": "https://www.indiery.com/privacy",
+      "accountDeletionUrl": "https://www.indiery.com/account-deletion",
       "googleMapsApiKey": "AIzaSyAY5D6K2WhkSGAzQnjuQPdnJ8lF0H6uszE",
       "eas": {
         "projectId": "77afd5ce-686e-4ffc-814f-1cb0bae4ca08"

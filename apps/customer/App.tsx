@@ -192,6 +192,7 @@ const restrictedGoodsItems = [
   'Stolen or counterfeit goods'
 ];
 const maxExtraStops = 3;
+const customerCoinDebtLimit = -50;
 const customerVehicleCodes = ['bike', 'loader90', 'mini500', 'mini750'];
 const vehicleArtSources: Record<string, ImageSourcePropType> = {
   bike: bikeVehicleImage,
@@ -391,6 +392,11 @@ const enCopy = {
   invalidCoupon: 'Invalid coupon code',
   couponAlreadyClaimed: 'FIRST50 already claimed',
   couponApplied: 'FIRST50 applied. 50 coins added.',
+  rechargeCoins: 'Recharge Indiery Coins',
+  rechargeCoinsToOrder: 'Your Indiery Coins balance reached -50. Recharge before placing another order.',
+  coinDebtNotice: 'Waiting and cancellation charges may use Coins down to -50. Recharge is required at that limit.',
+  coinRechargeSuccess: 'Indiery Coins recharged',
+  coinRechargeFailed: 'Indiery Coins recharge failed',
   coinRules: 'Coin Rules',
   coinRuleEarn: 'Earn coins for successful deliveries',
   coinRuleUse: 'Use coins on payment up to the order amount',
@@ -1349,7 +1355,9 @@ function isActiveOrder(order: Order) {
 }
 
 function isCustomerCancellableOrder(order: Order) {
-  return ['searching', 'offered', 'accepted', 'arrived_pickup'].includes(order.status);
+  if (['searching', 'offered', 'accepted', 'arrived_pickup'].includes(order.status)) return true;
+  if (!['picked_up', 'in_transit'].includes(order.status)) return false;
+  return Boolean(orderTimelineTime(order, 'picked_up'));
 }
 
 function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
@@ -1577,8 +1585,18 @@ export default function App() {
       const activeOrders = isActiveOrder(mergedOrder)
         ? [mergedOrder, ...current.activeOrders.filter((item) => item.id !== order.id)]
         : current.activeOrders.filter((item) => item.id !== order.id);
+      const latestCustomer =
+        mergedOrder.customer?.id === current.user.id
+          ? mergedOrder.customer
+          : undefined;
+      const latestCoins = latestCustomer?.customerProfile?.coins;
       return {
         ...current,
+        user: latestCustomer ?? current.user,
+        wallet:
+          typeof latestCoins === 'number'
+            ? { ...current.wallet, coins: latestCoins }
+            : current.wallet,
         activeOrder: activeOrders[0],
         activeOrders,
         orders
@@ -1680,6 +1698,12 @@ export default function App() {
 
   async function placeOrder() {
     if (busy || !booking.vehicleId) return;
+    const coins = data?.wallet.coins ?? data?.user.customerProfile?.coins ?? 0;
+    if (coins <= customerCoinDebtLimit) {
+      setTab('wallet');
+      showToast(copyFor(language, 'rechargeCoinsToOrder'));
+      return;
+    }
     setBusy(true);
     try {
       const pickup = composeBookingAddress(booking.pickup, booking.pickupAddressLine);
@@ -1768,6 +1792,52 @@ export default function App() {
       showToast(`${confirmedOrder.orderNo} booked`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Booking failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function topUpCoins(amount: number) {
+    if (busy) return false;
+    setBusy(true);
+    try {
+      const result = await api.createCoinTopup({ amount, paymentMode: 'upi' });
+      const checkout = result.paymentIntent.checkout;
+      if (!checkout) throw new Error(copyFor(language, 'coinRechargeFailed'));
+      const payment = await RazorpayCheckout.open({
+        key: checkout.keyId,
+        amount: Math.round(result.paymentIntent.amount * 100),
+        currency: result.paymentIntent.currency,
+        name: 'Indiery',
+        description: copyFor(language, 'rechargeCoins'),
+        order_id: checkout.orderId,
+        prefill: {
+          name: data?.user.name,
+          email: data?.user.email,
+          contact: data?.user.phone
+        },
+        notes: { wallet: 'coins' },
+        theme: { color: colors.customer },
+        modal: { confirm_close: true, handleback: true }
+      });
+      if (!payment.razorpay_order_id || !payment.razorpay_signature) {
+        throw new Error(copyFor(language, 'coinRechargeFailed'));
+      }
+      const verified = await api.verifyCoinTopup({
+        razorpayOrderId: payment.razorpay_order_id,
+        razorpayPaymentId: payment.razorpay_payment_id,
+        razorpaySignature: payment.razorpay_signature
+      });
+      setData((current) => current ? {
+        ...current,
+        user: verified.user,
+        wallet: verified.wallet
+      } : current);
+      showToast(copyFor(language, 'coinRechargeSuccess'));
+      return true;
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : copyFor(language, 'coinRechargeFailed'));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -1888,9 +1958,20 @@ export default function App() {
   }
 
   function cancelActiveOrder(order: Order) {
+    const afterPickup = ['picked_up', 'in_transit'].includes(order.status);
+    const pickedUpAt = orderTimelineTime(order, 'picked_up');
+    const withinFreePickupWindow = Boolean(
+      afterPickup && pickedUpAt && Date.now() <= pickedUpAt + 5 * 60_000
+    );
+    const cancellationCharge = Number((order.fare.total * 0.1).toFixed(2));
+    const cancellationMessage = afterPickup && !withinFreePickupWindow
+      ? `Cancel ${order.orderNo}? A 10% cancellation charge of ${money(cancellationCharge)} will apply. The remaining prepaid amount will be returned to your wallet; for cash orders the charge is deducted from Indiery Coins.`
+      : afterPickup
+        ? `Cancel ${order.orderNo}? You are within 5 minutes after pickup, so there is no cancellation charge.`
+        : `Cancel ${order.orderNo}? There is no cancellation charge before pickup.`;
     Alert.alert(
       'Cancel booking',
-      `Cancel ${order.orderNo}? You can cancel before the goods are picked up.`,
+      cancellationMessage,
       [
         { text: 'Keep booking', style: 'cancel' },
         {
@@ -1905,12 +1986,18 @@ export default function App() {
                 const activeOrders = current.activeOrders.filter((item) => item.id !== result.order?.id);
                 return {
                   ...current,
+                  user: result.user ?? current.user,
+                  wallet: result.wallet,
                   activeOrder: activeOrders[0],
                   activeOrders,
                   orders: [result.order, ...current.orders.filter((item) => item.id !== result.order?.id)]
                 };
               });
-              showToast('Booking cancelled');
+              showToast(
+                result.cancellationCharge > 0
+                  ? `Booking cancelled: ${money(result.cancellationCharge)} charged`
+                  : 'Booking cancelled with no charge'
+              );
               setTab('orders');
             } catch (err) {
               showToast(err instanceof Error ? err.message : 'Cancel failed');
@@ -2001,10 +2088,6 @@ export default function App() {
       serviceCategory,
       vehicleId: vehicle.id
     }));
-    if (booking.pickup.trim().length >= 2 && !hasConfirmedPickupDetails(booking)) {
-      setPickupDetailsMode('book');
-      return;
-    }
     openBook(1);
   };
 
@@ -2109,6 +2192,7 @@ export default function App() {
               }
             }
             busy={busy}
+            onTopup={topUpCoins}
             onCoupon={async () => {
               setBusy(true);
               try {
@@ -5484,6 +5568,22 @@ function InlineExactLocationPicker({
         >
           <Ionicons name="arrow-back" size={responsive.isCompact ? 19 : 22} color={colors.ink} />
         </Pressable>
+        {target === 'pickup' ? (
+          <Pressable
+            style={[styles.contactMapCurrentButton, responsive.isCompact && styles.contactMapCurrentButtonCompact]}
+            onPress={useCurrentLocation}
+            disabled={locating}
+            hitSlop={3}
+            accessibilityRole="button"
+            accessibilityLabel={copy.useCurrentLocation}
+          >
+            {locating ? (
+              <ActivityIndicator size="small" color={colors.customer} />
+            ) : (
+              <Ionicons name="locate" size={responsive.isCompact ? 18 : 21} color={colors.customer} />
+            )}
+          </Pressable>
+        ) : null}
         <Pressable
           style={[styles.contactMapExpandButton, responsive.isCompact && styles.contactMapExpandButtonCompact]}
           onPress={onToggleExpanded}
@@ -6774,7 +6874,7 @@ function OrderDetailsPanel({
         </View>
       </View>
 
-      <FareCard fare={order.fare} />
+      <FareCard fare={order.fare} customerCancellation={order.customerCancellation} />
 
       <View style={[styles.timelinePanel, responsive.isCompact && styles.timelinePanelCompact]}>
         <View style={styles.timelinePanelHeader}>
@@ -6831,18 +6931,36 @@ function TrackScreen({
 function WalletScreen({
   wallet,
   busy,
+  onTopup,
   onCoupon
 }: {
   wallet: CustomerWallet;
   busy: boolean;
+  onTopup: (amount: number) => Promise<boolean>;
   onCoupon: () => Promise<{ addedCoins: number; alreadyApplied?: boolean }>;
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
   const [couponMessage, setCouponMessage] = useState('');
   const [couponMessageKind, setCouponMessageKind] = useState<'success' | 'error'>('success');
+  const [rechargeAmountInput, setRechargeAmountInput] = useState('');
   const recentCoinLedger = wallet.coinLedger.slice(0, 7);
   const nextOrderDiscount = automaticCoinDiscount(undefined, wallet);
+  const rechargeAmount = Number(rechargeAmountInput);
+  const rechargeAmountValid = Number.isFinite(rechargeAmount) && rechargeAmount >= 1 && rechargeAmount <= 20000;
+
+  function updateRechargeAmount(value: string) {
+    const numeric = value.replace(/[^0-9.]/g, '');
+    const [whole, ...decimalParts] = numeric.split('.');
+    const decimal = decimalParts.join('').slice(0, 2);
+    setRechargeAmountInput(`${whole}${decimalParts.length ? `.${decimal}` : ''}`.slice(0, 8));
+  }
+
+  async function rechargeCoins() {
+    if (!rechargeAmountValid) return;
+    const recharged = await onTopup(rechargeAmount);
+    if (recharged) setRechargeAmountInput('');
+  }
 
   async function applyFirst50() {
     setCouponMessage('');
@@ -6890,6 +7008,36 @@ function WalletScreen({
               </View>
             </View>
           </View>
+
+          <View style={styles.walletDebtNotice}>
+            <Ionicons name="information-circle-outline" size={17} color={wallet.coins <= customerCoinDebtLimit ? colors.red : colors.customer} />
+            <Text style={styles.walletDebtNoticeText}>{copy.coinDebtNotice}</Text>
+          </View>
+
+          <View style={styles.walletRechargeInputShell}>
+            <Text style={styles.walletRechargeCurrency}>₹</Text>
+            <TextInput
+              style={styles.walletRechargeInput}
+              value={rechargeAmountInput}
+              onChangeText={updateRechargeAmount}
+              placeholder="Enter recharge amount"
+              placeholderTextColor={colors.muted}
+              keyboardType="decimal-pad"
+              maxLength={8}
+            />
+          </View>
+
+          <Pressable
+            style={[
+              styles.walletRechargeButton,
+              (!rechargeAmountValid || busy) && styles.walletCouponButtonBusy
+            ]}
+            onPress={() => void rechargeCoins()}
+            disabled={!rechargeAmountValid || busy}
+          >
+            {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="add-circle-outline" size={18} color={colors.white} />}
+            <Text style={styles.walletRechargeButtonText}>{copy.rechargeCoins}</Text>
+          </Pressable>
 
           <Pressable
             style={[
@@ -7383,7 +7531,7 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
         <Text style={[styles.enterpriseFeatureTitle, responsive.isCompact && styles.enterpriseFeatureTitleCompact]}>{copy.talkEnterprises}</Text>
         <Text style={[styles.enterpriseFeatureText, responsive.isCompact && styles.enterpriseFeatureTextCompact]}>{copy.shareBusinessRoutes}</Text>
         <View style={styles.row}>
-          <SecondaryButton title={copy.emailButton} icon="mail-outline" onPress={() => Linking.openURL('mailto:support@indiery.in?subject=Indiery%20Enterprises')} />
+          <SecondaryButton title={copy.emailButton} icon="mail-outline" onPress={() => Linking.openURL('mailto:support@indiery.com?subject=Indiery%20Enterprises')} />
           <PrimaryButton title={copy.callButton} icon="call-outline" onPress={() => Linking.openURL('tel:+919000000000')} />
         </View>
       </View>
@@ -7496,8 +7644,8 @@ function SupportPanel() {
     {
       icon: 'mail-outline',
       title: copy.emailSupport,
-      subtitle: 'support@indiery.in',
-      action: () => Linking.openURL('mailto:support@indiery.in?subject=Indiery%20Customer%20Support')
+      subtitle: 'support@indiery.com',
+      action: () => Linking.openURL('mailto:support@indiery.com?subject=Indiery%20Customer%20Support')
     },
     {
       icon: 'call-outline',
@@ -7509,7 +7657,7 @@ function SupportPanel() {
       icon: 'document-text-outline',
       title: copy.reportOrderIssue,
       subtitle: copy.reportOrderIssueSubtitle,
-      action: () => Linking.openURL('mailto:support@indiery.in?subject=Order%20Issue')
+      action: () => Linking.openURL('mailto:support@indiery.com?subject=Order%20Issue')
     }
   ];
 
@@ -8160,7 +8308,13 @@ function Timeline({ items }: { items: Order['timeline'] }) {
   );
 }
 
-function FareCard({ fare }: { fare: FareBreakup }) {
+function FareCard({
+  fare,
+  customerCancellation
+}: {
+  fare: FareBreakup;
+  customerCancellation?: Order['customerCancellation'];
+}) {
   const responsive = useResponsiveLayout();
   const waitingFare = fare as FareBreakup & {
     waitingCharge?: number;
@@ -8189,6 +8343,18 @@ function FareCard({ fare }: { fare: FareBreakup }) {
       ) : null}
       <View style={styles.divider} />
       <FareRow label="Total" value={money(fare.total)} bold />
+      {customerCancellation ? (
+        <>
+          <View style={styles.divider} />
+          <FareRow label="Cancellation charge" value={money(customerCancellation.charge)} bold />
+          {customerCancellation.refundAmount > 0 ? (
+            <FareRow label="Refund added to wallet" value={money(customerCancellation.refundAmount)} />
+          ) : null}
+          {customerCancellation.coinDebit > 0 ? (
+            <FareRow label="Charged to Indiery Coins" value={money(customerCancellation.coinDebit)} />
+          ) : null}
+        </>
+      ) : null}
     </View>
   );
 }
@@ -9203,6 +9369,8 @@ const styles = StyleSheet.create({
   contactMapHeroHintText: { color: colors.white, fontSize: 11, fontWeight: '600' },
   contactMapBackButton: { position: 'absolute', left: 10, top: 16, width: 38, height: 38, borderRadius: 19, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   contactMapBackButtonCompact: { left: 8, top: 10, width: 34, height: 34, borderRadius: 17 },
+  contactMapCurrentButton: { position: 'absolute', right: 64, bottom: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  contactMapCurrentButtonCompact: { right: 53, bottom: 11, width: 36, height: 36, borderRadius: 18 },
   contactMapExpandButton: { position: 'absolute', right: 12, bottom: 16, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   contactMapExpandButtonCompact: { right: 9, bottom: 11, width: 36, height: 36, borderRadius: 18 },
   contactMapPickerHint: { left: 60, right: 60, bottom: 68 },
@@ -9508,6 +9676,13 @@ const styles = StyleSheet.create({
   walletCouponButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
   walletCouponButtonCompact: { minHeight: 38, borderRadius: 12, gap: 6, paddingHorizontal: 11 },
   walletCouponButtonBusy: { opacity: 0.65 },
+  walletDebtNotice: { borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: 11, paddingVertical: 9, marginBottom: 10 },
+  walletDebtNoticeText: { flex: 1, color: colors.ink, fontSize: 10, fontWeight: '500', lineHeight: 14 },
+  walletRechargeInputShell: { minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, marginBottom: 8 },
+  walletRechargeCurrency: { color: colors.ink, fontSize: 16, fontWeight: '700', marginRight: 6 },
+  walletRechargeInput: { flex: 1, minHeight: 42, color: colors.ink, fontSize: 14, fontWeight: '600', paddingVertical: 0 },
+  walletRechargeButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14, marginBottom: 10 },
+  walletRechargeButtonText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   walletCouponText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
   walletCouponTextCompact: { fontSize: 11 },
   walletCouponOverlay: { flex: 1, justifyContent: 'flex-end' },

@@ -31,8 +31,8 @@ export default function AccountDeletionPage() {
         </p>
         <p>
           You can also email{" "}
-          <a href="mailto:support@indiery.in?subject=Indiery%20Account%20Deletion%20Request">
-            support@indiery.in
+          <a href="mailto:support@indiery.com?subject=Indiery%20Account%20Deletion%20Request">
+            support@indiery.com
           </a>{" "}
           with the same details. Never send an OTP, PIN, password, CVV, or full
           card number.

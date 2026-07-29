@@ -1,6 +1,6 @@
 # Indiery Google Play release checklist
 
-Updated: July 27, 2026
+Updated: July 29, 2026
 
 This file is the repository-side release checklist for the Indiery customer and
 Indiery Partner apps. Re-check every answer against the exact production build
@@ -8,17 +8,18 @@ and every enabled third-party SDK before submitting a release.
 
 ## Public declarations
 
-- Privacy Policy: `https://indiery-mobile-app-bp9h.onrender.com/privacy`
-- Account deletion: `https://indiery-mobile-app-bp9h.onrender.com/account-deletion`
-- Terms of Service: `https://indiery-mobile-app-bp9h.onrender.com/terms`
-- Refund and cancellation rules:
-  `https://indiery-mobile-app-bp9h.onrender.com/refunds`
-- Privacy and grievance contact: `support@indiery.in`
+- Customer Privacy Policy: `https://www.indiery.com/privacy`
+- Driver Partner Privacy Policy: `https://www.indiery.com/partner-privacy`
+- Account deletion: `https://www.indiery.com/account-deletion`
+- Customer Terms and Conditions: `https://www.indiery.com/terms`
+- Driver Partner Terms and Conditions: `https://www.indiery.com/partner-terms`
+- Refund and cancellation rules: `https://www.indiery.com/refunds`
+- Privacy and grievance contact: `support@indiery.com`
 - Developer/operator named in the policies: `Indiery`
 
 Before submission:
 
-- Deploy the backend version containing all four routes and verify each URL in
+- Deploy the website and backend versions containing all legal routes and verify each URL in
   a signed-out browser. Each page must return `200`, render without a login,
   and remain public, non-geofenced, and non-PDF.
 - Confirm that the exact developer name in Play Console is `Indiery`. If the
@@ -110,7 +111,7 @@ flow.
 - Provide reviewer App access instructions for OTP-protected screens.
 - Complete Content rating, Target audience, News, Financial features, and any
   other declarations according to the live service.
-- Use the public privacy-policy and account-deletion URLs above.
+- Use the correct public privacy-policy URL for each app and the shared account-deletion URL above.
 - Confirm the store listing, screenshots, permission declarations, and policy
   wording describe only features available in the submitted build.
 - Run closed testing and exercise permission denial, payment failure, duplicate

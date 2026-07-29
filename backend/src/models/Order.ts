@@ -91,6 +91,28 @@ const SettlementSchema = new Schema(
   { _id: false }
 );
 
+const CustomerCancellationSchema = new Schema(
+  {
+    policy: {
+      type: String,
+      enum: [
+        'free_before_pickup',
+        'free_within_five_minutes_after_pickup',
+        'ten_percent_after_five_minutes'
+      ],
+      required: true
+    },
+    charge: { type: Number, default: 0 },
+    refundAmount: { type: Number, default: 0 },
+    partnerCredit: { type: Number, default: 0 },
+    platformCommission: { type: Number, default: 0 },
+    coinDebit: { type: Number, default: 0 },
+    pickedUpElapsedMinutes: { type: Number },
+    cancelledAt: { type: Date, required: true }
+  },
+  { _id: false }
+);
+
 const OrderSchema = new Schema(
   {
     orderNo: { type: String, unique: true, index: true, required: true },
@@ -149,6 +171,7 @@ const OrderSchema = new Schema(
     partnerLocation: { type: PartnerLocationSchema },
     partnerCancellationHistory: { type: [PartnerCancellationSchema], default: [] },
     settlement: { type: SettlementSchema },
+    customerCancellation: { type: CustomerCancellationSchema },
     cancellationReason: { type: String }
   },
   { timestamps: true }

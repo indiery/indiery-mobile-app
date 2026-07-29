@@ -1,0 +1,453 @@
+INDIERY CUSTOMER TERMS AND CONDITIONS
+
+Version: 2.0
+Effective Date: 29 July 2026
+Last Updated: 29 July 2026
+
+
+1. INTRODUCTION
+
+Welcome to Indiery ("Indiery", "we", "our", or "us"). These Customer Terms and Conditions ("Terms") govern access to and use of:
+
+- the Indiery Customer mobile application;
+- the Indiery website at https://www.indiery.com;
+- customer-support and account-deletion services; and
+- delivery and related services made available through the Indiery platform.
+
+Indiery provides technology that enables customers to request and manage intra-city transportation of goods by independent delivery partners. Indiery may also provide payment facilitation, dispatch, tracking, support, safety, and dispute-assistance functions.
+
+By creating an account, requesting an estimate, placing a booking, making a payment, or otherwise using Indiery, you agree to these Terms, the Customer Privacy Policy, and the Refund and Cancellation Rules presented in the app. If you do not agree, do not use the service.
+
+
+2. ACCEPTANCE AND LEGAL CAPACITY
+
+By using Indiery, you represent that:
+
+- you are at least 18 years old and legally capable of entering into a binding agreement, or you are acting through a lawful parent, guardian, or authorised representative;
+- information you provide is accurate, complete, and current;
+- you will use the service only for lawful purposes; and
+- you will comply with these Terms and applicable law.
+
+Nothing in these Terms excludes a consumer right or remedy that cannot lawfully be excluded.
+
+
+3. DEFINITIONS
+
+- "Account" means a registered Indiery customer account.
+- "Booking" or "Order" means a delivery request created through the Indiery platform.
+- "Customer" means the person or entity requesting the delivery.
+- "Delivery Partner" or "Partner" means an independent person who accepts and performs a delivery through the Indiery Partner service.
+- "Indiery Coins" means the separate promotional or rechargeable platform balance shown in the customer app.
+- "Indiery Wallet" means the cash-value platform balance used for supported payments, top-ups, refunds, and approved credits.
+- "Order Total" means the amount displayed for the order after applicable fare components, waiting charges, supported adjustments, and Coins.
+- "Parcel" or "Goods" means the item or consignment submitted for delivery.
+- "Platform" means Indiery's applications, website, backend, APIs, maps, payment flows, tracking pages, and related systems.
+- "Recipient" means the person identified by the Customer to receive the Goods.
+
+
+4. CUSTOMER ACCOUNT
+
+A customer generally must register and verify an Account before booking. Registration may require a name, mobile number, OTP verification, email address, city, and other information shown in the app.
+
+Customers must:
+
+- keep their registered phone and Account secure;
+- never disclose an OTP, password, UPI PIN, CVV, or other secret credential;
+- not impersonate another person or create fraudulent Accounts;
+- not share an Account in a way that creates security, fraud, or legal risk; and
+- promptly report suspected unauthorised access to support@indiery.com.
+
+Indiery may restrict an Account where reasonably necessary to protect users, investigate fraud or unsafe conduct, comply with law, or enforce these Terms.
+
+
+5. NATURE OF THE PLATFORM
+
+Indiery provides technology for requesting, accepting, paying for, tracking, and managing deliveries. Unless applicable law or a separate written arrangement provides otherwise, Delivery Partners perform transportation as independent service providers and are responsible for their vehicle, licences, permits, insurance, driving, conduct, and compliance obligations.
+
+Indiery does not manufacture or own Customer Goods and does not inspect every Parcel. However, describing Indiery as a technology platform does not remove any responsibility imposed on Indiery by applicable consumer, payment, data-protection, safety, or other law.
+
+
+6. BOOKING A DELIVERY
+
+To request a Booking, the Customer must provide the information requested by the app, which may include:
+
+- pickup, intermediate stop, and drop locations;
+- sender and recipient names and phone numbers;
+- address and access instructions;
+- Goods type, description, and weight;
+- selected vehicle;
+- preferred payment method; and
+- special handling information supported by Indiery.
+
+A Booking is created when the platform confirms its creation. Partner assignment is separate and depends on availability, location, vehicle compatibility, Account eligibility, payment status, and operational conditions. A fare estimate or Booking request does not guarantee that a Partner will accept the work.
+
+Indiery may reject or cancel a Booking that is unlawful, unsafe, incorrectly described, outside service limits, unpaid, technically invalid, or otherwise contrary to these Terms.
+
+
+7. VEHICLE CATEGORIES AND WEIGHT
+
+Customer vehicle categories currently supported by the platform may include:
+
+- Bike: generally up to 20 kg;
+- E-Three Wheeler or Loader: generally up to 90 kg;
+- Mini Truck: generally up to 500 kg; and
+- Mini Truck: generally up to 750 kg.
+
+The Customer must select the vehicle required for the actual size, weight, quantity, and nature of the Goods. The platform may require a larger vehicle based on declared weight. A Partner may refuse pickup if the Goods materially exceed the declared information, vehicle capacity, safe-loading limits, or legal limits.
+
+
+8. FARES AND ESTIMATES
+
+The app displays an estimated or calculated fare before confirmation. The fare may include base fare, billable distance, applicable discounts or Coins, and other components displayed by the platform.
+
+The final Order Total may change only for a disclosed and supported reason, including waiting time, cancellation, return, toll, tax, correction, or another adjustment permitted by these Terms and applicable law.
+
+Routes, distance, duration, and arrival times are estimates. Mapping or network errors, incorrect addresses, route restrictions, or a material difference between declared and actual Goods may require review or correction.
+
+
+9. PICKUP REQUIREMENTS
+
+The Customer must ensure that:
+
+- the Goods are ready when the Partner arrives;
+- pickup information is accurate;
+- the sender or an authorised representative is available;
+- Goods are safely packaged and lawful to carry;
+- vehicle access and loading conditions are reasonably safe; and
+- any required invoice, declaration, permit, or handling information is available.
+
+The Partner may record arrival at pickup through the Partner app. That timestamp starts the complimentary waiting period described below.
+
+
+10. WAITING TIME AND WAITING CHARGES
+
+Waiting time is measured from the time the Partner records "Arrived at pickup" until the Goods are recorded as "Picked up".
+
+Current waiting rules are:
+
+- Bike: first 5 minutes free, then INR 2 for each started minute.
+- E-Three Wheeler or Loader, Mini Truck 500 kg, and Mini Truck 750 kg: first 30 minutes free, then INR 5 for each started minute.
+
+For Cash on Delivery, an applicable waiting charge is added to the final cash amount. For a qualifying prepaid Booking, an added waiting charge is debited from Indiery Coins, subject to the Coin-balance rules below.
+
+A Partner arriving late does not create a waiting charge against the Customer. Waiting starts only after the Partner has actually recorded arrival at pickup.
+
+
+11. PICKUP VERIFICATION
+
+Pickup may require an OTP, photograph, status confirmation, or other proof supported by the app. Customers must not provide the pickup OTP until the Goods are ready to be handed to the correct Partner.
+
+When pickup is confirmed, the Partner takes possession of the Goods for the delivery. If a Customer cancels after pickup, the Customer, Partner, and Indiery support may need to coordinate a safe return or handover of the Goods.
+
+
+12. DELIVERY AND RECIPIENT
+
+The Customer must provide an accurate destination and a reachable, authorised Recipient. The Recipient may be required to provide a delivery OTP or other confirmation.
+
+Customers and Recipients must not share a delivery OTP before the Goods are actually received. Delivery to the identified Recipient using the required verification may be treated as completed, subject to reliable contrary evidence and applicable law.
+
+
+13. TRACKING AND ORDER STATUS
+
+Indiery uses real-time socket technology for supported Order status changes, including acceptance, arrival, pickup, transit, cancellation, payment confirmation, and delivery. Partner location may update periodically during an active trip.
+
+No mobile or internet service can guarantee zero transmission delay. Status, GPS, maps, routes, and notifications may be delayed, inaccurate, or unavailable because of network, device, permission, battery, GPS, hosting, or third-party-service conditions.
+
+A Customer may share a private tracking link. Anyone holding that link may see limited Order or Partner-location information while tracking is active. The Customer must share it carefully.
+
+
+14. DELIVERY DELAYS
+
+Estimated delivery times are not guarantees unless the app expressly states otherwise. Delays may result from traffic, weather, road closures, restrictions, breakdowns, safety issues, inaccurate information, Recipient unavailability, or events outside reasonable control.
+
+Driver delay does not reduce Customer Indiery Coins and does not create an additional Customer charge. Partner earnings may be adjusted under the Partner settlement rules. Customer compensation, if any, is determined under applicable policy and law and is not automatic merely because an estimate was exceeded.
+
+
+15. CUSTOMER AND RECIPIENT CONDUCT
+
+Customers and Recipients must:
+
+- cooperate reasonably during pickup and delivery;
+- be reachable using the supplied contact information;
+- provide safe and lawful access;
+- avoid abusive, threatening, discriminatory, deceptive, or unlawful behaviour;
+- not manipulate locations, OTPs, payments, promotions, or status events; and
+- pay valid charges shown under these Terms.
+
+
+16. PACKAGING AND DECLARATION OF GOODS
+
+The Customer is responsible for accurately describing and safely packaging the Goods. Packaging must be appropriate for the Goods' size, weight, fragility, value, and normal transportation risks and must prevent leakage, breakage, spillage, contamination, or injury.
+
+A Partner may refuse Goods that are unsafe, leaking, inadequately packed, materially different from the Booking, or unsuitable for the selected vehicle. Responsibility for damage caused solely by inadequate packaging remains with the Customer to the extent permitted by law.
+
+
+17. PROHIBITED AND RESTRICTED GOODS
+
+Customers must not use Indiery to transport:
+
+- illegal drugs, narcotics, or controlled substances;
+- firearms, ammunition, explosives, or weapons;
+- flammable, toxic, radioactive, corrosive, or hazardous materials;
+- stolen, counterfeit, or unlawfully possessed goods;
+- human remains, prohibited biological material, or live animals unless expressly supported;
+- cash, negotiable instruments, or restricted currency;
+- unlawful pornography or exploitative material;
+- Goods requiring unsupported temperature, security, licence, permit, or specialist handling; or
+- anything prohibited by law or an app notice.
+
+Fragile, perishable, confidential, regulated, unusually valuable, or high-risk Goods must not be booked unless Indiery expressly supports them and the Customer fully discloses their nature and handling requirements.
+
+
+18. RIGHT TO REFUSE OR REPORT GOODS
+
+Indiery or a Partner may refuse, cancel, isolate, report, or hand Goods to a competent authority where reasonably necessary because the Goods appear unlawful, unsafe, misleadingly described, improperly packed, or inconsistent with these Terms.
+
+Refusal for a valid safety or legal reason does not automatically create a right to compensation. Any refund or charge will depend on responsibility, work already performed, applicable policy, and law.
+
+
+19. PAYMENT METHODS
+
+Supported payment methods are those shown in the app and may include UPI, Razorpay-supported methods, Indiery Wallet, Indiery Coins, and Cash on Delivery.
+
+Online payments are processed by a disclosed payment provider. Customers authorise Indiery and the provider to create, verify, settle, refund, and reconcile transactions connected with the Booking or recharge.
+
+Indiery does not ask for a UPI PIN, CVV, full card number, card PIN, or online-banking password through support. Customers must enter secret credentials only in the authorised payment-provider interface.
+
+
+20. INDIERY WALLET
+
+The Indiery Wallet is a platform balance that may be used for supported Order payments and may receive eligible top-ups, refunds, compensation, promotional credits, or other approved credits.
+
+Where the app offers Wallet recharge, the Customer may enter an amount within the limits displayed by the app and complete payment through the authorised provider.
+
+Wallet credits:
+
+- are not a bank account or deposit;
+- are generally non-transferable;
+- are not redeemable for cash except where required by law or expressly supported; and
+- may be reversed where a transaction is fraudulent, duplicated, refunded elsewhere, charged back, or credited in error.
+
+The cash-value Indiery Wallet is not designed to become negative.
+
+
+21. INDIERY COINS
+
+Indiery Coins are separate from the cash-value Wallet. Coins may be earned, applied, or recharged through options shown in the app. The current recharge flow accepts a Customer-selected amount from INR 1 up to the maximum displayed by the app.
+
+Coins:
+
+- may reduce an eligible Order amount;
+- may be subject to promotion-specific conditions;
+- are generally non-transferable and not redeemable for cash;
+- may be debited for eligible post-booking waiting or COD cancellation charges; and
+- may become negative but will not be reduced below minus INR 50 by the supported debit calculation.
+
+When the Coin balance reaches minus INR 50, the Customer cannot request another fare estimate or place another Order until Coins are recharged above that limit.
+
+A negative Coin balance is an internal platform balance, not a bank overdraft or regulated credit facility.
+
+
+22. CASH ON DELIVERY
+
+For Cash on Delivery:
+
+- the Partner must collect the final cash amount only when delivery is completed;
+- the final amount may include a valid waiting or other disclosed charge;
+- the Partner must not collect the full COD amount at pickup or before successful delivery; and
+- after completed delivery and cash collection, Customer cancellation is unavailable, although a payment or service dispute may still be reported.
+
+If a COD Order is cancelled before cash collection, the normal cancellation rules apply and an applicable cancellation charge may be debited from Indiery Coins.
+
+
+23. CUSTOMER CANCELLATION
+
+The following cancellation rule applies to the normal Customer app flow:
+
+A. Before pickup
+
+- Cancellation is free.
+- No cancellation charge applies.
+- An eligible prepaid amount is refunded to the Indiery Wallet.
+- Eligible Coins originally applied to the Order are returned.
+
+B. From pickup through exactly 5 minutes after pickup
+
+- Cancellation remains free.
+- No cancellation charge applies.
+- An eligible prepaid amount is refunded to the Indiery Wallet.
+- Eligible Coins originally applied to the Order are returned.
+- Any separately accrued waiting charge remains payable and is not converted into a cash refund.
+
+C. More than 5 minutes after pickup and before delivery
+
+- The Customer may cancel through the supported app flow.
+- The cancellation charge is 10% of the current Order Total.
+- For a prepaid Order, the charge is retained from the captured amount and the eligible balance is credited to the Indiery Wallet.
+- If the prepaid amount does not fully cover the charge, the remaining supported amount may be debited from Indiery Coins.
+- For COD before cash collection, the applicable charge is debited from Indiery Coins, subject to the minus INR 50 Coin limit.
+- Eligible Coins originally applied to the Order are returned, while separately accrued waiting charges remain payable.
+
+D. After delivery
+
+- Cancellation is unavailable.
+- The Customer may still report a duplicate payment, incorrect charge, loss, damage, fraud, or delivery dispute through support.
+
+The pickup time used for this calculation is the "Picked up" timestamp recorded by the platform. The Customer sees the applicable charge before confirming cancellation where the app has current Order data.
+
+
+24. REFUNDS
+
+Eligible refunds for prepaid Orders are currently credited to the Indiery Wallet unless applicable law, the payment provider, or a specific written policy requires another method.
+
+The refund amount may reflect:
+
+- the cancellation stage;
+- any cancellation charge;
+- waiting or other valid charges already incurred;
+- Coins used or returned;
+- duplicate or failed payments; and
+- fraud, chargeback, or reconciliation adjustments.
+
+Refund processing time depends on verification, system availability, and payment reconciliation. Indiery will not intentionally delay an approved refund and will provide information required by applicable law.
+
+No second Razorpay payment is opened merely to collect a cancellation or waiting charge where the supported Wallet or Coin adjustment applies.
+
+
+25. FAILED DELIVERY, RETURN, AND REDELIVERY
+
+A delivery may fail because of an incorrect or inaccessible address, unavailable sender or Recipient, refusal to accept, unsafe conditions, prohibited Goods, legal restrictions, or another material obstacle.
+
+Depending on the circumstances, Indiery may coordinate redelivery, return, safe handover, cancellation, or support review. A disclosed and reasonable waiting, return, redelivery, or other charge may apply where caused by Customer or Recipient information, absence, refusal, or instruction, subject to applicable law.
+
+
+26. LOSS, DAMAGE, OR INCORRECT DELIVERY
+
+Customers should report suspected loss, theft, damage, tampering, or incorrect delivery as soon as reasonably possible through support@indiery.com and provide available evidence, such as:
+
+- Order number;
+- description and declared value of the Goods;
+- invoice or ownership evidence;
+- photographs or video;
+- packaging information;
+- communications; and
+- any other reasonably relevant information.
+
+Indiery may review status timestamps, location history, OTP records, proof images, payment references, communications, and Partner information. Reporting a claim does not itself establish responsibility or compensation. Each matter is assessed on evidence, these Terms, and applicable law.
+
+
+27. INSURANCE
+
+Parcel insurance is not automatically included unless the app or a separate written policy expressly states otherwise. Customers should not book unusually valuable, fragile, confidential, regulated, or high-risk Goods unless the service expressly supports them. Where appropriate, Customers should obtain independent insurance.
+
+The absence of optional insurance does not exclude liability that cannot lawfully be excluded.
+
+
+28. SERVICE AVAILABILITY
+
+Indiery does not guarantee uninterrupted service, a particular Partner, a fixed route, an exact arrival time, or continuous GPS or notification availability. Maintenance, demand, outages, map errors, payment-provider issues, device conditions, force majeure, or safety requirements may interrupt the service.
+
+Indiery will use reasonable efforts to restore affected services and protect active Orders.
+
+
+29. COMMUNICATIONS
+
+Customers agree to receive service communications required for OTPs, Account security, Booking creation, Partner assignment, status changes, tracking, payments, refunds, cancellations, safety, support, and legal updates. These may be sent through the app, push notification, SMS, phone, or email.
+
+Marketing communications will be handled according to applicable law and available preferences. Disabling notifications may prevent timely alerts but does not cancel an Order or remove payment obligations.
+
+
+30. PRIVACY
+
+The Indiery Customer Privacy Policy explains how personal data, location, contact information, payment references, Wallet and Coin records, tracking information, and support communications are handled. Customers must have authority to provide sender and Recipient information.
+
+
+31. PROMOTIONS AND COUPONS
+
+Promotions, coupons, referral rewards, and bonus Coins may have separate eligibility, expiry, usage, and anti-abuse conditions shown at the time of the offer. Indiery may reject or reverse a benefit obtained through fraud, duplication, manipulation, multiple-account abuse, or a technical error, subject to applicable law.
+
+
+32. ACCOUNT RESTRICTION, TERMINATION, AND DELETION
+
+Indiery may restrict or suspend an Account to address fraud, unsafe conduct, prohibited Goods, repeated payment failure, manipulated status or location, abuse, legal requirements, or material breach of these Terms.
+
+Customers may stop using Indiery and may request Account deletion through the app, account-deletion webpage, or support. Deletion is governed by the Privacy Policy and does not erase payment, tax, fraud, safety, dispute, or other records that must lawfully be retained. Outstanding valid charges and obligations survive Account deletion as permitted by law.
+
+
+33. INTELLECTUAL PROPERTY
+
+The Indiery name, branding, software, design, text, graphics, databases, and platform content are owned by or licensed to Indiery. Customers receive a limited, revocable, non-exclusive, non-transferable right to use the Customer app for its intended purpose.
+
+Customers must not copy, reverse engineer, scrape, disrupt, bypass security, introduce malicious code, or commercially exploit the Platform except where applicable law expressly permits it.
+
+
+34. THIRD-PARTY SERVICES
+
+The Platform may use or link to independent services such as Firebase, Google Maps, Razorpay, Expo, Cloudinary, hosting providers, or app stores. Their separate terms and privacy practices may apply. Indiery is not responsible for an independent third party's service except to the extent Indiery is legally responsible for selecting, integrating, instructing, or supervising that provider.
+
+
+35. LIABILITY
+
+To the maximum extent permitted by law, responsibility for loss or damage will be determined according to the cause, available evidence, these Terms, and applicable law.
+
+Indiery is not responsible for loss caused solely by:
+
+- materially inaccurate Customer or Recipient information;
+- prohibited or incorrectly declared Goods;
+- inadequate packaging;
+- premature disclosure of an OTP;
+- Customer or Recipient negligence or unlawful instructions; or
+- events outside reasonable control that could not reasonably have been prevented.
+
+Indiery does not exclude responsibility for its own fraud, wilful misconduct, gross negligence, breach of a non-excludable statutory duty, or any liability that applicable law does not permit it to exclude or limit.
+
+No provision prevents a Customer from approaching a competent consumer commission, regulator, court, or other authority.
+
+
+36. INDEMNITY
+
+To the extent permitted by law, a Customer is responsible for reasonable losses, claims, penalties, or costs caused by the Customer's unlawful Goods, fraudulent activity, material misrepresentation, infringement of another person's rights, or deliberate breach of these Terms. This provision does not require a consumer to indemnify Indiery for Indiery's own fault or for an unfair or legally prohibited term.
+
+
+37. FORCE MAJEURE
+
+Indiery and Partners are not responsible for a failure or delay caused by an event beyond reasonable control, such as severe weather, flood, fire, epidemic, war, civil disturbance, government restriction, widespread network or power failure, road closure, or similar event, except for obligations that applicable law requires despite that event.
+
+
+38. CHANGES TO SERVICES OR TERMS
+
+Indiery may update services, prices, policies, or these Terms for operational, security, legal, or commercial reasons. The revised Terms will show a new effective date. Material changes affecting Customer rights or charges will receive additional notice where required.
+
+Changes will not be applied retroactively to completed transactions unless required by law, needed to correct an error or fraud, or accepted by the affected Customer.
+
+
+39. GOVERNING LAW AND DISPUTES
+
+These Terms are governed by the laws of India. Customers should first contact support@indiery.com so Indiery can attempt to resolve the issue.
+
+Subject to mandatory consumer-forum jurisdiction and any other remedy available under applicable law, competent courts in Lucknow, Uttar Pradesh may hear disputes connected with these Terms. Nothing restricts a Customer's right to approach a consumer commission or regulator having lawful jurisdiction.
+
+
+40. GRIEVANCE REDRESSAL
+
+Customer Support and Grievances
+Email: support@indiery.com
+Website: https://www.indiery.com
+
+When reporting an Order issue, include the Order number and relevant payment reference. Never send an OTP, UPI PIN, CVV, password, or full card number.
+
+Indiery will acknowledge and address grievances within the period required by applicable law. Before publication, Indiery should add the operating entity's full legal name, registered or principal business address, and the name, designation, and contact details of any Grievance Officer required by law.
+
+
+41. GENERAL TERMS
+
+If any provision is invalid or unenforceable, the remaining provisions continue to apply. A failure to enforce a provision immediately is not a waiver. Headings are for convenience. These Terms, the Privacy Policy, and policies expressly incorporated into them form the agreement governing the Customer service.
+
+Indiery may assign these Terms as part of a lawful merger, restructuring, financing, or transfer of the service, subject to applicable notice and data-protection requirements. Customers may not transfer an Account or Booking without Indiery's consent.
+
+
+42. CONTACT
+
+Indiery Customer Support
+Email: support@indiery.com
+Website: https://www.indiery.com

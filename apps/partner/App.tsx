@@ -37,7 +37,7 @@ import partnerLoginBackgroundImage from './assets/bg1.png';
 import {
   colors,
   IndieryApi,
-  legalPolicies,
+  partnerLegalPolicies,
   LegalPolicy,
   money,
   LocationPoint,
@@ -2224,7 +2224,7 @@ function LoginScreen({
   }, [confirmation, loginPolicy]);
 
   function openLoginPolicy(policyId: LegalPolicy['id']) {
-    setLoginPolicy(legalPolicies.find((policy) => policy.id === policyId) ?? null);
+    setLoginPolicy(partnerLegalPolicies.find((policy) => policy.id === policyId) ?? null);
   }
 
   async function sendOtp() {
@@ -5049,7 +5049,7 @@ function PolicyList() {
   return (
     <View style={styles.policyList}>
       <SectionTitle title={copy.policiesLegal} />
-      {legalPolicies.map((policy) => (
+      {partnerLegalPolicies.map((policy) => (
         <PolicyCard
           key={policy.id}
           policy={policy}

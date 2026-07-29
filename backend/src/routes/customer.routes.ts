@@ -20,6 +20,8 @@ import { initialsFromName } from '../services/profile.service';
 import { offerOrderToNextDrivers } from '../services/order-offers.service';
 import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } from '../services/notification.service';
 import { createTrackingToken } from '../services/tracking-link.service';
+import { calculateCustomerCoinDebit, customerCanPlaceOrder } from '../services/customer-coins.service';
+import { calculateCancellationPayment, calculateCustomerCancellation } from '../services/cancellation.service';
 
 export const customerRouter = Router();
 
@@ -65,7 +67,7 @@ const CreateOrderSchema = EstimateSchema.extend({
 });
 
 const WalletTopupSchema = z.object({
-  amount: z.coerce.number().min(10).max(20000),
+  amount: z.coerce.number().min(1).max(20000),
   paymentMode: z.enum(['upi']).default('upi')
 });
 
@@ -153,6 +155,40 @@ async function addCoinLedger(input: {
     reference: input.reference,
     settled: true
   });
+}
+
+async function debitCustomerCoinsToLimit(input: {
+  userId: string | Types.ObjectId;
+  orderId: string | Types.ObjectId;
+  orderNo: string;
+  amount: number;
+  title: string;
+}) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const customer = await User.findById(input.userId).select('customerProfile.coins');
+    if (!customer) throw new ApiError(404, 'Customer not found');
+    const currentCoins = customer.customerProfile?.coins ?? 0;
+    const debit = calculateCustomerCoinDebit(currentCoins, input.amount);
+    if (debit.amount <= 0) return 0;
+
+    const result = await User.updateOne(
+      { _id: customer._id, 'customerProfile.coins': currentCoins },
+      { $inc: { 'customerProfile.coins': -debit.amount } }
+    );
+    if (result.modifiedCount !== 1) continue;
+
+    await addCoinLedger({
+      userId: customer._id,
+      orderId: input.orderId,
+      amount: debit.amount,
+      kind: 'debit',
+      title: input.title,
+      reference: input.orderNo
+    });
+    return debit.amount;
+  }
+
+  throw new ApiError(409, 'Coin balance changed. Please retry the cancellation.');
 }
 
 async function creditCustomerWallet(input: {
@@ -320,6 +356,9 @@ customerRouter.post(
       resolveRouteMetrics(body)
     ]);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
+    if (!customerCanPlaceOrder(user.customerProfile?.coins ?? 0)) {
+      throw new ApiError(403, 'Recharge Indiery Coins before placing another order');
+    }
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
     const fare = estimateFare({
       pickup: body.pickup,
@@ -350,6 +389,9 @@ customerRouter.post(
       routeMetricsPromise
     ]);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
+    if (!customerCanPlaceOrder(user.customerProfile?.coins ?? 0)) {
+      throw new ApiError(403, 'Recharge Indiery Coins before placing another order');
+    }
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
 
     const fare = estimateFare({
@@ -581,16 +623,67 @@ customerRouter.post(
   asyncRoute(async (req: AuthRequest, res) => {
     const order = await Order.findById(String(req.params.orderId));
     if (!order || String(order.customer) !== req.auth!.userId) throw new ApiError(404, 'Order not found');
-    if (['picked_up', 'in_transit', 'delivered'].includes(order.status)) {
-      throw new ApiError(400, 'Order cannot be cancelled after pickup');
-    }
-    order.status = 'cancelled';
-    order.cancellationReason = String(req.body?.reason || 'Cancelled by customer');
-    order.set('timeline', createTimeline('cancelled', order.timeline ?? []));
-    const walletRefundAmount = order.paymentStatus === 'paid' && order.paymentMode !== 'cash' ? order.fare.total : 0;
+    const cancelledAt = new Date();
+    const pickedUpAt = order.timeline?.find((item) => item.key === 'picked_up')?.at;
+    const cancellation = calculateCustomerCancellation({
+      status: order.status,
+      total: order.fare.total,
+      pickedUpAt: pickedUpAt ?? undefined,
+      now: cancelledAt
+    });
+    if (!cancellation.allowed) throw new ApiError(400, cancellation.reason);
+
+    const prepaid = order.paymentStatus === 'paid' && order.paymentMode !== 'cash';
+    const cancellationPayment = calculateCancellationPayment({
+      cancellationCharge: cancellation.charge,
+      currentOrderTotal: order.fare.total,
+      waitingCharge: order.fare.waitingCharge ?? 0,
+      prepaid
+    });
+    const walletRefundAmount = cancellationPayment.refundAmount;
     const shouldRefundCoins = order.fare.coins > 0 && (order.paymentStatus === 'paid' || order.paymentMode === 'cash');
+
+    const cancellationReason = String(req.body?.reason || 'Cancelled by customer');
+    const cancelledTimeline = createTimeline('cancelled', order.timeline ?? []);
+    const customerCancellation = {
+      policy: cancellation.policy,
+      charge: cancellation.charge,
+      refundAmount: walletRefundAmount,
+      partnerCredit: cancellation.partnerCredit,
+      platformCommission: cancellation.platformCommission,
+      coinDebit: 0,
+      pickedUpElapsedMinutes: cancellation.pickedUpElapsedMinutes,
+      cancelledAt
+    };
+    const transitionValues: Record<string, unknown> = {
+      status: 'cancelled',
+      cancellationReason,
+      timeline: cancelledTimeline,
+      customerCancellation
+    };
+    if (cancellation.partnerCredit > 0) {
+      transitionValues.settlement = {
+        delayed: false,
+        partnerCredit: cancellation.partnerCredit,
+        driverPenalty: 0,
+        platformPenalty: 0,
+        reserveReleasedTo: 'partner',
+        settledAt: cancelledAt
+      };
+    }
+    if (walletRefundAmount > 0) transitionValues.paymentStatus = 'refunded';
+    const transition = await Order.updateOne(
+      { _id: order._id, customer: req.auth!.userId, status: order.status },
+      { $set: transitionValues },
+      { runValidators: true }
+    );
+    if (transition.modifiedCount !== 1) throw new ApiError(409, 'Order status changed. Please try again.');
+    order.status = 'cancelled';
+    order.cancellationReason = cancellationReason;
+    order.set('timeline', cancelledTimeline);
+    order.set('customerCancellation', customerCancellation);
     if (walletRefundAmount > 0) order.paymentStatus = 'refunded';
-    await order.save();
+
     if (walletRefundAmount > 0) {
       await creditCustomerWallet({
         userId: req.auth!.userId,
@@ -600,6 +693,7 @@ customerRouter.post(
         reference: order.orderNo
       });
     }
+
     if (shouldRefundCoins) {
       await User.updateOne({ _id: req.auth!.userId }, { $inc: { 'customerProfile.coins': order.fare.coins } });
       await addCoinLedger({
@@ -611,22 +705,71 @@ customerRouter.post(
         reference: order.orderNo
       });
     }
+
+    let cancellationCoinDebit = 0;
+    if (cancellationPayment.coinCharge > 0) {
+      cancellationCoinDebit = await debitCustomerCoinsToLimit({
+        userId: req.auth!.userId,
+        orderId: order._id,
+        orderNo: order.orderNo,
+        amount: cancellationPayment.coinCharge,
+        title: `Cancellation charge ${order.orderNo}`
+      });
+      await Order.updateOne(
+        { _id: order._id },
+        { $set: { 'customerCancellation.coinDebit': cancellationCoinDebit } }
+      );
+    }
+
+    if (order.partner && cancellation.partnerCredit > 0) {
+      await User.updateOne(
+        { _id: order.partner },
+        { $inc: { 'partnerProfile.walletBalance': cancellation.partnerCredit } }
+      );
+      await WalletLedger.create({
+        user: order.partner,
+        order: order._id,
+        amount: cancellation.partnerCredit,
+        kind: 'credit',
+        bucket: 'cash',
+        title: `Customer cancellation payout ${order.orderNo}`,
+        reference: order.orderNo,
+        settled: true
+      });
+    }
+
     const pushRecipientIds = order.partner
       ? [String(order.partner)]
       : ((order.offeredPartnerIds ?? []) as unknown[]).map(String);
+    const chargeText = cancellation.charge > 0
+      ? ` A 10% cancellation charge of INR ${cancellation.charge} was applied.`
+      : ' No cancellation charge was applied.';
     const refundText = walletRefundAmount > 0
-      ? ` Refund of INR ${walletRefundAmount} has been added to your wallet.`
-      : shouldRefundCoins
-        ? ' Coins used on this order were returned.'
-        : '';
-    const fullOrder = await populatedOrder(order._id);
+      ? ` INR ${walletRefundAmount} was added to your wallet.`
+      : cancellationCoinDebit > 0
+        ? ` INR ${cancellationCoinDebit} was debited from Indiery Coins.`
+        : shouldRefundCoins
+          ? ' Coins used on this order were returned.'
+          : '';
+    const [fullOrder, wallet, customer] = await Promise.all([
+      populatedOrder(order._id),
+      getCustomerWallet(req.auth!.userId),
+      User.findById(req.auth!.userId)
+    ]);
     emitOrderChanged(
       fullOrder ? serializeOrder(fullOrder) : { id: String(order._id), status: 'cancelled' },
       req.auth!.userId,
       order.partner ? String(order.partner) : undefined
     );
     emitPartnerQueueChanged();
-    res.json({ order: fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : undefined });
+    res.json({
+      order: fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : undefined,
+      cancellationCharge: cancellation.charge,
+      refundAmount: walletRefundAmount,
+      coinDebit: cancellationCoinDebit,
+      wallet,
+      user: customer ? serializeUser(customer) : undefined
+    });
 
     void (async () => {
       if (pushRecipientIds.length) {
@@ -655,7 +798,7 @@ customerRouter.post(
       await sendPush(
         customerForPush?.expoPushTokens,
         'Order cancelled',
-        `${order.orderNo} has been cancelled.${refundText}`,
+        `${order.orderNo} has been cancelled.${chargeText}${refundText}`,
         {
           event: 'customer_order_cancelled',
           role: 'customer',
@@ -759,6 +902,73 @@ customerRouter.post(
         bucket: 'cash'
       });
       if (!ledger) throw new ApiError(404, 'Wallet top-up not found');
+    }
+    const user = await User.findById(req.auth!.userId);
+    if (!user) throw new ApiError(404, 'Customer not found');
+    const wallet = await getCustomerWallet(req.auth!.userId);
+    res.json({ user: serializeUser(user), wallet });
+  })
+);
+
+customerRouter.post(
+  '/wallet/coins/topup',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const body = WalletTopupSchema.parse(req.body);
+    const user = await User.findById(req.auth!.userId);
+    if (!user) throw new ApiError(404, 'Customer not found');
+    const referenceNo = `COINS-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const paymentIntent = await createPaymentIntent({
+      orderNo: referenceNo,
+      amount: body.amount,
+      paymentMode: body.paymentMode
+    });
+    await WalletLedger.create({
+      user: user._id,
+      amount: body.amount,
+      kind: 'credit',
+      bucket: 'coins',
+      title: 'Indiery Coins recharge pending',
+      reference: paymentIntent.reference,
+      settled: false
+    });
+    const wallet = await getCustomerWallet(user._id);
+    res.status(201).json({ wallet, paymentIntent });
+  })
+);
+
+customerRouter.post(
+  '/wallet/coins/topup/verify',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const body = RazorpayVerifySchema.parse(req.body);
+    const valid = verifyRazorpayPaymentSignature(body);
+    if (!valid) throw new ApiError(400, 'Invalid payment signature');
+    const settledLedger = await WalletLedger.findOneAndUpdate(
+      {
+        user: req.auth!.userId,
+        reference: body.razorpayOrderId,
+        kind: 'credit',
+        bucket: 'coins',
+        settled: false
+      },
+      {
+        title: 'Indiery Coins recharge',
+        settled: true
+      },
+      { new: true }
+    );
+    if (settledLedger) {
+      await User.updateOne(
+        { _id: req.auth!.userId },
+        { $inc: { 'customerProfile.coins': settledLedger.amount } }
+      );
+    } else {
+      const ledger = await WalletLedger.findOne({
+        user: req.auth!.userId,
+        reference: body.razorpayOrderId,
+        kind: 'credit',
+        bucket: 'coins'
+      });
+      if (!ledger) throw new ApiError(404, 'Indiery Coins recharge not found');
     }
     const user = await User.findById(req.auth!.userId);
     if (!user) throw new ApiError(404, 'Customer not found');

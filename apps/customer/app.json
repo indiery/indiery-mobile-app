@@ -2,7 +2,7 @@
   "expo": {
     "name": "Indiery",
     "slug": "indiery-customer",
-    "owner": "amit9627",
+    "owner": "indiery1235",
     "scheme": "indierycustomer",
     "version": "1.0.0",
     "orientation": "default",
@@ -28,13 +28,13 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "https://indiery-mobile-app-bp9h.onrender.com/api",
+      "apiBaseUrl": "https://indiery-mobile-app-1.onrender.com/api",
       "allowInsecureApiBaseUrl": false,
       "privacyPolicyUrl": "https://www.indiery.com/privacy",
       "accountDeletionUrl": "https://www.indiery.com/account-deletion",
       "googleMapsApiKey": "AIzaSyAY5D6K2WhkSGAzQnjuQPdnJ8lF0H6uszE",
       "eas": {
-        "projectId": "77afd5ce-686e-4ffc-814f-1cb0bae4ca08"
+        "projectId": "8e398475-9619-4d97-b306-d72c1187dd3d"
       }
     },
     "ios": {

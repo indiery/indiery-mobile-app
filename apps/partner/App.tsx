@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   BackHandler,
   Image,
   Keyboard,
@@ -237,12 +238,7 @@ const enCopy = {
   dropOtp: 'Drop OTP',
   enter6DigitCode: 'Enter 6 digit code',
   updating: 'Updating',
-  orderValue: 'Order value',
-  driverCommission: 'Driver commission 80%',
-  reserveReward: 'On-time reserve reward 5%',
-  indieryCommission: 'Indiery commission 15%',
-  youReceiveOnTime: 'You receive if on-time',
-  ifLateReceive: 'If late, you receive',
+  expectedEarnings: 'Expected earnings',
   walletBalance: 'WALLET BALANCE',
   tripsThisWeek: 'trips this week',
   rechargeToUnlock: 'Recharge {amount} to unlock new orders',
@@ -562,12 +558,7 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   dropOtp: 'ड्रॉप OTP',
   enter6DigitCode: '6 अंकों का कोड डालें',
   updating: 'अपडेट हो रहा है',
-  orderValue: 'ऑर्डर वैल्यू',
-  driverCommission: 'ड्राइवर कमीशन 80%',
-  reserveReward: 'समय पर रिजर्व रिवॉर्ड 5%',
-  indieryCommission: 'Indiery कमीशन 15%',
-  youReceiveOnTime: 'समय पर आपको मिलेगा',
-  ifLateReceive: 'देरी होने पर आपको मिलेगा',
+  expectedEarnings: 'अनुमानित कमाई',
   walletBalance: 'वॉलेट बैलेंस',
   tripsThisWeek: 'इस हफ्ते ट्रिप',
   rechargeToUnlock: 'नए ऑर्डर अनलॉक करने के लिए {amount} रिचार्ज करें',
@@ -1264,6 +1255,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && data?.user.partnerProfile?.online) {
+        scheduleRefresh(50);
+      }
+    });
+    return () => subscription.remove();
+  }, [data?.user.partnerProfile?.online]);
+
+  useEffect(() => {
     if (!data || !notificationIntent) return;
     const isActive = data.activeOrders.some((order) => order.id === notificationIntent.orderId);
     if (notificationIntent.screen === 'active' || isActive) {
@@ -1433,7 +1433,7 @@ export default function App() {
       mergeRealtimeOrder(order);
     });
     socket.on('partner:queue_changed', () => {
-      scheduleRefresh();
+      scheduleRefresh(50);
     });
   }
 
@@ -4031,11 +4031,14 @@ function AvailableOrdersList({
               <Chip label={`${order.weightKg} kg`} />
               <Chip label={order.goodsType} />
             </View>
+            <View style={[styles.payoutCard, responsive.isCompact && styles.payoutCardCompact]}>
+              <FareLine label={copy.expectedEarnings} value={money(order.fare.partnerNet)} bold />
+            </View>
             <View style={[styles.row, responsive.isCompact && styles.rowCompact]}>
               <SecondaryButton title={copy.skip} icon="close" onPress={() => onReject(order.id)} />
             </View>
             <AcceptOrderSlider
-              label={busy ? copy.wait : `${copy.slideToConfirm}: ${copy.accept} ${money(order.fare.partnerNet)}`}
+              label={busy ? copy.wait : `${copy.slideToConfirm}: ${copy.accept}`}
               busy={busy}
               compact={responsive.isCompact}
               onAccept={() => onAccept(order.id)}
@@ -4189,12 +4192,7 @@ function ActiveScreen({
       <Timeline order={order} />
 
       <View style={[styles.payoutCard, responsive.isCompact && styles.payoutCardCompact]}>
-        <FareLine label={copy.orderValue} value={money(order.fare.orderValue)} />
-        <FareLine label={copy.driverCommission} value={money(order.fare.driverCommission)} />
-        <FareLine label={copy.reserveReward} value={money(order.fare.reserveAmount)} />
-        <FareLine label={copy.indieryCommission} value={money(order.fare.platformCommission)} />
-        <FareLine label={copy.youReceiveOnTime} value={money(order.fare.onTimePartnerPayout)} bold />
-        <FareLine label={copy.ifLateReceive} value={money(order.fare.latePartnerPayout)} />
+        <FareLine label={copy.expectedEarnings} value={money(order.fare.partnerNet)} bold />
       </View>
 
       <SectionTitle title={copy.tripActions} />
@@ -5255,13 +5253,14 @@ function StatCard({ title, value, tone }: { title: string; value: string; tone: 
 
 function OrderCard({ order }: { order: Order }) {
   const responsive = useResponsiveLayout();
+  const finalEarnings = order.settlement?.partnerCredit ?? order.fare.partnerNet;
   return (
     <View style={[styles.orderCard, responsive.isCompact && styles.orderCardCompact]}>
       <OrderHeader order={order} />
       <RouteBlock order={order} />
       <View style={styles.between}>
         <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{order.vehicle.shortName} - {order.distanceKm} km</Text>
-        <Text style={[styles.priceText, responsive.isCompact && styles.priceTextCompact, responsive.isSmall && styles.priceTextSmall]}>{money(order.fare.partnerNet)}</Text>
+        <Text style={[styles.priceText, responsive.isCompact && styles.priceTextCompact, responsive.isSmall && styles.priceTextSmall]}>{money(finalEarnings)}</Text>
       </View>
     </View>
   );

@@ -15,7 +15,7 @@ services:
       - key: MONGODB_URI
         sync: false
       - key: CORS_ORIGIN
-        value: https://indiery-mobile-app-bp9h.onrender.com
+        value: https://indiery-mobile-app-1.onrender.com
       - key: FIREBASE_PROJECT_ID
         value: indiery-c8f7d
       - key: FIREBASE_SERVICE_ACCOUNT_BASE64

@@ -1,5 +1,5 @@
 const deletionFormUrl =
-  "https://indiery-mobile-app-bp9h.onrender.com/account-deletion";
+  "https://indiery-mobile-app-1.onrender.com/account-deletion";
 
 export const metadata = {
   title: "Account Deletion",

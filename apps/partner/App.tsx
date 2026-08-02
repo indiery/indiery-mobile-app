@@ -34,6 +34,7 @@ import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
 import partnerLoginBackgroundImage from './assets/bg1.png';
+import { partnerLegalPoliciesHi } from './legal.hi';
 import {
   colors,
   IndieryApi,
@@ -2353,13 +2354,15 @@ function LoginPolicyModal({
 
 function LoginPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: () => void }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
+  const displayedPolicy = language === 'hi' ? partnerLegalPoliciesHi[policy.id] : policy;
   return (
     <ScrollView
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
-      <AccountDetailHeader title={policy.title} subtitle={`${copy.updated} ${policy.updatedAt}`} onBack={onBack} />
+      <AccountDetailHeader title={displayedPolicy.title} subtitle={`${copy.updated} ${displayedPolicy.updatedAt}`} onBack={onBack} />
       <View style={[styles.policyDetailHero, responsive.isCompact && styles.policyDetailHeroCompact]}>
         <Ionicons
           name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'}
@@ -2367,10 +2370,10 @@ function LoginPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: ()
           color={colors.partner}
         />
         <Text style={[styles.policyDetailSummary, responsive.isCompact && styles.policyDetailSummaryCompact]}>
-          {policy.summary}
+          {displayedPolicy.summary}
         </Text>
       </View>
-      {policy.sections.map((section) => (
+      {displayedPolicy.sections.map((section) => (
         <View key={section.heading} style={[styles.policyDetailSection, responsive.isCompact && styles.policyDetailSectionCompact]}>
           <Text style={[styles.policyHeading, responsive.isCompact && styles.policyHeadingCompact]}>{section.heading}</Text>
           {section.body.map((line) => (
@@ -5071,7 +5074,9 @@ function PolicyCard({
   onToggle: () => void;
 }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
+  const displayedPolicy = language === 'hi' ? partnerLegalPoliciesHi[policy.id] : policy;
   const icons: Record<LegalPolicy['id'], keyof typeof Ionicons.glyphMap> = {
     privacy: 'lock-closed',
     terms: 'document-text',
@@ -5085,15 +5090,15 @@ function PolicyCard({
           <Ionicons name={icons[policy.id]} size={responsive.isSmall ? 14 : responsive.isCompact ? 16 : 18} color={colors.partner} />
         </View>
         <View style={styles.flex}>
-          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{policy.title}</Text>
-          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.updated} {policy.updatedAt}</Text>
-          <Text style={[styles.policySummary, responsive.isCompact && styles.policySummaryCompact, responsive.isSmall && styles.policySummarySmall]}>{policy.summary}</Text>
+          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{displayedPolicy.title}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]}>{copy.updated} {displayedPolicy.updatedAt}</Text>
+          <Text style={[styles.policySummary, responsive.isCompact && styles.policySummaryCompact, responsive.isSmall && styles.policySummarySmall]}>{displayedPolicy.summary}</Text>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
       </Pressable>
       {expanded ? (
         <View style={styles.policyBody}>
-          {policy.sections.map((section) => (
+          {displayedPolicy.sections.map((section) => (
             <View key={section.heading} style={styles.policySection}>
               <Text style={[styles.policyHeading, responsive.isCompact && styles.policyHeadingCompact, responsive.isSmall && styles.policyHeadingSmall]}>{section.heading}</Text>
               {section.body.map((line) => (
@@ -5559,6 +5564,7 @@ function MapPreview({
               title={label}
               description={item.point.label}
               pinColor={pinColor}
+              tracksViewChanges={false}
             />
           );
         })}

@@ -35,6 +35,7 @@ import bikeVehicleImage from './assets/bike.png';
 import loaderVehicleImage from './assets/loader.png';
 import mini500VehicleImage from './assets/mini500.png';
 import mini700VehicleImage from './assets/mini700.png';
+import { customerLegalPoliciesHi } from './legal.hi';
 import {
   colors,
   CreateOrderInput,
@@ -190,6 +191,37 @@ const restrictedGoodsItems = [
   'Perishable items without packing',
   'Loose liquids or leaking goods',
   'Stolen or counterfeit goods'
+];
+const allowedGoodsItemsHi = [
+  'दस्तावेज़',
+  'स्टेशनरी, किताबें और खिलौने',
+  'किराना और पैक किया हुआ भोजन',
+  'पैक किए हुए FMCG उत्पाद',
+  'इलेक्ट्रॉनिक्स, उपकरण, कंप्यूटर और एक्सेसरीज़',
+  'फर्नीचर और घरेलू सामान',
+  'कपड़े और गारमेंट',
+  'मान्य बिल के साथ पैक की हुई दवाइयाँ',
+  'लकड़ी और प्लाईवुड',
+  'निर्माण सामग्री',
+  'पैक किए हुए हार्डवेयर और औजार',
+  'कैटरिंग और रेस्टोरेंट का सामान',
+  'मशीनरी, उपकरण और स्पेयर पार्ट्स',
+  'बिजनेस स्टॉक और पैक किए हुए पार्सल',
+  'ऐसा पैक किया हुआ सामान्य सामान जो प्रतिबंधित नहीं है'
+];
+const restrictedGoodsItemsHi = [
+  'अवैध सामान',
+  'नकद, सोना, आभूषण या कीमती सामान',
+  'हथियार, गोला-बारूद या धारदार हथियार',
+  'विस्फोटक, पटाखे या ज्वलनशील सामान',
+  'शराब, तंबाकू, ड्रग्स या नशीले पदार्थ',
+  'मानव अवशेष या शरीर के अंग',
+  'जीवित जानवर या पौधे',
+  'खतरनाक रसायन',
+  'चिकित्सा अपशिष्ट या जैविक खतरे',
+  'बिना पैकिंग का जल्दी खराब होने वाला सामान',
+  'खुला तरल या रिसता हुआ सामान',
+  'चोरी या नकली सामान'
 ];
 const maxExtraStops = 3;
 const customerCoinDebtLimit = -50;
@@ -400,9 +432,9 @@ const enCopy = {
   coinRules: 'Coin Rules',
   coinRuleEarn: 'Earn coins for successful deliveries',
   coinRuleUse: 'Use coins on payment up to the order amount',
-  coinRuleRefunds: 'Refunds return unused coins',
+  coinRuleRefunds: 'Eligible cancellation refunds are added to Indiery Coins',
   walletTitle: 'Indiery Wallet',
-  walletSubtitle: 'Pay bookings instantly and receive refunds here.',
+  walletSubtitle: 'Add money and pay bookings instantly.',
   cashBalance: 'Cash balance',
   availableToPay: 'Available to pay',
   addMoney: 'Add Money',
@@ -414,7 +446,7 @@ const enCopy = {
   insufficientWalletBalance: 'Insufficient wallet balance',
   recentTransactions: 'Recent Transactions',
   noWalletTransactions: 'No wallet transactions',
-  noWalletTransactionsText: 'Top-ups, wallet payments, and refunds will appear here.',
+  noWalletTransactionsText: 'Top-ups and wallet payments will appear here.',
   rewardsCoins: 'Rewards and Coins',
   coinActivity: 'Coin Activity',
   noCoinActivity: 'No coin activity yet',
@@ -525,10 +557,166 @@ const enCopy = {
   selected: 'Selected',
   selectOnMap: 'Select on map',
   useTypedLocation: 'Use typed location',
-  locationHint: 'Select a suggestion for accurate fare and tracking, or continue with typed text.'
+  locationHint: 'Select a suggestion for accurate fare and tracking, or continue with typed text.',
+  goBackToMobile: 'Go back to mobile number',
+  otpVerification: 'OTP verification',
+  enterOtpSentTo: 'Enter the 6-digit code sent to',
+  change: 'Change',
+  otpPrivateNotice: 'Your code is private and securely verified.',
+  verifying: 'Verifying…',
+  verifyAndContinue: 'Verify and continue',
+  resendOtpIn: 'Resend OTP in',
+  didNotReceiveCode: "Didn't receive the code?",
+  resendOtp: 'Resend OTP',
+  deliveringTrust: 'Delivering trust, every mile.',
+  fastSecureReliable: 'Fast · Secure · Reliable',
+  welcomeToIndiery: 'Welcome to Indiery',
+  mobileBookingIntro: 'Enter your mobile number to book and track deliveries.',
+  checking: 'Checking…',
+  byContinuingAgree: 'By continuing, you agree to the',
+  termsConditions: 'Terms & Conditions',
+  and: 'and',
+  privacyPolicy: 'Privacy Policy',
+  profileSetup: 'Profile setup',
+  almostThere: 'Almost there',
+  completeProfile: 'Complete your profile',
+  addDetailsBeforeVerify: 'Add your details before we verify your mobile number.',
+  pleaseAccurateBookingInfo: 'Please enter accurate information for your bookings.',
+  fullName: 'Full name',
+  enterFullName: 'Enter your full name',
+  enterValidEmail: 'Enter a valid email',
+  enterCity: 'Enter your city',
+  detailsPrivateProtected: 'Your details are private and securely protected.',
+  sendingOtp: 'Sending OTP…',
+  enterMobileNumber: 'Enter your mobile number',
+  enterOtp: 'Enter 6-digit OTP',
+  tellUsAboutYou: 'Tell us about you',
+  personalizeDeliveries: 'A few details will help us personalize your deliveries.',
+  profile: 'Profile',
+  realTime: 'Real-time',
+  trackingLabel: 'Tracking',
+  secure: 'Secure',
+  deliveries: 'Deliveries',
+  smart: 'Smart',
+  pricing: 'Pricing',
+  support: 'Support',
+  to: 'to',
+  announcements: 'Announcements',
+  noVehicleAvailableForWeight: 'No customer vehicle is available for this weight:',
+  kgUnit: 'kg',
+  mapPreviewUnavailable: 'Map preview needs Google Maps setup. Search a place or use current location to continue.',
+  locationNotSelected: 'Location not selected',
+  closePickupSearch: 'Close pickup search',
+  closeGoodsCategory: 'Close goods category',
+  closeGoodsRules: 'Close goods rules',
+  closeExpandedMap: 'Close expanded map',
+  closeLocationDetails: 'Close location details',
+  minimizeMap: 'Minimize map',
+  maximizeMap: 'Maximize map',
+  changeLocation: 'Change location',
+  useMyMobileNumber: 'Use my mobile number',
+  saveThisAddressAs: 'Save this address as',
+  homeAddress: 'Home',
+  shopAddress: 'Shop',
+  otherAddress: 'Other',
+  saveAddressAs: 'Save address as',
+  confirmAndContinue: 'Confirm and continue',
+  closeLocationMap: 'Close location map',
+  closeOrderFilters: 'Close order filters',
+  closeOrderDetails: 'Close order details',
+  editPersonalDetails: 'Edit personal details',
+  goBack: 'Go back',
+  enterRechargeAmount: 'Enter recharge amount',
+  mobileLabel: 'Mobile',
+  vehicleLabel: 'Vehicle',
+  upiPayment: 'UPI',
+  cashPayment: 'Cash',
+  cardPayment: 'Card',
+  netBankingPayment: 'Net banking',
+  walletPayment: 'Wallet',
+  paid: 'Paid',
+  failed: 'Failed',
+  refunded: 'Refunded',
+  previousBookingStep: 'Previous booking step',
+  backToHome: 'Back to home',
+  distanceCharge: 'Distance charge',
+  billable: 'billable',
+  orderValue: 'Order value',
+  waitingCharge: 'Waiting charge',
+  waiting: 'Waiting',
+  freeThen: 'free, then',
+  perMinute: 'per minute',
+  total: 'Total',
+  cancellationCharge: 'Cancellation charge',
+  refundAddedToCoins: 'Refund added to Indiery Coins',
+  chargedToCoins: 'Charged to Indiery Coins',
+  yesterday: 'Yesterday',
+  daysAgo: 'days ago',
+  currentLocation: 'Current location',
+  orderPlaced: 'Order placed',
+  customerBookingConfirmed: 'Customer booking confirmed',
+  partnerAssigned: 'Partner assigned',
+  waitingPartnerConfirmation: 'Waiting for partner confirmation',
+  arrivedAtPickup: 'Arrived at pickup',
+  partnerAtPickup: 'Partner is at pickup location',
+  goodsPickedUpProof: 'Goods picked up with proof',
+  movingTowardDrop: 'Moving toward drop location',
+  deliveryCompleted: 'Delivery completed',
+  paidFor: 'Paid for',
+  coinsUsed: 'Coins used',
+  coinRefund: 'Cancellation refund',
+  walletRefund: 'Wallet refund',
+  coinsReturned: 'Coins returned',
+  walletTopupPending: 'Wallet top-up pending',
+  walletTopup: 'Wallet top-up',
+  coinRechargePending: 'Indiery Coins recharge pending',
+  coinRecharge: 'Indiery Coins recharge',
+  coupon: 'Coupon',
+  refreshFailed: 'Refresh failed',
+  fareEstimateFailed: 'Fare estimate failed',
+  paymentVerificationMissing: 'Payment verification details missing',
+  orderBooked: '{order} booked',
+  bookingFailed: 'Booking failed',
+  profileSaved: 'Profile saved',
+  addressSaved: 'Address saved',
+  saveAddressFailed: 'Save address failed',
+  addressRemoved: 'Address removed',
+  removeAddressFailed: 'Remove address failed',
+  shareFailed: 'Share failed',
+  logoutFailed: 'Logout failed',
+  accountDeletionBody: 'We will review your request and delete eligible account data. Some order, payment, fraud prevention, tax, or legal records may be retained where required.',
+  submitRequest: 'Submit request',
+  deletionRequestSubmitted: 'Deletion request submitted',
+  requestFailed: 'Request failed',
+  cancelBookingTitle: 'Cancel booking',
+  keepBooking: 'Keep booking',
+  cancelBookingAction: 'Cancel booking',
+  cancelAfterFiveMessage: 'Cancel {order}? A 10% cancellation charge of {charge} will apply. The remaining eligible amount will be added to Indiery Coins; for cash orders the charge is deducted from Indiery Coins.',
+  cancelWithinFiveMessage: 'Cancel {order}? You are within 5 minutes after pickup, so there is no cancellation charge.',
+  cancelBeforePickupMessage: 'Cancel {order}? There is no cancellation charge before pickup.',
+  bookingCancelledCharged: 'Booking cancelled: {charge} charged',
+  bookingCancelledNoCharge: 'Booking cancelled with no charge',
+  cancelFailed: 'Cancel failed',
+  locationSearchUnavailable: 'Location search unavailable',
+  couldNotSelectLocation: 'Could not select this location',
+  locationSuggestionsUnavailable: 'Location suggestions unavailable',
+  couldNotMoveMap: 'Could not move map to this place',
+  selectValidLocationFirst: 'Select a valid location first',
+  enterValidMobile: 'Enter a valid mobile number',
+  turnOnGps: 'Turn on device location/GPS',
+  unableToSendOtp: 'Unable to send OTP',
+  unableToContinue: 'Unable to continue',
+  unableToVerifyOtp: 'Unable to verify OTP',
+  invalidOtp: 'Invalid OTP',
+  notificationsAllowed: 'Notifications allowed. Push updates will register when network is available',
+  pushSetupIncomplete: 'Push notification setup is incomplete. Link this app to an Expo project before release.',
+  orderUpdates: 'Order updates',
+  notifications: 'notifications',
+  enablePermissions: 'Enable {permissions} permission in phone settings for full tracking updates',
+  gpsTakingTooLong: 'GPS is taking too long'
 } as const;
 
-const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
+const hiCopy: Record<keyof typeof enCopy, string> = {
   refreshing: 'रिफ्रेश हो रहा है...',
   dataRefreshed: 'नई जानकारी लोड हो गई',
   hi: 'नमस्ते',
@@ -675,9 +863,9 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   coinRules: 'कॉइन नियम',
   coinRuleEarn: 'सफल डिलीवरी पर कॉइन कमाएं',
   coinRuleUse: 'ऑर्डर राशि तक पेमेंट में कॉइन उपयोग करें',
-  coinRuleRefunds: 'रिफंड में बचे कॉइन वापस मिलते हैं',
+  coinRuleRefunds: 'योग्य कैंसलेशन रिफंड Indiery कॉइन में जोड़े जाते हैं',
   walletTitle: 'Indiery वॉलेट',
-  walletSubtitle: 'बुकिंग तुरंत पे करें और रिफंड यहां पाएं.',
+  walletSubtitle: 'पैसे जोड़ें और बुकिंग का तुरंत भुगतान करें.',
   cashBalance: 'कैश बैलेंस',
   availableToPay: 'पेमेंट के लिए उपलब्ध',
   addMoney: 'पैसे जोड़ें',
@@ -689,7 +877,7 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   insufficientWalletBalance: 'वॉलेट बैलेंस कम है',
   recentTransactions: 'हाल की ट्रांजैक्शन',
   noWalletTransactions: 'कोई वॉलेट ट्रांजैक्शन नहीं',
-  noWalletTransactionsText: 'टॉप-अप, वॉलेट पेमेंट और रिफंड यहां दिखेंगे.',
+  noWalletTransactionsText: 'टॉप-अप और वॉलेट पेमेंट यहां दिखेंगे.',
   rewardsCoins: 'रिवॉर्ड और कॉइन',
   coinActivity: 'कॉइन एक्टिविटी',
   noCoinActivity: 'अभी कोई कॉइन एक्टिविटी नहीं',
@@ -791,7 +979,208 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   confirmDropLocation: 'ड्रॉप लोकेशन कन्फर्म करें',
   selected: 'चुना गया',
   selectOnMap: 'मैप पर चुनें',
-  locationHint: 'सही किराया और ट्रैकिंग के लिए सुझाव चुनें, या लिखे हुए टेक्स्ट के साथ जारी रखें.'
+  locationHint: 'सही किराया और ट्रैकिंग के लिए सुझाव चुनें, या लिखे हुए टेक्स्ट के साथ जारी रखें.',
+  pressBackAgainToExit: 'बाहर निकलने के लिए फिर से बैक दबाएँ',
+  trackOrder: 'ऑर्डर ट्रैक करें',
+  orderDetails: 'ऑर्डर की जानकारी',
+  enterGoodsType: 'सामान का प्रकार डालें',
+  enterWeight: 'वजन डालें',
+  goodsRules: 'सामान के नियम',
+  viewGoodsRules: 'अनुमत और प्रतिबंधित सामान देखें',
+  allowedGoods: 'अनुमत सामान',
+  notAllowedGoods: 'प्रतिबंधित सामान',
+  goodsRulesIntro: 'बुकिंग से पहले देखें कि क्या भेजा जा सकता है और क्या नहीं।',
+  okayUnderstood: 'ठीक है, समझ गया',
+  chooseVehicle: 'वाहन चुनें',
+  suggested: 'सुझाया गया',
+  unavailableForWeight: 'इस वजन के लिए उपलब्ध नहीं',
+  fareEstimate: 'अनुमानित किराया',
+  settingPickupLocation: 'वर्तमान पिकअप लोकेशन सेट हो रही है',
+  allVehiclePrices: 'सभी वाहनों के किराए',
+  changeRoute: 'रूट बदलें',
+  routeAndContacts: 'रूट और संपर्क',
+  sender: 'सेंडर',
+  receiver: 'रिसीवर',
+  sameAsAppUser: 'क्या सेंडर ऐप उपयोगकर्ता ही है?',
+  yesUseMine: 'हाँ, मेरा उपयोग करें',
+  noEnterManually: 'नहीं, जानकारी खुद डालें',
+  pricedAfterRoute: 'किराया इस रूट और वजन से तय होता है।',
+  couponCode: 'कूपन कोड',
+  couponSheetTitle: 'कूपन लगाएँ',
+  couponSheetText: 'नए ग्राहक FIRST50 का उपयोग करके 50 Indiery कॉइन पा सकते हैं।',
+  invalidCoupon: 'कूपन कोड मान्य नहीं है',
+  couponAlreadyClaimed: 'FIRST50 पहले ही लिया जा चुका है',
+  couponApplied: 'FIRST50 लागू हुआ। 50 कॉइन जुड़ गए।',
+  rechargeCoins: 'Indiery कॉइन रिचार्ज करें',
+  rechargeCoinsToOrder: 'आपका Indiery कॉइन बैलेंस -50 पर पहुँच गया है। अगला ऑर्डर करने से पहले रिचार्ज करें।',
+  coinDebtNotice: 'वेटिंग और कैंसलेशन शुल्क में कॉइन -50 तक जा सकते हैं। इस सीमा पर रिचार्ज जरूरी है।',
+  coinRechargeSuccess: 'Indiery कॉइन रिचार्ज हो गए',
+  coinRechargeFailed: 'Indiery कॉइन रिचार्ज नहीं हो पाया',
+  mobileLinkedText: 'आपका मोबाइल नंबर सत्यापित है और इस ग्राहक अकाउंट से जुड़ा है।',
+  savedPlace: 'सेव जगह',
+  savedPlacesCount: 'सेव जगहें',
+  locationDisclosureTitle: 'Indiery आपकी लोकेशन का उपयोग कैसे करता है',
+  locationDisclosureBody: 'Indiery केवल ऐप उपयोग करते समय आपकी सटीक लोकेशन लेकर पिकअप पॉइंट भरता है। इस पॉइंट के साथ आगे बढ़ने पर रूट, किराया और डिलीवरी प्रबंधन के लिए इसके निर्देशांक Indiery को भेजे जाते हैं। बुकिंग के बाद पिकअप निर्देशांक असाइन किए गए डिलीवरी पार्टनर के साथ साझा किए जाते हैं। Indiery बैकग्राउंड लोकेशन नहीं माँगता और लोकेशन डेटा नहीं बेचता।',
+  allowLocation: 'लोकेशन की अनुमति दें',
+  notNow: 'अभी नहीं',
+  locationPermissionRequired: 'वर्तमान लोकेशन उपयोग करने के लिए लोकेशन अनुमति जरूरी है',
+  useTypedLocation: 'लिखी हुई लोकेशन उपयोग करें',
+  goBackToMobile: 'मोबाइल नंबर पर वापस जाएँ',
+  otpVerification: 'OTP सत्यापन',
+  enterOtpSentTo: 'यहाँ भेजा गया 6 अंकों का कोड डालें',
+  change: 'बदलें',
+  otpPrivateNotice: 'आपका कोड निजी है और सुरक्षित रूप से सत्यापित होता है।',
+  verifying: 'सत्यापन हो रहा है…',
+  verifyAndContinue: 'सत्यापित करके आगे बढ़ें',
+  resendOtpIn: 'OTP दोबारा भेजें',
+  didNotReceiveCode: 'कोड नहीं मिला?',
+  resendOtp: 'OTP दोबारा भेजें',
+  deliveringTrust: 'हर दूरी पर भरोसेमंद डिलीवरी।',
+  fastSecureReliable: 'तेज़ · सुरक्षित · भरोसेमंद',
+  welcomeToIndiery: 'Indiery में आपका स्वागत है',
+  mobileBookingIntro: 'डिलीवरी बुक और ट्रैक करने के लिए अपना मोबाइल नंबर डालें।',
+  checking: 'जाँच हो रही है…',
+  byContinuingAgree: 'आगे बढ़कर आप इनसे सहमत होते हैं',
+  termsConditions: 'नियम और शर्तें',
+  and: 'और',
+  privacyPolicy: 'गोपनीयता नीति',
+  profileSetup: 'प्रोफाइल सेटअप',
+  almostThere: 'बस थोड़ा और',
+  completeProfile: 'अपनी प्रोफाइल पूरी करें',
+  addDetailsBeforeVerify: 'मोबाइल नंबर सत्यापित करने से पहले अपनी जानकारी जोड़ें।',
+  pleaseAccurateBookingInfo: 'अपनी बुकिंग के लिए सही जानकारी डालें।',
+  fullName: 'पूरा नाम',
+  enterFullName: 'अपना पूरा नाम डालें',
+  enterValidEmail: 'मान्य ईमेल डालें',
+  enterCity: 'अपना शहर डालें',
+  detailsPrivateProtected: 'आपकी जानकारी निजी और सुरक्षित है।',
+  sendingOtp: 'OTP भेजा जा रहा है…',
+  enterMobileNumber: 'अपना मोबाइल नंबर डालें',
+  enterOtp: '6 अंकों का OTP डालें',
+  tellUsAboutYou: 'अपने बारे में बताएँ',
+  personalizeDeliveries: 'कुछ जानकारी आपकी डिलीवरी को बेहतर बनाने में मदद करेगी।',
+  profile: 'प्रोफाइल',
+  realTime: 'रियल-टाइम',
+  trackingLabel: 'ट्रैकिंग',
+  secure: 'सुरक्षित',
+  deliveries: 'डिलीवरी',
+  smart: 'स्मार्ट',
+  pricing: 'किराया',
+  support: 'सहायता',
+  to: 'से',
+  announcements: 'घोषणाएँ',
+  noVehicleAvailableForWeight: 'इस वजन के लिए कोई ग्राहक वाहन उपलब्ध नहीं है',
+  kgUnit: 'किलो',
+  mapPreviewUnavailable: 'मैप प्रीव्यू के लिए Google Maps सेटअप जरूरी है। आगे बढ़ने के लिए जगह खोजें या वर्तमान लोकेशन उपयोग करें।',
+  locationNotSelected: 'लोकेशन नहीं चुनी गई',
+  closePickupSearch: 'पिकअप खोज बंद करें',
+  closeGoodsCategory: 'सामान की श्रेणी बंद करें',
+  closeGoodsRules: 'सामान के नियम बंद करें',
+  closeExpandedMap: 'बड़ा मैप बंद करें',
+  closeLocationDetails: 'लोकेशन जानकारी बंद करें',
+  minimizeMap: 'मैप छोटा करें',
+  maximizeMap: 'मैप बड़ा करें',
+  changeLocation: 'लोकेशन बदलें',
+  useMyMobileNumber: 'मेरा मोबाइल नंबर उपयोग करें',
+  saveThisAddressAs: 'यह पता इस नाम से सेव करें',
+  homeAddress: 'घर',
+  shopAddress: 'दुकान',
+  otherAddress: 'अन्य',
+  saveAddressAs: 'पता इस नाम से सेव करें',
+  confirmAndContinue: 'कन्फर्म करके आगे बढ़ें',
+  closeLocationMap: 'लोकेशन मैप बंद करें',
+  closeOrderFilters: 'ऑर्डर फ़िल्टर बंद करें',
+  closeOrderDetails: 'ऑर्डर जानकारी बंद करें',
+  editPersonalDetails: 'पर्सनल जानकारी बदलें',
+  goBack: 'वापस जाएँ',
+  enterRechargeAmount: 'रिचार्ज राशि डालें',
+  mobileLabel: 'मोबाइल',
+  vehicleLabel: 'वाहन',
+  upiPayment: 'UPI',
+  cashPayment: 'कैश',
+  cardPayment: 'कार्ड',
+  netBankingPayment: 'नेट बैंकिंग',
+  walletPayment: 'वॉलेट',
+  paid: 'भुगतान हो गया',
+  failed: 'असफल',
+  refunded: 'रिफंड हुआ',
+  previousBookingStep: 'पिछले बुकिंग चरण पर जाएँ',
+  backToHome: 'होम पर वापस जाएँ',
+  distanceCharge: 'दूरी शुल्क',
+  billable: 'बिल योग्य',
+  orderValue: 'ऑर्डर राशि',
+  waitingCharge: 'वेटिंग शुल्क',
+  waiting: 'वेटिंग',
+  freeThen: 'मुफ्त, उसके बाद',
+  perMinute: 'प्रति मिनट',
+  total: 'कुल',
+  cancellationCharge: 'कैंसलेशन शुल्क',
+  refundAddedToCoins: 'रिफंड Indiery कॉइन में जोड़ा गया',
+  chargedToCoins: 'Indiery कॉइन से शुल्क लिया गया',
+  yesterday: 'कल',
+  daysAgo: 'दिन पहले',
+  currentLocation: 'वर्तमान लोकेशन',
+  orderPlaced: 'ऑर्डर किया गया',
+  customerBookingConfirmed: 'ग्राहक की बुकिंग कन्फर्म हुई',
+  partnerAssigned: 'पार्टनर असाइन हुआ',
+  waitingPartnerConfirmation: 'पार्टनर की पुष्टि का इंतजार',
+  arrivedAtPickup: 'पिकअप पर पहुँच गया',
+  partnerAtPickup: 'पार्टनर पिकअप लोकेशन पर है',
+  goodsPickedUpProof: 'सामान प्रमाण के साथ पिकअप हुआ',
+  movingTowardDrop: 'ड्रॉप लोकेशन की ओर जा रहा है',
+  deliveryCompleted: 'डिलीवरी पूरी हुई',
+  paidFor: 'भुगतान किया',
+  coinsUsed: 'कॉइन उपयोग हुए',
+  coinRefund: 'कैंसलेशन रिफंड',
+  walletRefund: 'वॉलेट रिफंड',
+  coinsReturned: 'कॉइन वापस मिले',
+  walletTopupPending: 'वॉलेट टॉप-अप लंबित',
+  walletTopup: 'वॉलेट टॉप-अप',
+  coinRechargePending: 'Indiery कॉइन रिचार्ज लंबित',
+  coinRecharge: 'Indiery कॉइन रिचार्ज',
+  coupon: 'कूपन',
+  refreshFailed: 'रिफ्रेश नहीं हो पाया',
+  fareEstimateFailed: 'किराए का अनुमान नहीं मिल पाया',
+  paymentVerificationMissing: 'पेमेंट सत्यापन की जानकारी नहीं मिली',
+  orderBooked: '{order} बुक हो गया',
+  bookingFailed: 'बुकिंग नहीं हो पाई',
+  profileSaved: 'प्रोफाइल सेव हो गई',
+  addressSaved: 'पता सेव हो गया',
+  saveAddressFailed: 'पता सेव नहीं हो पाया',
+  addressRemoved: 'पता हटा दिया गया',
+  removeAddressFailed: 'पता हटाया नहीं जा सका',
+  shareFailed: 'शेयर नहीं हो पाया',
+  logoutFailed: 'लॉगआउट नहीं हो पाया',
+  accountDeletionBody: 'हम आपके अनुरोध की समीक्षा करके योग्य अकाउंट डेटा हटाएँगे। कानून के अनुसार कुछ ऑर्डर, पेमेंट, धोखाधड़ी रोकथाम, टैक्स या कानूनी रिकॉर्ड रखने पड़ सकते हैं।',
+  submitRequest: 'अनुरोध भेजें',
+  deletionRequestSubmitted: 'अकाउंट हटाने का अनुरोध भेज दिया गया',
+  requestFailed: 'अनुरोध पूरा नहीं हुआ',
+  cancelBookingTitle: 'बुकिंग रद्द करें',
+  keepBooking: 'बुकिंग जारी रखें',
+  cancelBookingAction: 'बुकिंग रद्द करें',
+  cancelAfterFiveMessage: '{order} रद्द करें? ऑर्डर की कुल राशि का 10%, यानी {charge}, कैंसलेशन शुल्क लगेगा। बाकी योग्य राशि Indiery कॉइन में जोड़ी जाएगी; कैश ऑर्डर में शुल्क Indiery कॉइन से कटेगा।',
+  cancelWithinFiveMessage: '{order} रद्द करें? पिकअप के बाद अभी 5 मिनट पूरे नहीं हुए हैं, इसलिए कोई कैंसलेशन शुल्क नहीं लगेगा।',
+  cancelBeforePickupMessage: '{order} रद्द करें? पिकअप से पहले कोई कैंसलेशन शुल्क नहीं लगता।',
+  bookingCancelledCharged: 'बुकिंग रद्द हुई: {charge} शुल्क लगा',
+  bookingCancelledNoCharge: 'बुकिंग बिना शुल्क के रद्द हुई',
+  cancelFailed: 'बुकिंग रद्द नहीं हो पाई',
+  locationSearchUnavailable: 'लोकेशन खोज उपलब्ध नहीं है',
+  couldNotSelectLocation: 'यह लोकेशन चुनी नहीं जा सकी',
+  locationSuggestionsUnavailable: 'लोकेशन सुझाव उपलब्ध नहीं हैं',
+  couldNotMoveMap: 'मैप को इस जगह नहीं ले जाया जा सका',
+  selectValidLocationFirst: 'पहले सही लोकेशन चुनें',
+  enterValidMobile: 'मान्य मोबाइल नंबर डालें',
+  turnOnGps: 'डिवाइस की लोकेशन/GPS चालू करें',
+  unableToSendOtp: 'OTP नहीं भेजा जा सका',
+  unableToContinue: 'आगे नहीं बढ़ा जा सका',
+  unableToVerifyOtp: 'OTP सत्यापित नहीं हो सका',
+  invalidOtp: 'OTP मान्य नहीं है',
+  notificationsAllowed: 'नोटिफिकेशन की अनुमति मिल गई। नेटवर्क मिलने पर पुश अपडेट रजिस्टर होंगे।',
+  pushSetupIncomplete: 'पुश नोटिफिकेशन सेटअप अधूरा है। रिलीज़ से पहले ऐप को Expo प्रोजेक्ट से जोड़ें।',
+  orderUpdates: 'ऑर्डर अपडेट',
+  notifications: 'नोटिफिकेशन',
+  enablePermissions: 'पूरी ट्रैकिंग अपडेट के लिए फोन सेटिंग में {permissions} की अनुमति दें',
+  gpsTakingTooLong: 'GPS लोकेशन मिलने में बहुत समय लग रहा है'
 };
 
 const appCopy: Record<AppLanguage, Record<keyof typeof enCopy, string>> = {
@@ -803,6 +1192,10 @@ const LanguageContext = createContext<AppLanguage>('en');
 
 function copyFor(language: AppLanguage, key: CopyKey) {
   return appCopy[language][key] ?? appCopy.en[key];
+}
+
+function fillCopy(template: string, values: Record<string, string | number>) {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? `{${key}}`));
 }
 
 function useCopy() {
@@ -928,6 +1321,72 @@ function statusLabel(language: AppLanguage, status: Order['status']) {
   return copyFor(language, status);
 }
 
+function timelineTitle(language: AppLanguage, key: string, fallback: string) {
+  const keyByTimeline: Record<string, CopyKey> = {
+    created: 'orderPlaced',
+    assigned: 'partnerAssigned',
+    arrived_pickup: 'arrivedAtPickup',
+    picked_up: 'picked_up',
+    in_transit: 'in_transit',
+    delivered: 'delivered'
+  };
+  return keyByTimeline[key] ? copyFor(language, keyByTimeline[key]) : fallback;
+}
+
+function timelineNote(language: AppLanguage, key: string, fallback: string) {
+  const keyByTimeline: Record<string, CopyKey> = {
+    created: 'customerBookingConfirmed',
+    assigned: 'waitingPartnerConfirmation',
+    arrived_pickup: 'partnerAtPickup',
+    picked_up: 'goodsPickedUpProof',
+    in_transit: 'movingTowardDrop',
+    delivered: 'deliveryCompleted'
+  };
+  return keyByTimeline[key] ? copyFor(language, keyByTimeline[key]) : fallback;
+}
+
+function ledgerTitle(language: AppLanguage, title: string) {
+  const prefixes: Array<[string, CopyKey]> = [
+    ['Indiery Coins recharge pending', 'coinRechargePending'],
+    ['Indiery Coins recharge', 'coinRecharge'],
+    ['Wallet top-up pending', 'walletTopupPending'],
+    ['Wallet top-up', 'walletTopup'],
+    ['Cancellation charge', 'cancellationCharge'],
+    ['Cancellation refund', 'coinRefund'],
+    ['Wallet refund', 'walletRefund'],
+    ['Coins returned', 'coinsReturned'],
+    ['Coins used', 'coinsUsed'],
+    ['Paid for', 'paidFor'],
+    ['Coupon', 'coupon']
+  ];
+  const match = prefixes.find(([prefix]) => title === prefix || title.startsWith(`${prefix} `));
+  if (!match) return title;
+  const [prefix, key] = match;
+  const suffix = title.slice(prefix.length).trim();
+  return suffix ? `${copyFor(language, key)} ${suffix}` : copyFor(language, key);
+}
+
+function paymentModeLabel(language: AppLanguage, mode: PaymentMode) {
+  const keyByMode: Record<PaymentMode, CopyKey> = {
+    upi: 'upiPayment',
+    card: 'cardPayment',
+    netbanking: 'netBankingPayment',
+    cash: 'cashPayment',
+    wallet: 'walletPayment'
+  };
+  return copyFor(language, keyByMode[mode]);
+}
+
+function paymentStatusLabel(language: AppLanguage, status: Order['paymentStatus']) {
+  const keyByStatus: Record<Order['paymentStatus'], CopyKey> = {
+    pending: 'pending',
+    paid: 'paid',
+    failed: 'failed',
+    refunded: 'refunded'
+  };
+  return copyFor(language, keyByStatus[status]);
+}
+
 const initialBooking = {
   serviceCategory: 'truck' as ServiceCategory,
   pickup: '',
@@ -972,14 +1431,14 @@ function needsCustomerProfile(user: UserProfile) {
   return !user.email || user.name === 'Indiery Customer';
 }
 
-function formatPhoneForFirebase(phoneInput: string) {
+function formatPhoneForFirebase(phoneInput: string, language: AppLanguage = 'en') {
   const trimmed = phoneInput.trim();
   if (trimmed.startsWith('+')) return trimmed.replace(/[^\d+]/g, '');
 
   const digits = trimmed.replace(/\D/g, '');
   if (digits.length === 10) return `+91${digits}`;
   if (digits.startsWith('91') && digits.length === 12) return `+${digits}`;
-  throw new Error('Enter a valid mobile number');
+  throw new Error(copyFor(language, 'enterValidMobile'));
 }
 
 function hasValidContactPhone(phoneInput: string) {
@@ -1071,11 +1530,11 @@ function homeVehicleAccent(vehicle: Vehicle) {
   return colors.amber;
 }
 
-function vehicleCapacityText(vehicle: Vehicle, upTo: string) {
+function vehicleCapacityText(vehicle: Vehicle, upTo: string, kgUnit = 'kg') {
   const rule = vehicleRule(vehicle);
-  if (vehicle.code === 'loader90') return '20-90 kg';
-  if (rule) return `${upTo} ${rule.maxWeightKg} kg`;
-  return `${upTo} ${vehicle.capacityKg} kg`;
+  if (vehicle.code === 'loader90') return `20-90 ${kgUnit}`;
+  if (rule) return `${upTo} ${rule.maxWeightKg} ${kgUnit}`;
+  return `${upTo} ${vehicle.capacityKg} ${kgUnit}`;
 }
 
 function bookingStopsToLocationPoints(stops: BookingStop[]): LocationPoint[] {
@@ -1234,14 +1693,14 @@ async function readDeviceLocation(language: AppLanguage = 'en') {
 
   const servicesEnabled = await Location.hasServicesEnabledAsync();
   if (!servicesEnabled) {
-    throw new Error('Turn on device location/GPS');
+    throw new Error(copyFor(language, 'turnOnGps'));
   }
 
   try {
     return await withLocationTimeout(
       Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
       8000,
-      'GPS is taking too long'
+      copyFor(language, 'gpsTakingTooLong')
     );
   } catch (err) {
     const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
@@ -1255,7 +1714,7 @@ async function readCurrentLocationDetails(language: AppLanguage = 'en'): Promise
   const lat = current.coords.latitude;
   const lng = current.coords.longitude;
   const reverse = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }).catch(() => []);
-  const address = formatReverseAddress(reverse[0]) || 'Current location';
+  const address = formatReverseAddress(reverse[0]) || copyFor(language, 'currentLocation');
   return {
     placeId: `current-${lat.toFixed(6)}-${lng.toFixed(6)}`,
     label: address,
@@ -1273,23 +1732,24 @@ function formatCountdown(ms: number) {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-function formatLedgerDate(value: string) {
+function formatLedgerDate(value: string, language: AppLanguage) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  return date.toLocaleDateString(language === 'hi' ? 'hi-IN' : 'en-IN', { day: '2-digit', month: 'short' });
 }
 
-function formatOrderCardDateTime(value: string) {
+function formatOrderCardDateTime(value: string, language: AppLanguage) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const day = date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const locale = language === 'hi' ? 'hi-IN' : 'en-IN';
+  const day = date.toLocaleDateString(locale, { day: '2-digit', month: 'short' });
   const time = date
-    .toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+    .toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', hour12: true })
     .toLowerCase();
   return `${day} · ${time}`;
 }
 
-function formatCoinActivityDate(value: string) {
+function formatCoinActivityDate(value: string, language: AppLanguage) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const startOfToday = new Date();
@@ -1297,10 +1757,10 @@ function formatCoinActivityDate(value: string) {
   const startOfDate = new Date(date);
   startOfDate.setHours(0, 0, 0, 0);
   const dayDiff = Math.round((startOfToday.getTime() - startOfDate.getTime()) / 86_400_000);
-  if (dayDiff === 0) return 'Today';
-  if (dayDiff === 1) return 'Yesterday';
-  if (dayDiff > 1 && dayDiff < 7) return `${dayDiff} days ago`;
-  return formatLedgerDate(value);
+  if (dayDiff === 0) return copyFor(language, 'today');
+  if (dayDiff === 1) return copyFor(language, 'yesterday');
+  if (dayDiff > 1 && dayDiff < 7) return `${dayDiff} ${copyFor(language, 'daysAgo')}`;
+  return formatLedgerDate(value, language);
 }
 
 function orderTimelineTime(order: Order, key: string) {
@@ -1373,7 +1833,7 @@ function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
 async function requestCustomerAppPermissions(
   api: IndieryApi,
   onMessage: (message: string) => void,
-  _language: AppLanguage
+  language: AppLanguage
 ) {
   const denied: string[] = [];
   let registeredPushToken: string | undefined;
@@ -1381,7 +1841,7 @@ async function requestCustomerAppPermissions(
   try {
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('orders', {
-        name: 'Order updates',
+        name: copyFor(language, 'orderUpdates'),
         importance: Notifications.AndroidImportance.HIGH,
         sound: 'default',
         enableVibrate: true,
@@ -1403,20 +1863,20 @@ async function requestCustomerAppPermissions(
           await api.registerCustomerPushToken(token.data);
           registeredPushToken = token.data;
         } catch {
-          onMessage('Notifications allowed. Push updates will register when network is available');
+          onMessage(copyFor(language, 'notificationsAllowed'));
         }
       } else {
-        onMessage('Push notification setup is incomplete. Link this app to an Expo project before release.');
+        onMessage(copyFor(language, 'pushSetupIncomplete'));
       }
     } else {
-      denied.push('notifications');
+      denied.push(copyFor(language, 'notifications'));
     }
   } catch {
-    denied.push('notifications');
+    denied.push(copyFor(language, 'notifications'));
   }
 
   if (denied.length) {
-    onMessage(`Enable ${denied.join(' and ')} permission in phone settings for full tracking updates`);
+    onMessage(fillCopy(copyFor(language, 'enablePermissions'), { permissions: denied.join(` ${copyFor(language, 'and')} `) }));
   }
   return registeredPushToken;
 }
@@ -1635,7 +2095,7 @@ export default function App() {
       setData((current) => current ? bootstrap : current);
       if (interactive) showToast(copyFor(language, 'dataRefreshed'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Refresh failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'refreshFailed'));
     } finally {
       refreshInFlightRef.current = false;
       if (interactive) setRefreshing(false);
@@ -1689,7 +2149,7 @@ export default function App() {
       setFareRouteKey(routeKey);
     } catch (err) {
       if (requestId === estimateRequestSeqRef.current) {
-        showToast(err instanceof Error ? err.message : 'Fare estimate failed');
+        showToast(err instanceof Error ? err.message : copyFor(language, 'fareEstimateFailed'));
       }
     } finally {
       if (requestId === estimateRequestSeqRef.current) setBusy(false);
@@ -1754,7 +2214,7 @@ export default function App() {
           }
         });
         if (!payment.razorpay_order_id || !payment.razorpay_signature) {
-          throw new Error('Payment verification details missing');
+          throw new Error(copyFor(language, 'paymentVerificationMissing'));
         }
         const verified = await api.verifyRazorpayPayment({
           orderId: result.order.id,
@@ -1789,9 +2249,9 @@ export default function App() {
       setFareRouteKey(undefined);
       setBooking((current) => ({ ...initialBooking, vehicleId: current.vehicleId }));
       setTab('orders');
-      showToast(`${confirmedOrder.orderNo} booked`);
+      showToast(fillCopy(copyFor(language, 'orderBooked'), { order: confirmedOrder.orderNo }));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Booking failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'bookingFailed'));
     } finally {
       setBusy(false);
     }
@@ -1849,7 +2309,7 @@ export default function App() {
     try {
       const result = await api.updateCustomerProfile(input);
       setData((current) => current ? { ...current, user: result.user } : current);
-      showToast('Profile saved');
+      showToast(copyFor(language, 'profileSaved'));
       requestPermissionsAfterLogin();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Profile update failed');
@@ -1863,9 +2323,9 @@ export default function App() {
     try {
       const result = await api.addSavedAddress(input);
       setData((current) => current ? { ...current, user: result.user } : current);
-      showToast('Address saved');
+      showToast(copyFor(language, 'addressSaved'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Save address failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'saveAddressFailed'));
     } finally {
       setBusy(false);
     }
@@ -1876,9 +2336,9 @@ export default function App() {
     try {
       const result = await api.deleteSavedAddress(addressId);
       setData((current) => current ? { ...current, user: result.user } : current);
-      showToast('Address removed');
+      showToast(copyFor(language, 'addressRemoved'));
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Remove address failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'removeAddressFailed'));
     } finally {
       setBusy(false);
     }
@@ -1894,7 +2354,7 @@ export default function App() {
         url: trackingUrl
       });
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Share failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'shareFailed'));
     }
   }
 
@@ -1926,7 +2386,7 @@ export default function App() {
       api.setToken('');
       await auth().signOut();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Logout failed');
+      showToast(err instanceof Error ? err.message : copyFor(language, 'logoutFailed'));
     } finally {
       setBusy(false);
     }
@@ -1934,20 +2394,20 @@ export default function App() {
 
   function requestAccountDeletion() {
     Alert.alert(
-      'Request account deletion',
-      'We will review your request and delete eligible account data. Some order, payment, fraud prevention, tax, or legal records may be retained where required.',
+      copyFor(language, 'requestAccountDeletion'),
+      copyFor(language, 'accountDeletionBody'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: copyFor(language, 'cancel'), style: 'cancel' },
         {
-          text: 'Submit request',
+          text: copyFor(language, 'submitRequest'),
           style: 'destructive',
           onPress: async () => {
             setBusy(true);
             try {
               await api.requestAccountDeletion('Requested from customer profile');
-              showToast('Deletion request submitted');
+              showToast(copyFor(language, 'deletionRequestSubmitted'));
             } catch (err) {
-              showToast(err instanceof Error ? err.message : 'Request failed');
+              showToast(err instanceof Error ? err.message : copyFor(language, 'requestFailed'));
             } finally {
               setBusy(false);
             }
@@ -1965,17 +2425,17 @@ export default function App() {
     );
     const cancellationCharge = Number((order.fare.total * 0.1).toFixed(2));
     const cancellationMessage = afterPickup && !withinFreePickupWindow
-      ? `Cancel ${order.orderNo}? A 10% cancellation charge of ${money(cancellationCharge)} will apply. The remaining prepaid amount will be returned to your wallet; for cash orders the charge is deducted from Indiery Coins.`
+      ? fillCopy(copyFor(language, 'cancelAfterFiveMessage'), { order: order.orderNo, charge: money(cancellationCharge) })
       : afterPickup
-        ? `Cancel ${order.orderNo}? You are within 5 minutes after pickup, so there is no cancellation charge.`
-        : `Cancel ${order.orderNo}? There is no cancellation charge before pickup.`;
+        ? fillCopy(copyFor(language, 'cancelWithinFiveMessage'), { order: order.orderNo })
+        : fillCopy(copyFor(language, 'cancelBeforePickupMessage'), { order: order.orderNo });
     Alert.alert(
-      'Cancel booking',
+      copyFor(language, 'cancelBookingTitle'),
       cancellationMessage,
       [
-        { text: 'Keep booking', style: 'cancel' },
+        { text: copyFor(language, 'keepBooking'), style: 'cancel' },
         {
-          text: 'Cancel booking',
+          text: copyFor(language, 'cancelBookingAction'),
           style: 'destructive',
           onPress: async () => {
             setBusy(true);
@@ -1995,12 +2455,12 @@ export default function App() {
               });
               showToast(
                 result.cancellationCharge > 0
-                  ? `Booking cancelled: ${money(result.cancellationCharge)} charged`
-                  : 'Booking cancelled with no charge'
+                  ? fillCopy(copyFor(language, 'bookingCancelledCharged'), { charge: money(result.cancellationCharge) })
+                  : copyFor(language, 'bookingCancelledNoCharge')
               );
               setTab('orders');
             } catch (err) {
-              showToast(err instanceof Error ? err.message : 'Cancel failed');
+              showToast(err instanceof Error ? err.message : copyFor(language, 'cancelFailed'));
             } finally {
               setBusy(false);
             }
@@ -2012,32 +2472,38 @@ export default function App() {
 
   if (loading) {
     return (
+      <LanguageContext.Provider value={language}>
       <SafeAreaView edges={appSafeAreaEdges} style={styles.center}>
         <AppStatusBar variant="light" />
         <ActivityIndicator color={colors.customer} size="large" />
         <Text style={styles.muted}>{copyFor(language, 'loading')}</Text>
       </SafeAreaView>
+      </LanguageContext.Provider>
     );
   }
 
   if (!data) {
     return (
+      <LanguageContext.Provider value={language}>
       <LoginScreen
         initialError={error}
         onCheckCustomer={(phone) => api.customerOnboardingStatus(phone)}
         onVerified={completeFirebaseLogin}
       />
+      </LanguageContext.Provider>
     );
   }
 
   if (needsCustomerProfile(data.user)) {
     return (
+      <LanguageContext.Provider value={language}>
       <ProfileSetupScreen
         user={data.user}
         busy={busy}
         error={error}
         onSave={saveProfile}
       />
+      </LanguageContext.Provider>
     );
   }
 
@@ -2220,7 +2686,7 @@ export default function App() {
             onSaveProfile={saveProfile}
             onChangeLanguage={(nextLanguage) => {
               setLanguage(nextLanguage);
-              showToast(nextLanguage === 'hi' ? 'भाषा हिन्दी पर सेट हुई' : 'Language set to English');
+              showToast(copyFor(nextLanguage, nextLanguage === 'hi' ? 'languageSetHindi' : 'languageSetEnglish'));
             }}
             onDeleteAddress={deleteSavedAddress}
             onLogout={logout}
@@ -2294,6 +2760,8 @@ function LoginScreen({
   onCheckCustomer: (phone: string) => Promise<{ needsProfile: boolean }>;
   onVerified: (firebaseIdToken: string, customerProfile?: CustomerOnboardingProfile) => Promise<void>;
 }) {
+  const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
   const [loginStep, setLoginStep] = useState<LoginStep>('phone');
   const [phone, setPhone] = useState('');
@@ -2389,7 +2857,7 @@ function LoginScreen({
   }
 
   async function requestOtp() {
-    const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone));
+    const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone, language));
     setConfirmation(result);
     setCode('');
     setResendSeconds(30);
@@ -2401,7 +2869,7 @@ function LoginScreen({
     setBusy(true);
     setError('');
     try {
-      const formattedPhone = formatPhoneForFirebase(phone);
+      const formattedPhone = formatPhoneForFirebase(phone, language);
       const status = await onCheckCustomer(formattedPhone);
       setProfileRequired(status.needsProfile);
       if (status.needsProfile) {
@@ -2412,7 +2880,7 @@ function LoginScreen({
         await requestOtp();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to continue');
+      setError(err instanceof Error ? err.message : copy.unableToContinue);
     } finally {
       setBusy(false);
     }
@@ -2425,15 +2893,15 @@ function LoginScreen({
       city: profileCity.trim()
     };
     if (nextProfile.name.length < 2) {
-      setError('Enter your full name');
+      setError(copy.enterFullName);
       return;
     }
     if (!nextProfile.email.includes('@')) {
-      setError('Enter a valid email');
+      setError(copy.enterValidEmail);
       return;
     }
     if (nextProfile.city.length < 2) {
-      setError('Enter your city');
+      setError(copy.enterCity);
       return;
     }
     setBusy(true);
@@ -2446,7 +2914,7 @@ function LoginScreen({
         await requestOtp();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to send OTP');
+      setError(err instanceof Error ? err.message : copy.unableToSendOtp);
     } finally {
       setBusy(false);
     }
@@ -2458,7 +2926,7 @@ function LoginScreen({
     try {
       await requestOtp();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to send OTP');
+      setError(err instanceof Error ? err.message : copy.unableToSendOtp);
     } finally {
       setBusy(false);
     }
@@ -2471,7 +2939,7 @@ function LoginScreen({
     setError('');
     try {
       const credential = await confirmation.confirm(code.trim());
-      if (!credential?.user) throw new Error('Unable to verify OTP');
+      if (!credential?.user) throw new Error(copy.unableToVerifyOtp);
       const firebaseIdToken = await credential.user.getIdToken();
       await onVerified(
         firebaseIdToken,
@@ -2480,7 +2948,7 @@ function LoginScreen({
           : undefined
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid OTP');
+      setError(err instanceof Error ? err.message : copy.invalidOtp);
     } finally {
       setBusy(false);
     }
@@ -2577,19 +3045,19 @@ function LoginScreen({
                   onPress={goBackFromOtp}
                   hitSlop={7}
                   accessibilityRole="button"
-                  accessibilityLabel="Go back to mobile number"
+                  accessibilityLabel={copy.goBackToMobile}
                 >
                   <Ionicons name="arrow-back" size={21} color={colors.ink} />
                 </Pressable>
                 <View style={styles.loginOtpIcon}>
                   <Ionicons name="shield-checkmark" size={24} color={colors.customer} />
                 </View>
-                <Text style={styles.loginOtpTitle}>OTP verification</Text>
-                <Text style={styles.loginOtpSubtitle}>Enter the 6-digit code sent to</Text>
+                <Text style={styles.loginOtpTitle}>{copy.otpVerification}</Text>
+                <Text style={styles.loginOtpSubtitle}>{copy.enterOtpSentTo}</Text>
                 <View style={styles.loginOtpDestinationRow}>
                   <Text style={styles.loginOtpPhone}>+91 {normalizedPhone}</Text>
                   <Pressable onPress={changePhoneNumber} hitSlop={6} accessibilityRole="button">
-                    <Text style={styles.loginOtpChange}>Change</Text>
+                    <Text style={styles.loginOtpChange}>{copy.change}</Text>
                   </Pressable>
                 </View>
                 <OtpCodeField
@@ -2599,17 +3067,17 @@ function LoginScreen({
                 />
                 <View style={styles.loginOtpHintRow}>
                   <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
-                  <Text style={styles.loginOtpHint}>Your code is private and securely verified.</Text>
+                  <Text style={styles.loginOtpHint}>{copy.otpPrivateNotice}</Text>
                 </View>
                 {error ? <Text style={styles.loginError}>{error}</Text> : null}
                 <AuthActionButton
-                  title={busy ? 'Verifying…' : 'Verify and continue'}
+                  title={busy ? copy.verifying : copy.verifyAndContinue}
                   onPress={verifyOtp}
                   disabled={!otpReady || busy}
                 />
                 <View style={styles.loginResendBlock}>
                   <Text style={styles.loginResendLabel}>
-                    {resendSeconds > 0 ? `Resend OTP in ${resendSeconds}s` : "Didn't receive the code?"}
+                    {resendSeconds > 0 ? `${copy.resendOtpIn} ${resendSeconds}s` : copy.didNotReceiveCode}
                   </Text>
                   <Pressable
                     style={[styles.loginResendButton, (resendSeconds > 0 || busy) && styles.loginResendButtonDisabled]}
@@ -2619,7 +3087,7 @@ function LoginScreen({
                   >
                     <Ionicons name="refresh-outline" size={15} color={resendSeconds > 0 || busy ? colors.muted : colors.customer} />
                     <Text style={[styles.loginResendText, (resendSeconds > 0 || busy) && styles.loginResendTextDisabled]}>
-                      Resend OTP
+                      {copy.resendOtp}
                     </Text>
                   </Pressable>
                 </View>
@@ -2670,6 +3138,7 @@ function LoginPhoneStep({
   onOpenPolicy: (policyId: LegalPolicy['id']) => void;
   onKeyboardFocus: () => void;
 }) {
+  const copy = useCopy();
   const responsive = useResponsiveLayout();
   const maxWidth = Math.min(640, responsive.contentMaxWidth);
   const heroWidth = Math.min(responsive.width, maxWidth);
@@ -2683,13 +3152,13 @@ function LoginPhoneStep({
     : heroHeight;
   const consent = (
     <View style={[styles.loginConsent, keyboardVisible && styles.loginPhoneKeyboardConsent]}>
-      <Text style={styles.loginConsentText}>By continuing, you agree to the</Text>
+      <Text style={styles.loginConsentText}>{copy.byContinuingAgree}</Text>
       <Pressable accessibilityRole="link" hitSlop={5} onPress={() => onOpenPolicy('terms')}>
-        <Text style={styles.loginConsentLink}>Terms & Conditions</Text>
+        <Text style={styles.loginConsentLink}>{copy.termsConditions}</Text>
       </Pressable>
-      <Text style={styles.loginConsentText}>and</Text>
+      <Text style={styles.loginConsentText}>{copy.and}</Text>
       <Pressable accessibilityRole="link" hitSlop={5} onPress={() => onOpenPolicy('privacy')}>
-        <Text style={styles.loginConsentLink}>Privacy Policy</Text>
+        <Text style={styles.loginConsentLink}>{copy.privacyPolicy}</Text>
       </Pressable>
       <Text style={styles.loginConsentText}>.</Text>
     </View>
@@ -2711,19 +3180,19 @@ function LoginPhoneStep({
         <View style={[styles.authResponsiveFrame, { maxWidth }]}>
           <LoginHero
             title="Indiery"
-            caption="Delivering trust, every mile."
+            caption={copy.deliveringTrust}
             height={heroHeight}
             visibleHeight={heroVisibleHeight}
           />
           <View style={[styles.loginPhoneFormContent, keyboardVisible && styles.loginPhoneFormContentKeyboard]}>
-            {!keyboardVisible ? <Text style={styles.authKicker}>Fast · Secure · Reliable</Text> : null}
+            {!keyboardVisible ? <Text style={styles.authKicker}>{copy.fastSecureReliable}</Text> : null}
             {!compactKeyboardLayout ? (
               <Text style={[styles.authTitle, keyboardVisible && styles.loginPhoneKeyboardTitle]}>
-                Welcome to Indiery
+                {copy.welcomeToIndiery}
               </Text>
             ) : null}
             {!keyboardVisible ? (
-              <Text style={styles.loginSubtitle}>Enter your mobile number to book and track deliveries.</Text>
+              <Text style={styles.loginSubtitle}>{copy.mobileBookingIntro}</Text>
             ) : null}
             <PhoneLoginField
               value={phone}
@@ -2735,7 +3204,7 @@ function LoginPhoneStep({
             {!keyboardVisible ? (
               <>
                 <AuthActionButton
-                  title={busy ? 'Checking…' : 'Continue'}
+                  title={busy ? copy.checking : copy.continue}
                   onPress={onContinue}
                   disabled={!phoneReady || busy}
                 />
@@ -2757,7 +3226,7 @@ function LoginPhoneStep({
         >
           <View style={[styles.loginPhoneKeyboardFooterInner, { maxWidth }]}>
             <AuthActionButton
-              title={busy ? 'Checking…' : 'Continue'}
+              title={busy ? copy.checking : copy.continue}
               onPress={onContinue}
               disabled={!phoneReady || busy}
             />
@@ -2800,6 +3269,7 @@ function LoginProfileStep({
   onContinue: () => void;
   onKeyboardFocus: () => void;
 }) {
+  const copy = useCopy();
   const responsive = useResponsiveLayout();
   const profileSmall = responsive.width <= 375;
   const profileCompact = responsive.width <= 400;
@@ -2835,7 +3305,7 @@ function LoginProfileStep({
             onPress={onBack}
             hitSlop={7}
             accessibilityRole="button"
-            accessibilityLabel="Go back to mobile number"
+            accessibilityLabel={copy.goBackToMobile}
           >
             <Ionicons name="arrow-back" size={19} color={colors.ink} />
           </Pressable>
@@ -2856,7 +3326,7 @@ function LoginProfileStep({
                 { fontSize: 9 * profileBodyScale }
               ]}
             >
-              Profile setup
+              {copy.profileSetup}
             </Text>
           </View>
         </View>
@@ -2890,7 +3360,7 @@ function LoginProfileStep({
                 }
               ]}
             >
-              Almost there
+              {copy.almostThere}
             </Text>
             <Text
               style={[
@@ -2902,7 +3372,7 @@ function LoginProfileStep({
                 }
               ]}
             >
-              Complete your profile
+              {copy.completeProfile}
             </Text>
             <Text
               style={[
@@ -2914,7 +3384,7 @@ function LoginProfileStep({
                 }
               ]}
             >
-              Add your details before we verify your mobile number.
+              {copy.addDetailsBeforeVerify}
             </Text>
           </View>
         </View>
@@ -2946,7 +3416,7 @@ function LoginProfileStep({
               { fontSize: 15 * profileBodyScale }
             ]}
           >
-            Personal details
+            {copy.personalDetails}
           </Text>
           <Text
             style={[
@@ -2957,10 +3427,10 @@ function LoginProfileStep({
               }
             ]}
           >
-            Please enter accurate information for your bookings.
+            {copy.pleaseAccurateBookingInfo}
           </Text>
           <AuthField
-            label="Full name"
+            label={copy.fullName}
             value={profileName}
             onChangeText={onChangeName}
             icon="person"
@@ -2971,7 +3441,7 @@ function LoginProfileStep({
             profileCompact={profileCompact}
           />
           <AuthField
-            label="Email"
+            label={copy.email}
             value={profileEmail}
             onChangeText={onChangeEmail}
             keyboardType="email-address"
@@ -2983,7 +3453,7 @@ function LoginProfileStep({
             profileCompact={profileCompact}
           />
           <AuthField
-            label="Mobile number"
+            label={copy.mobileNumber}
             value={`+91 ${phone}`}
             editable={false}
             keyboardType="phone-pad"
@@ -2993,7 +3463,7 @@ function LoginProfileStep({
             profileCompact={profileCompact}
           />
           <AuthField
-            label="City"
+            label={copy.city}
             value={profileCity}
             onChangeText={onChangeCity}
             icon="location"
@@ -3012,7 +3482,7 @@ function LoginProfileStep({
             ]}
           >
             <AuthActionButton
-              title={busy ? 'Sending OTP…' : 'Continue'}
+              title={busy ? copy.sendingOtp : copy.continue}
               onPress={onContinue}
               disabled={busy}
             />
@@ -3023,7 +3493,7 @@ function LoginProfileStep({
               ]}
             >
               <Ionicons name="lock-closed-outline" size={12} color={colors.muted} />
-              <Text style={styles.loginProfilePrivacyText}>Your details are private and securely protected.</Text>
+              <Text style={styles.loginProfilePrivacyText}>{copy.detailsPrivateProtected}</Text>
             </View>
           </View>
         ) : null}
@@ -3038,7 +3508,7 @@ function LoginProfileStep({
           ]}
         >
           <AuthActionButton
-            title={busy ? 'Sending OTP…' : 'Continue'}
+            title={busy ? copy.sendingOtp : copy.continue}
             onPress={onContinue}
             disabled={busy}
           />
@@ -3091,9 +3561,10 @@ function PhoneLoginField({
   onFocus?: () => void;
   compact?: boolean;
 }) {
+  const copy = useCopy();
   return (
     <View style={[styles.authFieldGroup, compact && styles.phoneFieldGroupCompact]}>
-      <Text style={styles.fieldLabel}>Mobile Number</Text>
+      <Text style={styles.fieldLabel}>{copy.mobileNumber}</Text>
       <View style={[styles.phoneInputShell, compact && styles.phoneInputShellCompact]}>
         <Ionicons name="phone-portrait-outline" size={18} color={colors.customer} />
         <Text style={styles.countryCode}>+91</Text>
@@ -3104,7 +3575,7 @@ function PhoneLoginField({
           onChangeText={(nextValue) => onChangeText(nextValue.replace(/\D/g, '').slice(0, 10))}
           keyboardType="phone-pad"
           maxLength={10}
-          placeholder="Enter your mobile number"
+          placeholder={copy.enterMobileNumber}
           placeholderTextColor="#9CA3AF"
           style={styles.phoneInputText}
           onFocus={onFocus}
@@ -3123,6 +3594,7 @@ function OtpCodeField({
   onChangeText: (value: string) => void;
   onSubmit?: () => void;
 }) {
+  const copy = useCopy();
   const inputRef = useRef<React.ElementRef<typeof NativeTextInput> | null>(null);
   const digits = value.replace(/\D/g, '').slice(0, 6);
 
@@ -3131,7 +3603,7 @@ function OtpCodeField({
       style={styles.loginOtpField}
       onPress={() => inputRef.current?.focus()}
       accessibilityRole="button"
-      accessibilityLabel="Enter 6-digit OTP"
+      accessibilityLabel={copy.enterOtp}
     >
       <View style={styles.loginOtpBoxes} pointerEvents="none">
         {Array.from({ length: 6 }).map((_, index) => {
@@ -3201,11 +3673,12 @@ function AuthDivider() {
 }
 
 function LoginFeatureRow() {
+  const copy = useCopy();
   const features: Array<{ icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string }> = [
-    { icon: 'cube-outline', title: 'Real-time', subtitle: 'Tracking' },
-    { icon: 'shield-checkmark-outline', title: 'Secure', subtitle: 'Deliveries' },
-    { icon: 'document-text-outline', title: 'Smart', subtitle: 'Pricing' },
-    { icon: 'headset-outline', title: '24/7', subtitle: 'Support' }
+    { icon: 'cube-outline', title: copy.realTime, subtitle: copy.trackingLabel },
+    { icon: 'shield-checkmark-outline', title: copy.secure, subtitle: copy.deliveries },
+    { icon: 'document-text-outline', title: copy.smart, subtitle: copy.pricing },
+    { icon: 'headset-outline', title: '24/7', subtitle: copy.support }
   ];
   return (
     <View style={styles.loginFeatureRow}>
@@ -3233,6 +3706,7 @@ function ProfileSetupScreen({
   error: string;
   onSave: (input: { name: string; email: string; city: string }) => Promise<void>;
 }) {
+  const copy = useCopy();
   const responsive = useResponsiveLayout();
   const [name, setName] = useState(user.name === 'Indiery Customer' ? '' : user.name);
   const [email, setEmail] = useState(user.email || '');
@@ -3267,15 +3741,15 @@ function ProfileSetupScreen({
     const nextEmail = email.trim();
     const nextCity = city.trim();
     if (nextName.length < 2) {
-      setLocalError('Enter your full name');
+      setLocalError(copy.enterFullName);
       return;
     }
     if (!nextEmail.includes('@')) {
-      setLocalError('Enter a valid email');
+      setLocalError(copy.enterValidEmail);
       return;
     }
     if (nextCity.length < 2) {
-      setLocalError('Enter your city');
+      setLocalError(copy.enterCity);
       return;
     }
     setLocalError('');
@@ -3305,17 +3779,17 @@ function ProfileSetupScreen({
                 <View style={styles.profileSetupHeroIcon}>
                   <Ionicons name="person-add-outline" size={28} color={colors.customer} />
                 </View>
-                <Text style={styles.profileSetupHeroKicker}>WELCOME TO INDIERY</Text>
-                <Text style={styles.profileSetupHeroTitle}>Tell us about you</Text>
-                <Text style={styles.profileSetupHeroText}>A few details will help us personalize your deliveries.</Text>
+                <Text style={styles.profileSetupHeroKicker}>{copy.welcomeToIndiery}</Text>
+                <Text style={styles.profileSetupHeroTitle}>{copy.tellUsAboutYou}</Text>
+                <Text style={styles.profileSetupHeroText}>{copy.personalizeDeliveries}</Text>
               </View>
             ) : null}
             <View style={styles.authForm}>
-              <Text style={styles.authKicker}>Almost there</Text>
-              <Text style={styles.authTitle}>Profile</Text>
-              <Text style={styles.loginSubtitle}>Complete your profile</Text>
+              <Text style={styles.authKicker}>{copy.almostThere}</Text>
+              <Text style={styles.authTitle}>{copy.profile}</Text>
+              <Text style={styles.loginSubtitle}>{copy.completeProfile}</Text>
               <AuthField
-                label="Full name"
+                label={copy.fullName}
                 value={name}
                 onChangeText={setName}
                 icon="person"
@@ -3323,7 +3797,7 @@ function ProfileSetupScreen({
                 onFocus={() => revealProfileField(0)}
               />
               <AuthField
-                label="Email"
+                label={copy.email}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -3332,23 +3806,23 @@ function ProfileSetupScreen({
                 onFocus={() => revealProfileField(60)}
               />
               <AuthField
-                label="City"
+                label={copy.city}
                 value={city}
                 onChangeText={setCity}
                 icon="location"
                 onFocus={() => revealProfileField(130)}
               />
-              <AuthField label="Mobile number" value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
+              <AuthField label={copy.mobileNumber} value={user.phone} editable={false} keyboardType="phone-pad" icon="call" />
               {localError || error ? <Text style={styles.loginError}>{localError || error}</Text> : null}
               {!keyboardVisible ? (
-                <AuthActionButton title={busy ? 'Saving' : 'Continue'} onPress={submit} disabled={busy} />
+                <AuthActionButton title={busy ? copy.saving : copy.continue} onPress={submit} disabled={busy} />
               ) : null}
             </View>
           </View>
         </ScrollView>
         {keyboardVisible ? (
           <View style={styles.authKeyboardFooter}>
-            <AuthActionButton title={busy ? 'Saving' : 'Continue'} onPress={submit} disabled={busy} />
+            <AuthActionButton title={busy ? copy.saving : copy.continue} onPress={submit} disabled={busy} />
           </View>
         ) : null}
       </KeyboardAvoidingView>
@@ -3489,7 +3963,7 @@ function HomeScreen({
   }> = vehicleChoices.map((vehicle) => ({
     id: vehicle.id,
     title: vehicle.shortName,
-    subtitle: `${vehicleCapacityText(vehicle, copy.upTo)} - ${vehicle.etaMinutes} min`,
+    subtitle: `${vehicleCapacityText(vehicle, copy.upTo, copy.kgUnit)} - ${vehicle.etaMinutes} ${copy.min}`,
     vehicle,
     accent: homeVehicleAccent(vehicle)
   }));
@@ -3641,7 +4115,7 @@ function HomeScreen({
           <View style={styles.flex}>
             <Text style={[styles.cardTitle, compact && styles.cardTitleCompact]}>{copy.repeatLastRoute}</Text>
             <Text style={[styles.mutedSmall, compact && styles.mutedSmallCompact]} numberOfLines={small ? 1 : 2}>
-              {lastOrder.pickup.label} to {lastOrder.drop.label}
+              {lastOrder.pickup.label} {copy.to} {lastOrder.drop.label}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={compact ? 16 : 18} color={colors.muted} />
@@ -3649,7 +4123,7 @@ function HomeScreen({
       ) : null}
 
         <View style={[styles.homeAnnouncementHeader, compact && styles.homeAnnouncementHeaderCompact]}>
-          <Text style={[styles.homeAnnouncementTitle, compact && styles.homeAnnouncementTitleCompact]}>Announcements</Text>
+          <Text style={[styles.homeAnnouncementTitle, compact && styles.homeAnnouncementTitleCompact]}>{copy.announcements}</Text>
         </View>
         <View
           style={[styles.homeAnnouncementCarousel, compact && styles.homeAnnouncementCarouselCompact]}
@@ -3748,7 +4222,7 @@ function PickupSearchModal({
       } catch {
         if (requestId === requestSeqRef.current) {
           setSuggestions([]);
-          setLocalError('Location search unavailable');
+          setLocalError(copy.locationSearchUnavailable);
         }
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
@@ -3767,7 +4241,7 @@ function PickupSearchModal({
       onSelectLocation(result.location);
       sessionTokenRef.current = `home-pickup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     } catch {
-      setLocalError('Could not select this location');
+      setLocalError(copy.couldNotSelectLocation);
     } finally {
       setLoading(false);
     }
@@ -3798,7 +4272,7 @@ function PickupSearchModal({
               onPress={onClose}
               hitSlop={4}
               accessibilityRole="button"
-              accessibilityLabel="Close pickup search"
+              accessibilityLabel={copy.closePickupSearch}
             >
               <Ionicons name="arrow-back" size={22} color={colors.ink} />
             </Pressable>
@@ -3870,7 +4344,7 @@ function PickupSearchModal({
   );
 }
 
-function HomeVehicleVisual({
+const HomeVehicleVisual = React.memo(function HomeVehicleVisual({
   vehicle,
   color,
   compact = false,
@@ -3900,7 +4374,7 @@ function HomeVehicleVisual({
       />
     </View>
   );
-}
+});
 
 function LocationPickerField({
   api,
@@ -3965,7 +4439,7 @@ function LocationPickerField({
       } catch {
         if (requestId === requestSeqRef.current) {
           setSuggestions([]);
-          setLocalError('Location suggestions unavailable');
+          setLocalError(copy.locationSuggestionsUnavailable);
         }
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
@@ -3989,7 +4463,7 @@ function LocationPickerField({
       setFocused(false);
       sessionTokenRef.current = `loc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     } catch {
-      setLocalError('Could not select this location');
+      setLocalError(copy.couldNotSelectLocation);
     } finally {
       setLoading(false);
     }
@@ -4171,11 +4645,11 @@ function VehicleChoiceCard({
               <Text style={styles.vehicleSuggestedText}>{copy.suggested}</Text>
             </View>
           ) : null}
-          <Text style={styles.vehicleEta}>{vehicle.etaMinutes} min</Text>
+          <Text style={styles.vehicleEta}>{vehicle.etaMinutes} {copy.min}</Text>
         </View>
       </View>
       <Text style={[styles.vehicleName, disabled && styles.vehicleNameDisabled]}>{vehicle.shortName}</Text>
-      <Text style={styles.mutedSmall}>{vehicleCapacityText(vehicle, copy.upTo)}</Text>
+      <Text style={styles.mutedSmall}>{vehicleCapacityText(vehicle, copy.upTo, copy.kgUnit)}</Text>
       <Text
         style={[
           styles.vehiclePriceLine,
@@ -4243,7 +4717,7 @@ function VehicleFareOption({
           ) : null}
         </View>
         <Text style={[styles.vehicleFareOptionMeta, responsive.isCompact && styles.vehicleFareOptionMetaCompact]}>
-          {vehicleCapacityText(vehicle, copy.upTo)} - {vehicle.etaMinutes} min
+          {vehicleCapacityText(vehicle, copy.upTo, copy.kgUnit)} - {vehicle.etaMinutes} {copy.min}
         </Text>
       </View>
       <View style={[styles.vehicleFareOptionPriceWrap, responsive.isCompact && styles.vehicleFareOptionPriceWrapCompact]}>
@@ -4265,7 +4739,7 @@ function VehicleFareOption({
   );
 }
 
-function VehicleMiniArt({
+const VehicleMiniArt = React.memo(function VehicleMiniArt({
   vehicle,
   muted,
   selected,
@@ -4293,7 +4767,7 @@ function VehicleMiniArt({
       />
     </View>
   );
-}
+});
 
 function BookScreen({
   api,
@@ -4370,8 +4844,8 @@ function BookScreen({
   const hasDropLocation = booking.drop.trim().length > 0;
   const stepMeta: Record<number, { title: string; subtitle: string }> = {
     1: { title: copy.pickupAndDrop, subtitle: booking.pickup || copy.setPickupLocation },
-    2: { title: copy.goodsDetails, subtitle: hasDropLocation ? `${booking.pickup} to ${booking.drop}` : copy.enterDropLocation },
-    3: { title: copy.chooseVehicle, subtitle: fare ? `${fare.distanceKm} km - ${booking.weightKg || 0} kg` : copy.estimating },
+    2: { title: copy.goodsDetails, subtitle: hasDropLocation ? `${booking.pickup} ${copy.to} ${booking.drop}` : copy.enterDropLocation },
+    3: { title: copy.chooseVehicle, subtitle: fare ? `${fare.distanceKm} km - ${booking.weightKg || 0} ${copy.kgUnit}` : copy.estimating },
     4: { title: copy.payment, subtitle: selectedVehicle ? `${selectedVehicle.shortName} - ${selectedFare ? money(selectedFare.total) : copy.estimating}` : copy.selectVehicleValue }
   };
   const currentStepMeta = stepMeta[step] ?? stepMeta[1];
@@ -4603,7 +5077,7 @@ function BookScreen({
       return;
     }
     if (!suggestedVehicle) {
-      setContactError(`No customer vehicle is available for ${bookingWeightKg} kg.`);
+      setContactError(`${copy.noVehicleAvailableForWeight} ${bookingWeightKg} ${copy.kgUnit}.`);
       return;
     }
     const vehicleForEstimate =
@@ -4739,7 +5213,7 @@ function BookScreen({
           }}
           hitSlop={5}
           accessibilityRole="button"
-          accessibilityLabel={step > 1 ? 'Previous booking step' : 'Back to home'}
+          accessibilityLabel={step > 1 ? copy.previousBookingStep : copy.backToHome}
         >
           <Ionicons name="arrow-back" size={responsive.isCompact ? 17 : 20} color={colors.ink} />
         </Pressable>
@@ -4877,7 +5351,7 @@ function BookScreen({
           {bookingWeightKg && !suggestedVehicle ? (
             <View style={styles.notice}>
               <Ionicons name="warning" size={16} color={colors.amber} />
-              <Text style={styles.noticeText}>No customer vehicle is available for {bookingWeightKg} kg.</Text>
+              <Text style={styles.noticeText}>{copy.noVehicleAvailableForWeight} {bookingWeightKg} {copy.kgUnit}.</Text>
             </View>
           ) : null}
           {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
@@ -4983,7 +5457,7 @@ function BookScreen({
               <View style={styles.vehicleFareCopy}>
                 <Text style={[styles.vehicleName, responsive.isCompact && styles.vehicleNameCompact]}>{selectedVehicle.shortName}</Text>
                 <Text style={[styles.vehicleFareMeta, responsive.isCompact && styles.vehicleFareMetaCompact]}>
-                  {vehicleCapacityText(selectedVehicle, copy.upTo)} - {selectedFare?.etaMinutes || selectedVehicle.etaMinutes} min
+                  {vehicleCapacityText(selectedVehicle, copy.upTo, copy.kgUnit)} - {selectedFare?.etaMinutes || selectedVehicle.etaMinutes} {copy.min}
                 </Text>
                 <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.pricedAfterRoute}</Text>
               </View>
@@ -5007,11 +5481,11 @@ function BookScreen({
             <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.bookingSummary}</Text>
             <SummaryRow
               label={copy.route}
-              value={`${composeBookingAddress(booking.pickup, booking.pickupAddressLine)} to ${composeBookingAddress(booking.drop, booking.dropAddressLine)}`}
+              value={`${composeBookingAddress(booking.pickup, booking.pickupAddressLine)} ${copy.to} ${composeBookingAddress(booking.drop, booking.dropAddressLine)}`}
             />
             <SummaryRow label={copy.vehicle} value={selectedVehicle?.shortName || copy.vehicle} />
-            <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} kg`} />
-            <SummaryRow label={copy.eta} value={`${selectedFare?.etaMinutes || selectedVehicle?.etaMinutes || 0} min`} />
+            <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} ${copy.kgUnit}`} />
+            <SummaryRow label={copy.eta} value={`${selectedFare?.etaMinutes || selectedVehicle?.etaMinutes || 0} ${copy.min}`} />
           </View>
           {selectedFare ? <FareCard fare={selectedFare} /> : null}
           {(['upi', 'cash'] as PaymentMode[]).map((mode) => {
@@ -5034,7 +5508,7 @@ function BookScreen({
                   color={colors.customer}
                 />
                 <View style={styles.flex}>
-                  <Text style={[styles.payText, responsive.isCompact && styles.payTextCompact]}>{mode.toUpperCase()}</Text>
+                  <Text style={[styles.payText, responsive.isCompact && styles.payTextCompact]}>{paymentModeLabel(language, mode)}</Text>
                   <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{subtitle}</Text>
                 </View>
               </Pressable>
@@ -5127,7 +5601,7 @@ function BookScreen({
               onPress={() => setGoodsTypePickerOpen(false)}
               hitSlop={3}
               accessibilityRole="button"
-              accessibilityLabel="Close goods category"
+              accessibilityLabel={copy.closeGoodsCategory}
             >
               <Ionicons name="close" size={20} color={colors.ink} />
             </Pressable>
@@ -5222,7 +5696,7 @@ function ContactSummaryCard({
         {complete ? `${name.trim()} - ${phone.trim()}` : copy.addNameMobile}
       </Text>
       <Text style={styles.contactSummaryLocation} numberOfLines={1}>
-        {addressLine.trim() || locationLabel || 'Location not selected'}
+        {addressLine.trim() || locationLabel || copy.locationNotSelected}
       </Text>
       <Pressable style={styles.saveAddressInlineButton} onPress={onSaveAddress}>
         {saving ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="bookmark-outline" size={16} color={colors.customer} />}
@@ -5234,6 +5708,7 @@ function ContactSummaryCard({
 
 function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
   const copy = useCopy();
+  const language = useLanguage();
   const { bottom: bottomInset, left: leftInset, right: rightInset } = useSafeAreaInsets();
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -5261,7 +5736,7 @@ function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
               onPress={onClose}
               hitSlop={3}
               accessibilityRole="button"
-              accessibilityLabel="Close goods rules"
+              accessibilityLabel={copy.closeGoodsRules}
             >
               <Ionicons name="close" size={20} color={colors.ink} />
             </Pressable>
@@ -5272,7 +5747,7 @@ function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
                 <Ionicons name="checkmark-circle" size={18} color={colors.green} />
                 <Text style={styles.goodsRulesPanelTitle}>{copy.allowedGoods}</Text>
               </View>
-              {allowedGoodsItems.map((item) => (
+              {(language === 'hi' ? allowedGoodsItemsHi : allowedGoodsItems).map((item) => (
                 <View key={item} style={styles.goodsRulesItem}>
                   <View style={[styles.goodsRulesBullet, styles.goodsRulesBulletAllowed]} />
                   <Text style={styles.goodsRulesItemText}>{item}</Text>
@@ -5284,7 +5759,7 @@ function GoodsRulesSheet({ onClose }: { onClose: () => void }) {
                 <Ionicons name="ban" size={18} color={colors.red} />
                 <Text style={styles.goodsRulesPanelTitle}>{copy.notAllowedGoods}</Text>
               </View>
-              {restrictedGoodsItems.map((item) => (
+              {(language === 'hi' ? restrictedGoodsItemsHi : restrictedGoodsItems).map((item) => (
                 <View key={item} style={styles.goodsRulesItem}>
                   <View style={[styles.goodsRulesBullet, styles.goodsRulesBulletRestricted]} />
                   <Text style={styles.goodsRulesItemText}>{item}</Text>
@@ -5387,7 +5862,7 @@ function InlineExactLocationPicker({
       } catch {
         if (requestId === requestSeqRef.current) {
           setSuggestions([]);
-          setLocalError('Location search unavailable');
+          setLocalError(copy.locationSearchUnavailable);
         }
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
@@ -5443,7 +5918,7 @@ function InlineExactLocationPicker({
       onLocationChange(result.location);
       sessionTokenRef.current = `inline-map-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     } catch {
-      setLocalError('Could not move map to this place');
+      setLocalError(copy.couldNotMoveMap);
     } finally {
       setLoading(false);
     }
@@ -5554,9 +6029,7 @@ function InlineExactLocationPicker({
         ) : (
           <View style={styles.mapPickerFallback}>
             <Ionicons name="map-outline" size={28} color={colors.customer} />
-            <Text style={styles.mapPickerFallbackText}>
-              Map preview needs Google Maps setup. Search a place or use current location to continue.
-            </Text>
+            <Text style={styles.mapPickerFallbackText}>{copy.mapPreviewUnavailable}</Text>
           </View>
         )}
         <Pressable
@@ -5564,7 +6037,7 @@ function InlineExactLocationPicker({
           onPress={onBack}
           hitSlop={5}
           accessibilityRole="button"
-          accessibilityLabel={expanded ? 'Close expanded map' : 'Close location details'}
+          accessibilityLabel={expanded ? copy.closeExpandedMap : copy.closeLocationDetails}
         >
           <Ionicons name="arrow-back" size={responsive.isCompact ? 19 : 22} color={colors.ink} />
         </Pressable>
@@ -5589,7 +6062,7 @@ function InlineExactLocationPicker({
           onPress={onToggleExpanded}
           hitSlop={3}
           accessibilityRole="button"
-          accessibilityLabel={expanded ? 'Minimize map' : 'Maximize map'}
+          accessibilityLabel={expanded ? copy.minimizeMap : copy.maximizeMap}
         >
           <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={responsive.isCompact ? 18 : 21} color={colors.customer} />
         </Pressable>
@@ -5829,7 +6302,7 @@ function ContactDetailsModal({
       <View style={[styles.contactResponsiveFooterContent, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
         {localError ? <Text style={styles.contactFooterError}>{localError}</Text> : null}
         <Pressable style={[styles.contactConfirmButton, responsive.isCompact && styles.contactConfirmButtonCompact]} onPress={saveDetails}>
-          <Text style={[styles.contactConfirmButtonText, responsive.isCompact && styles.contactConfirmButtonTextCompact]}>{primaryTitle || 'Confirm and continue'}</Text>
+          <Text style={[styles.contactConfirmButtonText, responsive.isCompact && styles.contactConfirmButtonTextCompact]}>{primaryTitle || copy.confirmAndContinue}</Text>
         </Pressable>
       </View>
     </View>
@@ -5929,9 +6402,9 @@ function ContactDetailsModal({
                 onPress={onChangeLocation || onClose}
                 hitSlop={7}
                 accessibilityRole="button"
-                accessibilityLabel="Change location"
+                accessibilityLabel={copy.changeLocation}
               >
-                <Text style={[styles.contactChangeButtonText, responsive.isCompact && styles.contactChangeButtonTextCompact]}>Change</Text>
+                <Text style={[styles.contactChangeButtonText, responsive.isCompact && styles.contactChangeButtonTextCompact]}>{copy.change}</Text>
               </Pressable>
             </View>
             <ContactFormField
@@ -5957,17 +6430,17 @@ function ContactDetailsModal({
               hitSlop={8}
               accessibilityRole="checkbox"
               accessibilityState={{ checked: usingMine }}
-              accessibilityLabel={`Use my mobile number ${user.phone}`}
+              accessibilityLabel={`${copy.useMyMobileNumber} ${user.phone}`}
             >
               <Ionicons name={usingMine ? 'checkbox' : 'square-outline'} size={18} color={colors.customer} />
-              <Text style={[styles.contactMobileCheckText, responsive.isCompact && styles.contactMobileCheckTextCompact]}>Use my mobile number: {user.phone}</Text>
+              <Text style={[styles.contactMobileCheckText, responsive.isCompact && styles.contactMobileCheckTextCompact]}>{copy.useMyMobileNumber}: {user.phone}</Text>
             </Pressable>
-            <Text style={[styles.contactSaveAsLabel, responsive.isCompact && styles.contactSaveAsLabelCompact]}>Save this address as</Text>
+            <Text style={[styles.contactSaveAsLabel, responsive.isCompact && styles.contactSaveAsLabelCompact]}>{copy.saveThisAddressAs}</Text>
             <View style={[styles.contactTypeRow, responsive.isCompact && styles.contactTypeRowCompact]}>
               {[
-                { type: 'home' as const, icon: 'home' as const, label: 'Home' },
-                { type: 'work' as const, icon: 'business' as const, label: 'Shop' },
-                { type: 'other' as const, icon: 'heart' as const, label: 'Other' }
+                { type: 'home' as const, icon: 'home' as const, label: copy.homeAddress },
+                { type: 'work' as const, icon: 'business' as const, label: copy.shopAddress },
+                { type: 'other' as const, icon: 'heart' as const, label: copy.otherAddress }
               ].map((option) => {
                 const active = selectedAddressType === option.type;
                 return (
@@ -5982,7 +6455,7 @@ function ContactDetailsModal({
                     hitSlop={6}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: active }}
-                    accessibilityLabel={`Save address as ${option.label}`}
+                    accessibilityLabel={`${copy.saveAddressAs} ${option.label}`}
                   >
                     <Ionicons name={option.icon} size={13} color={active ? colors.customer : colors.ink} />
                     <Text style={[
@@ -6096,7 +6569,7 @@ function MapLocationPicker({
       } catch {
         if (requestId === requestSeqRef.current) {
           setSuggestions([]);
-          setLocalError('Location search unavailable');
+          setLocalError(copy.locationSearchUnavailable);
         }
       } finally {
         if (requestId === requestSeqRef.current) setLoading(false);
@@ -6123,7 +6596,7 @@ function MapLocationPicker({
       setSuggestions([]);
       sessionTokenRef.current = `map-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     } catch {
-      setLocalError('Could not move map to this place');
+      setLocalError(copy.couldNotMoveMap);
     } finally {
       setLoading(false);
     }
@@ -6179,7 +6652,7 @@ function MapLocationPicker({
 
   function confirmPin() {
     if (!hasValidCoordinates(lat, lng)) {
-      setLocalError('Select a valid location first');
+      setLocalError(copy.selectValidLocationFirst);
       return;
     }
     onConfirm({
@@ -6211,7 +6684,7 @@ function MapLocationPicker({
             onPress={onClose}
             hitSlop={3}
             accessibilityRole="button"
-            accessibilityLabel="Close location map"
+            accessibilityLabel={copy.closeLocationMap}
           >
             <Ionicons name="close" size={22} color={colors.ink} />
           </Pressable>
@@ -6275,9 +6748,7 @@ function MapLocationPicker({
           ) : (
             <View style={styles.mapPickerFallback}>
               <Ionicons name="map-outline" size={32} color={colors.customer} />
-              <Text style={styles.mapPickerFallbackText}>
-                Map preview needs Google Maps setup. Search a place or use current location to continue.
-              </Text>
+              <Text style={styles.mapPickerFallbackText}>{copy.mapPreviewUnavailable}</Text>
             </View>
           )}
         </View>
@@ -6594,7 +7065,7 @@ function OrdersScreen({
                     style={styles.mapPickerClose}
                     onPress={() => setHistoryFilterOpen(false)}
                     accessibilityRole="button"
-                    accessibilityLabel="Close order filters"
+                    accessibilityLabel={copy.closeOrderFilters}
                   >
                     <Ionicons name="close" size={20} color={colors.ink} />
                   </Pressable>
@@ -6734,7 +7205,7 @@ function OrderDetailsPanel({
                 onPress={onClose}
                 hitSlop={9}
                 accessibilityRole="button"
-                accessibilityLabel="Close order details"
+                accessibilityLabel={copy.closeOrderDetails}
               >
                 <Ionicons name="close" size={responsive.isCompact ? 14 : 16} color={colors.ink} />
               </Pressable>
@@ -6783,13 +7254,13 @@ function OrderDetailsPanel({
             <Text style={[styles.liveOrderMetricLabel, responsive.isCompact && styles.liveOrderMetricLabelCompact]}>{copy.vehicle}</Text>
           </View>
           <View style={[styles.liveOrderMetric, responsive.isCompact && styles.liveOrderMetricCompact]}>
-            <Text style={[styles.liveOrderMetricValue, responsive.isCompact && styles.liveOrderMetricValueCompact]}>{order.weightKg} kg</Text>
+            <Text style={[styles.liveOrderMetricValue, responsive.isCompact && styles.liveOrderMetricValueCompact]}>{order.weightKg} {copy.kgUnit}</Text>
             <Text style={[styles.liveOrderMetricLabel, responsive.isCompact && styles.liveOrderMetricLabelCompact]}>{goodsLabel(language, order.goodsType)}</Text>
           </View>
           <View style={[styles.liveOrderMetric, responsive.isCompact && styles.liveOrderMetricCompact]}>
             <Text style={[styles.liveOrderMetricValue, responsive.isCompact && styles.liveOrderMetricValueCompact]}>{money(order.fare.total)}</Text>
             <Text style={[styles.liveOrderMetricLabel, responsive.isCompact && styles.liveOrderMetricLabelCompact]} numberOfLines={1}>
-              {order.paymentMode.toUpperCase()} - {order.paymentStatus.toUpperCase()}
+              {paymentModeLabel(language, order.paymentMode)} - {paymentStatusLabel(language, order.paymentStatus)}
             </Text>
           </View>
         </View>
@@ -6824,8 +7295,8 @@ function OrderDetailsPanel({
             </View>
             <View style={styles.flex}>
               <Text style={styles.cardTitle}>{order.partner.name}</Text>
-              <Text style={styles.mutedSmall}>Mobile: {order.partner.phone}</Text>
-              <Text style={styles.mutedSmall}>Vehicle: {order.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
+              <Text style={styles.mutedSmall}>{copy.mobileLabel}: {order.partner.phone}</Text>
+              <Text style={styles.mutedSmall}>{copy.vehicleLabel}: {order.partner.partnerProfile?.vehicleNumber || copy.vehicleAssigned}</Text>
             </View>
           </View>
         ) : orderActive ? (
@@ -7020,7 +7491,7 @@ function WalletScreen({
               style={styles.walletRechargeInput}
               value={rechargeAmountInput}
               onChangeText={updateRechargeAmount}
-              placeholder="Enter recharge amount"
+              placeholder={copy.enterRechargeAmount}
               placeholderTextColor={colors.muted}
               keyboardType="decimal-pad"
               maxLength={8}
@@ -7082,6 +7553,7 @@ function WalletScreen({
 
 function CoinActivityRow({ item, showDivider = false }: { item: LedgerItem; showDivider?: boolean }) {
   const isCredit = item.kind === 'credit';
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
   return (
     <View style={[
@@ -7097,8 +7569,8 @@ function CoinActivityRow({ item, showDivider = false }: { item: LedgerItem; show
         <Ionicons name={isCredit ? 'chevron-up' : 'chevron-down'} size={responsive.isCompact ? 15 : 18} color={isCredit ? colors.green : colors.red} />
       </View>
       <View style={styles.flex}>
-        <Text style={[styles.coinActivityTitle, responsive.isCompact && styles.coinActivityTitleCompact]}>{item.title}</Text>
-        <Text style={[styles.coinActivityDate, responsive.isCompact && styles.coinActivityDateCompact]}>{formatCoinActivityDate(item.createdAt)}</Text>
+        <Text style={[styles.coinActivityTitle, responsive.isCompact && styles.coinActivityTitleCompact]}>{ledgerTitle(language, item.title)}</Text>
+        <Text style={[styles.coinActivityDate, responsive.isCompact && styles.coinActivityDateCompact]}>{formatCoinActivityDate(item.createdAt, language)}</Text>
       </View>
       <Text style={[
         styles.coinActivityAmount,
@@ -7346,7 +7818,7 @@ function AccountScreen({
             onPress={() => openPage('personal')}
             hitSlop={5}
             accessibilityRole="button"
-            accessibilityLabel="Edit personal details"
+            accessibilityLabel={copy.editPersonalDetails}
           >
             <Ionicons name="create-outline" size={responsive.isCompact ? 16 : 18} color={colors.customer} />
           </Pressable>
@@ -7423,6 +7895,7 @@ function AccountScreen({
 }
 
 function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+  const copy = useCopy();
   const responsive = useResponsiveLayout();
   return (
     <View style={[styles.accountDetailHeader, responsive.isCompact && styles.accountDetailHeaderCompact]}>
@@ -7431,7 +7904,7 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
         onPress={onBack}
         hitSlop={3}
         accessibilityRole="button"
-        accessibilityLabel="Go back"
+        accessibilityLabel={copy.goBack}
       >
         <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.ink} />
       </Pressable>
@@ -7485,7 +7958,7 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
           onPress={onBack}
           hitSlop={3}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+        accessibilityLabel={copy.goBack}
         >
           <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.ink} />
         </Pressable>
@@ -7740,7 +8213,9 @@ function PolicyCard({
   onPress: () => void;
 }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
+  const displayedPolicy = language === 'hi' ? customerLegalPoliciesHi[policy.id] : policy;
   const icons: Record<LegalPolicy['id'], keyof typeof Ionicons.glyphMap> = {
     privacy: 'lock-closed',
     terms: 'document-text',
@@ -7754,9 +8229,9 @@ function PolicyCard({
           <Ionicons name={icons[policy.id]} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
         </View>
         <View style={styles.flex}>
-          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact]}>{policy.title}</Text>
-          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.updated} {policy.updatedAt}</Text>
-          <Text style={[styles.policySummary, responsive.isCompact && styles.policySummaryCompact]}>{policy.summary}</Text>
+          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact]}>{displayedPolicy.title}</Text>
+          <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.updated} {displayedPolicy.updatedAt}</Text>
+          <Text style={[styles.policySummary, responsive.isCompact && styles.policySummaryCompact]}>{displayedPolicy.summary}</Text>
         </View>
         <Ionicons name="chevron-forward" size={responsive.isCompact ? 16 : 18} color={colors.muted} />
       </Pressable>
@@ -7766,18 +8241,20 @@ function PolicyCard({
 
 function AccountPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: () => void }) {
   const copy = useCopy();
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
+  const displayedPolicy = language === 'hi' ? customerLegalPoliciesHi[policy.id] : policy;
   return (
     <ScrollView
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
-      <AccountDetailHeader title={policy.title} subtitle={`${copy.updated} ${policy.updatedAt}`} onBack={onBack} />
+      <AccountDetailHeader title={displayedPolicy.title} subtitle={`${copy.updated} ${displayedPolicy.updatedAt}`} onBack={onBack} />
       <View style={[styles.policyDetailHero, responsive.isCompact && styles.policyDetailHeroCompact]}>
         <Ionicons name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'} size={responsive.isCompact ? 21 : 24} color={colors.customer} />
-        <Text style={[styles.policyDetailSummary, responsive.isCompact && styles.policyDetailSummaryCompact]}>{policy.summary}</Text>
+        <Text style={[styles.policyDetailSummary, responsive.isCompact && styles.policyDetailSummaryCompact]}>{displayedPolicy.summary}</Text>
       </View>
-      {policy.sections.map((section) => (
+      {displayedPolicy.sections.map((section) => (
         <View key={section.heading} style={[styles.policyDetailSection, responsive.isCompact && styles.policyDetailSectionCompact]}>
           <Text style={[styles.policyHeading, responsive.isCompact && styles.policyHeadingCompact]}>{section.heading}</Text>
           {section.body.map((line) => (
@@ -7991,7 +8468,7 @@ function OrderCard({
       <View style={[styles.orderCardHeader, responsive.isCompact && styles.orderCardHeaderCompact]}>
         <View>
           <Text style={[styles.orderNo, responsive.isCompact && styles.orderNoCompact]}>{order.orderNo}</Text>
-          <Text style={[styles.orderCardDate, responsive.isCompact && styles.orderCardDateCompact]}>{formatOrderCardDateTime(order.createdAt)}</Text>
+          <Text style={[styles.orderCardDate, responsive.isCompact && styles.orderCardDateCompact]}>{formatOrderCardDateTime(order.createdAt, language)}</Text>
         </View>
         <Badge label={statusLabel(language, order.status)} />
       </View>
@@ -8232,6 +8709,7 @@ function MapPreview({
                 title={label}
                 description={item.point.label}
                 pinColor={pinColor}
+                tracksViewChanges={false}
               />
             );
           })}
@@ -8283,6 +8761,7 @@ function MapPreview({
 }
 
 function Timeline({ items }: { items: Order['timeline'] }) {
+  const language = useLanguage();
   const responsive = useResponsiveLayout();
   return (
     <View style={[styles.card, responsive.isCompact && styles.cardCompact]}>
@@ -8299,8 +8778,8 @@ function Timeline({ items }: { items: Order['timeline'] }) {
             {item.state === 'done' ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
           </View>
           <View style={styles.flex}>
-            <Text style={[styles.timelineTitle, responsive.isCompact && styles.timelineTitleCompact]}>{item.title}</Text>
-            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{item.note}</Text>
+            <Text style={[styles.timelineTitle, responsive.isCompact && styles.timelineTitleCompact]}>{timelineTitle(language, item.key, item.title)}</Text>
+            <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{timelineNote(language, item.key, item.note ?? '')}</Text>
           </View>
         </View>
       ))}
@@ -8315,6 +8794,7 @@ function FareCard({
   fare: FareBreakup;
   customerCancellation?: Order['customerCancellation'];
 }) {
+  const copy = useCopy();
   const responsive = useResponsiveLayout();
   const waitingFare = fare as FareBreakup & {
     waitingCharge?: number;
@@ -8327,31 +8807,31 @@ function FareCard({
     typeof waitingFare.waitingFreeMinutes === 'number' && typeof waitingFare.waitingPerMinute === 'number';
   return (
     <View style={[styles.fareCard, responsive.isCompact && styles.fareCardCompact]}>
-      <FareRow label={`Distance charge (${fare.billableKm} billable km)`} value={money(fare.distance)} />
-      <FareRow label="Order value" value={money(fare.orderValue)} />
+      <FareRow label={`${copy.distanceCharge} (${fare.billableKm} ${copy.billable} km)`} value={money(fare.distance)} />
+      <FareRow label={copy.orderValue} value={money(fare.orderValue)} />
       {waitingCharge > 0 ? (
         <FareRow
-          label={`Waiting charge (${waitingFare.billableWaitingMinutes ?? 0} min)`}
+          label={`${copy.waitingCharge} (${waitingFare.billableWaitingMinutes ?? 0} ${copy.min})`}
           value={`+${money(waitingCharge)}`}
         />
       ) : null}
-      <FareRow label="Coins" value={`-${money(fare.coins)}`} />
+      <FareRow label={copy.coins} value={`-${money(fare.coins)}`} />
       {hasWaitingPolicy ? (
         <Text style={[styles.farePolicyText, responsive.isCompact && styles.farePolicyTextCompact]}>
-          Waiting: {waitingFare.waitingFreeMinutes} min free, then {money(waitingFare.waitingPerMinute)}/min
+          {copy.waiting}: {waitingFare.waitingFreeMinutes} {copy.min} {copy.freeThen} {money(waitingFare.waitingPerMinute)} {copy.perMinute}
         </Text>
       ) : null}
       <View style={styles.divider} />
-      <FareRow label="Total" value={money(fare.total)} bold />
+      <FareRow label={copy.total} value={money(fare.total)} bold />
       {customerCancellation ? (
         <>
           <View style={styles.divider} />
-          <FareRow label="Cancellation charge" value={money(customerCancellation.charge)} bold />
+          <FareRow label={copy.cancellationCharge} value={money(customerCancellation.charge)} bold />
           {customerCancellation.refundAmount > 0 ? (
-            <FareRow label="Refund added to wallet" value={money(customerCancellation.refundAmount)} />
+            <FareRow label={copy.refundAddedToCoins} value={money(customerCancellation.refundAmount)} />
           ) : null}
           {customerCancellation.coinDebit > 0 ? (
-            <FareRow label="Charged to Indiery Coins" value={money(customerCancellation.coinDebit)} />
+            <FareRow label={copy.chargedToCoins} value={money(customerCancellation.coinDebit)} />
           ) : null}
         </>
       ) : null}

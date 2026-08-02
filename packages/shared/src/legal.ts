@@ -229,7 +229,7 @@ export const legalPolicies: LegalPolicy[] = [
       {
         heading: 'Before partner acceptance',
         body: [
-          'A customer may cancel any time before pickup without a cancellation charge. Any captured prepaid amount and eligible coins are returned through the supported refund method.',
+          'A customer may cancel any time before pickup without a cancellation charge. Any eligible cancellation refund and previously used Coins are credited to the customer as Indiery Coins.',
           'A payment authorization that was not captured may disappear according to the bank or payment provider’s processing time.'
         ]
       },
@@ -251,9 +251,9 @@ export const legalPolicies: LegalPolicy[] = [
       {
         heading: 'Refund method and timing',
         body: [
-          'Eligible refunds are returned to the original payment method, Indiery wallet, or another method supported and disclosed by the payment provider.',
-          'Indiery initiates an approved refund promptly, but the time for a bank, card, UPI provider, or gateway to display it is controlled by that provider.',
-          'Eligible promotional coins are normally restored to the account. Promotional credits generally cannot be converted to cash.'
+          'Approved customer cancellation refunds under this policy are credited to Indiery Coins after any applicable cancellation charge is deducted. They are not added to the cash wallet or returned to the original UPI, card, or bank account.',
+          'The Indiery Coins balance is updated when the cancellation is successfully processed. Network or server availability may affect how quickly the updated balance appears in the app.',
+          'Previously used eligible Coins are restored separately. Indiery Coins are in-app credits for eligible Indiery orders and cannot be withdrawn or converted to cash, except where applicable law requires otherwise.'
         ]
       },
       {

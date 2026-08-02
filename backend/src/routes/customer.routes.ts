@@ -191,27 +191,6 @@ async function debitCustomerCoinsToLimit(input: {
   throw new ApiError(409, 'Coin balance changed. Please retry the cancellation.');
 }
 
-async function creditCustomerWallet(input: {
-  userId: string | Types.ObjectId;
-  orderId?: string | Types.ObjectId;
-  amount: number;
-  title: string;
-  reference?: string;
-}) {
-  if (input.amount <= 0) return;
-  await User.updateOne({ _id: input.userId }, { $inc: { 'customerProfile.walletBalance': input.amount } });
-  await WalletLedger.create({
-    user: input.userId,
-    order: input.orderId,
-    amount: input.amount,
-    kind: 'credit',
-    bucket: 'cash',
-    title: input.title,
-    reference: input.reference,
-    settled: true
-  });
-}
-
 async function debitCustomerWallet(input: {
   userId: string | Types.ObjectId;
   orderId?: string | Types.ObjectId;
@@ -640,7 +619,7 @@ customerRouter.post(
       waitingCharge: order.fare.waitingCharge ?? 0,
       prepaid
     });
-    const walletRefundAmount = cancellationPayment.refundAmount;
+    const coinRefundAmount = cancellationPayment.refundAmount;
     const shouldRefundCoins = order.fare.coins > 0 && (order.paymentStatus === 'paid' || order.paymentMode === 'cash');
 
     const cancellationReason = String(req.body?.reason || 'Cancelled by customer');
@@ -648,7 +627,7 @@ customerRouter.post(
     const customerCancellation = {
       policy: cancellation.policy,
       charge: cancellation.charge,
-      refundAmount: walletRefundAmount,
+      refundAmount: coinRefundAmount,
       partnerCredit: cancellation.partnerCredit,
       platformCommission: cancellation.platformCommission,
       coinDebit: 0,
@@ -671,7 +650,7 @@ customerRouter.post(
         settledAt: cancelledAt
       };
     }
-    if (walletRefundAmount > 0) transitionValues.paymentStatus = 'refunded';
+    if (coinRefundAmount > 0) transitionValues.paymentStatus = 'refunded';
     const transition = await Order.updateOne(
       { _id: order._id, customer: req.auth!.userId, status: order.status },
       { $set: transitionValues },
@@ -682,14 +661,19 @@ customerRouter.post(
     order.cancellationReason = cancellationReason;
     order.set('timeline', cancelledTimeline);
     order.set('customerCancellation', customerCancellation);
-    if (walletRefundAmount > 0) order.paymentStatus = 'refunded';
+    if (coinRefundAmount > 0) order.paymentStatus = 'refunded';
 
-    if (walletRefundAmount > 0) {
-      await creditCustomerWallet({
+    if (coinRefundAmount > 0) {
+      await User.updateOne(
+        { _id: req.auth!.userId },
+        { $inc: { 'customerProfile.coins': coinRefundAmount } }
+      );
+      await addCoinLedger({
         userId: req.auth!.userId,
         orderId: order._id,
-        amount: walletRefundAmount,
-        title: `Wallet refund ${order.orderNo}`,
+        amount: coinRefundAmount,
+        kind: 'credit',
+        title: `Cancellation refund ${order.orderNo}`,
         reference: order.orderNo
       });
     }
@@ -744,8 +728,8 @@ customerRouter.post(
     const chargeText = cancellation.charge > 0
       ? ` A 10% cancellation charge of INR ${cancellation.charge} was applied.`
       : ' No cancellation charge was applied.';
-    const refundText = walletRefundAmount > 0
-      ? ` INR ${walletRefundAmount} was added to your wallet.`
+    const refundText = coinRefundAmount > 0
+      ? ` INR ${coinRefundAmount} was added to Indiery Coins.`
       : cancellationCoinDebit > 0
         ? ` INR ${cancellationCoinDebit} was debited from Indiery Coins.`
         : shouldRefundCoins
@@ -765,7 +749,7 @@ customerRouter.post(
     res.json({
       order: fullOrder ? serializeOrder(fullOrder, { includeTripOtp: true }) : undefined,
       cancellationCharge: cancellation.charge,
-      refundAmount: walletRefundAmount,
+      refundAmount: coinRefundAmount,
       coinDebit: cancellationCoinDebit,
       wallet,
       user: customer ? serializeUser(customer) : undefined

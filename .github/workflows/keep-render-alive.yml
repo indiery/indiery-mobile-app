@@ -1,0 +1,17 @@
+name: Keep Render Server Alive
+
+on:
+  schedule:
+    - cron: '*/12 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping Indiery API
+        run: curl --fail --silent --show-error --max-time 45 https://indiery-mobile-app-1.onrender.com/health

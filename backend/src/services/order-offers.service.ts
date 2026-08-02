@@ -107,14 +107,17 @@ async function eligiblePartnersForOrder(order: OrderDocument) {
     .map((item) => item.partner);
 }
 
-function scheduleOfferAdvance(orderId: string) {
+function scheduleOfferAdvance(orderId: string, expiresAt?: Date | null) {
   const existing = offerTimers.get(orderId);
   if (existing) clearTimeout(existing);
 
+  const delay = expiresAt
+    ? Math.max(0, expiresAt.getTime() - Date.now()) + 500
+    : DRIVER_OFFER_TIMEOUT_MS + 500;
   const timer = setTimeout(() => {
     offerTimers.delete(orderId);
-    offerOrderToNextDrivers(orderId, { force: true, reason: 'timeout' }).catch(() => undefined);
-  }, DRIVER_OFFER_TIMEOUT_MS + 500);
+    offerOrderToNextDrivers(orderId, { reason: 'timeout' }).catch(() => undefined);
+  }, delay);
   offerTimers.set(orderId, timer);
 }
 
@@ -170,47 +173,71 @@ async function emitOfferUpdates(orderId: string, partnerIds: string[] = []) {
 
 export async function offerOrderToNextDrivers(
   orderId: string | Types.ObjectId,
-  options: { force?: boolean; reason?: 'new' | 'payment' | 'timeout' | 'reject' | 'refresh' | 'driver_cancel' } = {}
+  options: { reason?: 'new' | 'payment' | 'timeout' | 'reject' | 'refresh' | 'driver_cancel' } = {}
 ) {
-  const order = await Order.findById(orderId);
-  if (!order || !canDispatchOrder(order)) return undefined;
+  // A refresh, timeout and rejection can all reach this function together. Retry
+  // once if another caller wins the atomic update, then observe its fresh batch.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const order = await Order.findById(orderId);
+    if (!order || !canDispatchOrder(order)) return undefined;
 
-  const now = new Date();
-  const currentBatchIds = idsFromOrderField(order.offeredPartnerIds as unknown[]);
-  const expiresAt = order.offerExpiresAt ? new Date(order.offerExpiresAt).getTime() : 0;
-  const currentBatchActive = currentBatchIds.length > 0 && expiresAt > Date.now();
-  if (currentBatchActive && !options.force) {
-    scheduleOfferAdvance(String(order._id));
-    return emitOfferUpdates(String(order._id), currentBatchIds);
+    const now = new Date();
+    const currentBatchIds = idsFromOrderField(order.offeredPartnerIds as unknown[]);
+    const expiresAt = order.offerExpiresAt ? new Date(order.offerExpiresAt) : undefined;
+    const offerWindowActive = Boolean(expiresAt && expiresAt.getTime() > now.getTime());
+    if (offerWindowActive) {
+      scheduleOfferAdvance(String(order._id), expiresAt);
+      return emitOfferUpdates(String(order._id), currentBatchIds);
+    }
+
+    const eligiblePartners = await eligiblePartnersForOrder(order);
+    const nextPartners = eligiblePartners.slice(0, DRIVER_OFFER_BATCH_SIZE);
+    const nextPartnerIds = nextPartners.map((partner) => String(partner._id));
+    const notifiedIds = Array.from(new Set([
+      ...idsFromOrderField(order.notifiedPartnerIds as unknown[]),
+      ...nextPartnerIds
+    ]));
+    const nextExpiresAt = new Date(now.getTime() + DRIVER_OFFER_TIMEOUT_MS);
+
+    setOrderStatusTimeline(order, nextPartners.length ? 'offered' : 'searching');
+
+    const updatedOrder = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        __v: order.__v,
+        status: { $in: ['searching', 'offered'] },
+        $and: [
+          { $or: [{ partner: { $exists: false } }, { partner: null }] },
+          { $or: [{ paymentStatus: 'paid' }, { paymentMode: 'cash' }] }
+        ]
+      },
+      {
+        $set: {
+          status: order.status,
+          timeline: order.timeline,
+          offeredPartnerIds: objectIds(nextPartnerIds),
+          notifiedPartnerIds: objectIds(notifiedIds),
+          offerBatchStartedAt: now,
+          offerExpiresAt: nextExpiresAt
+        },
+        $inc: { offerBatch: 1, __v: 1 }
+      },
+      { new: true, runValidators: true }
+    );
+    if (!updatedOrder) continue;
+
+    await emitOfferUpdates(String(updatedOrder._id), nextPartnerIds);
+    if (nextPartners.length) {
+      await sendPartnerBatchPush(updatedOrder, nextPartners);
+    }
+    if (options.reason === 'new' || options.reason === 'payment') {
+      await sendCustomerSearchPush(updatedOrder, nextPartners.length);
+    }
+    scheduleOfferAdvance(String(updatedOrder._id), nextExpiresAt);
+    return serializeOrder((await populatedOrder(updatedOrder._id)) ?? updatedOrder);
   }
 
-  const eligiblePartners = await eligiblePartnersForOrder(order);
-  const nextPartners = eligiblePartners.slice(0, DRIVER_OFFER_BATCH_SIZE);
-  const nextPartnerIds = nextPartners.map((partner) => String(partner._id));
-  const notifiedIds = Array.from(new Set([...idsFromOrderField(order.notifiedPartnerIds as unknown[]), ...nextPartnerIds]));
-
-  order.offeredPartnerIds = objectIds(nextPartnerIds);
-  order.notifiedPartnerIds = objectIds(notifiedIds);
-  order.offerBatch = (order.offerBatch ?? 0) + 1;
-  order.offerBatchStartedAt = now;
-  order.offerExpiresAt = new Date(now.getTime() + DRIVER_OFFER_TIMEOUT_MS);
-
-  if (nextPartners.length) {
-    setOrderStatusTimeline(order, 'offered');
-  } else {
-    setOrderStatusTimeline(order, 'searching');
-  }
-
-  await order.save();
-  await emitOfferUpdates(String(order._id), nextPartnerIds);
-  if (nextPartners.length) {
-    await sendPartnerBatchPush(order, nextPartners);
-  }
-  if (options.reason === 'new' || options.reason === 'payment') {
-    await sendCustomerSearchPush(order, nextPartners.length);
-  }
-  scheduleOfferAdvance(String(order._id));
-  return serializeOrder((await populatedOrder(order._id)) ?? order);
+  return undefined;
 }
 
 export async function advanceExpiredOrderOffers(vehicleId?: string) {
@@ -224,7 +251,7 @@ export async function advanceExpiredOrderOffers(vehicleId?: string) {
         $or: [
           { offerExpiresAt: { $lte: now } },
           { offerExpiresAt: { $exists: false } },
-          { offeredPartnerIds: { $size: 0 } }
+          { offerExpiresAt: null }
         ]
       }
     ]
@@ -232,7 +259,7 @@ export async function advanceExpiredOrderOffers(vehicleId?: string) {
   if (vehicleId) query.vehicle = vehicleId;
 
   const orders = await Order.find(query).sort({ createdAt: 1 }).limit(10);
-  await Promise.all(orders.map((order) => offerOrderToNextDrivers(order._id, { force: true, reason: 'refresh' })));
+  await Promise.all(orders.map((order) => offerOrderToNextDrivers(order._id, { reason: 'refresh' })));
 }
 
 export async function rejectDriverOffer(orderId: string, partnerId: string) {
@@ -245,10 +272,14 @@ export async function rejectDriverOffer(orderId: string, partnerId: string) {
   const remainingBatchIds = currentBatchIds.filter((id) => id !== partnerId);
   order.rejectedPartnerIds = objectIds(rejectedIds);
   order.offeredPartnerIds = objectIds(remainingBatchIds);
+  if (!remainingBatchIds.length) {
+    order.set('offerBatchStartedAt', undefined);
+    order.set('offerExpiresAt', undefined);
+  }
   await order.save();
 
   if (!remainingBatchIds.length) {
-    await offerOrderToNextDrivers(order._id, { force: true, reason: 'reject' });
+    await offerOrderToNextDrivers(order._id, { reason: 'reject' });
   } else {
     await emitOfferUpdates(String(order._id), remainingBatchIds);
   }

@@ -15,3 +15,6 @@ yarn-error.log*
 data/
 google-services.json
 GoogleService-Info.plist
+*.jks
+credentials.json
+release-artifacts/

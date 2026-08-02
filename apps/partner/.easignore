@@ -13,6 +13,8 @@ android/.externalNativeBuild/
 *.apk
 *.aab
 *.tsbuildinfo
+*.jks
+credentials.json
 
 !google-services.json
 !android/app/google-services.json

@@ -8,11 +8,6 @@
     "orientation": "default",
     "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -46,7 +41,6 @@
     "android": {
       "package": "com.indeiry",
       "allowBackup": false,
-      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "blockedPermissions": [
@@ -63,8 +57,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/app-icon.png",
         "backgroundColor": "#002B49"
-      },
-      "usesCleartextTraffic": false
+      }
     }
   }
 }

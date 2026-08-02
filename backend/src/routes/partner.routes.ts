@@ -625,7 +625,7 @@ partnerRouter.post(
       .catch((error) => {
         console.error('Unable to send driver-cancel notification', error);
       });
-    void offerOrderToNextDrivers(transitionedOrder._id, { force: true, reason: 'driver_cancel' }).catch((error) => {
+    void offerOrderToNextDrivers(transitionedOrder._id, { reason: 'driver_cancel' }).catch((error) => {
       console.error('Unable to immediately reassign driver-cancelled order', error);
     });
   })

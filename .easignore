@@ -1,8 +1,19 @@
 node_modules/
 **/node_modules/
 
+.git/
+.runtime/
+.agents/
+.openai/
+.idea/
+release-artifacts/
+preview/
+preview-output/
+webiste/
+
 .expo/
 **/.expo/
+**/.next/
 web-build/
 coverage/
 dist/

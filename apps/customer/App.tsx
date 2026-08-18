@@ -2473,11 +2473,11 @@ export default function App() {
   if (loading) {
     return (
       <LanguageContext.Provider value={language}>
-      <SafeAreaView edges={appSafeAreaEdges} style={styles.center}>
-        <AppStatusBar variant="light" />
-        <ActivityIndicator color={colors.customer} size="large" />
-        <Text style={styles.muted}>{copyFor(language, 'loading')}</Text>
-      </SafeAreaView>
+        <SafeAreaView edges={appSafeAreaEdges} style={styles.center}>
+          <AppStatusBar variant="light" />
+          <ActivityIndicator color={colors.customer} size="large" />
+          <Text style={styles.muted}>{copyFor(language, 'loading')}</Text>
+        </SafeAreaView>
       </LanguageContext.Provider>
     );
   }
@@ -2485,11 +2485,11 @@ export default function App() {
   if (!data) {
     return (
       <LanguageContext.Provider value={language}>
-      <LoginScreen
-        initialError={error}
-        onCheckCustomer={(phone) => api.customerOnboardingStatus(phone)}
-        onVerified={completeFirebaseLogin}
-      />
+        <LoginScreen
+          initialError={error}
+          onCheckCustomer={(phone) => api.customerOnboardingStatus(phone)}
+          onVerified={completeFirebaseLogin}
+        />
       </LanguageContext.Provider>
     );
   }
@@ -2497,12 +2497,12 @@ export default function App() {
   if (needsCustomerProfile(data.user)) {
     return (
       <LanguageContext.Provider value={language}>
-      <ProfileSetupScreen
-        user={data.user}
-        busy={busy}
-        error={error}
-        onSave={saveProfile}
-      />
+        <ProfileSetupScreen
+          user={data.user}
+          busy={busy}
+          error={error}
+          onSave={saveProfile}
+        />
       </LanguageContext.Provider>
     );
   }
@@ -2559,194 +2559,194 @@ export default function App() {
 
   return (
     <LanguageContext.Provider value={language}>
-    <SafeAreaView edges={tabScreenSafeAreaEdges} style={styles.shell}>
-      <AppStatusBar variant="brand" />
-      <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
+      <SafeAreaView edges={tabScreenSafeAreaEdges} style={styles.shell}>
+        <AppStatusBar variant="brand" />
+        <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
+          <View style={[
+            styles.appHeaderInner,
+            responsive.isCompact && styles.appHeaderInnerCompact,
+            { maxWidth: responsive.contentMaxWidth }
+          ]}>
+            <View style={styles.appHeaderCopy}>
+              <Text style={[styles.eyebrow, responsive.isCompact && styles.eyebrowCompact]}>INDIERY</Text>
+              <Text
+                style={[
+                  styles.headerTitle,
+                  responsive.isCompact && styles.headerTitleCompact,
+                  responsive.isSmall && styles.headerTitleSmall
+                ]}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+              >
+                {copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={copyFor(language, 'account')}
+              style={[styles.avatar, responsive.isCompact && styles.avatarCompact]}
+              onPress={() => setTab('account')}
+            >
+              <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact]}>{data.user.initials}</Text>
+            </Pressable>
+          </View>
+        </View>
+
         <View style={[
-          styles.appHeaderInner,
-          responsive.isCompact && styles.appHeaderInnerCompact,
+          styles.content,
+          tab === 'home' && styles.homeContent,
+          tab !== 'home' && styles.otherPageContent,
           { maxWidth: responsive.contentMaxWidth }
         ]}>
-          <View style={styles.appHeaderCopy}>
-            <Text style={[styles.eyebrow, responsive.isCompact && styles.eyebrowCompact]}>INDIERY</Text>
-            <Text
-              style={[
-                styles.headerTitle,
-                responsive.isCompact && styles.headerTitleCompact,
-                responsive.isSmall && styles.headerTitleSmall
-              ]}
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}
-            </Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={copyFor(language, 'account')}
-            style={[styles.avatar, responsive.isCompact && styles.avatarCompact]}
-            onPress={() => setTab('account')}
-          >
-            <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact]}>{data.user.initials}</Text>
-          </Pressable>
+          {tab !== 'home' ? <View pointerEvents="none" style={styles.otherPageCurveSurface} /> : null}
+          {tab === 'home' && (
+            <HomeScreen
+              api={api}
+              data={data}
+              booking={booking}
+              setBooking={setBooking}
+              onPickupPress={() => setPickupSearchOpen(true)}
+              onVehicleSelect={handleHomeVehicleSelect}
+              onBook={openBook}
+            />
+          )}
+          {tab === 'book' && (
+            <BookScreen
+              api={api}
+              user={data.user}
+              savedAddresses={data.user.customerProfile?.savedAddresses ?? []}
+              vehicles={data.vehicles}
+              booking={booking}
+              setBooking={setBooking}
+              step={step}
+              setStep={setStep}
+              fare={fareRouteKey === bookingFareRouteKey(booking) ? fare : null}
+              fareVehicleId={fareRouteKey === bookingFareRouteKey(booking) ? fareVehicleId : undefined}
+              busy={busy}
+              onSaveAddress={addSavedAddress}
+              estimateNow={estimateNow}
+              placeOrder={placeOrder}
+              onBackToHome={goHomeFromBack}
+            />
+          )}
+          {tab === 'orders' && (
+            <OrdersScreen
+              orders={data.orders}
+              activeOrders={activeOrders}
+              activeOrder={activeOrder}
+              tripOtp={visibleTripOtp(activeOrder, activeOrder ? tripOtpByOrder[activeOrder.id] : undefined)}
+              busy={busy}
+              refreshing={refreshing}
+              onBook={() => openBook()}
+              onRefresh={() => void refresh(true)}
+              onSelectActiveOrder={setSelectedActiveOrderId}
+              detailOrderRequestId={requestedOrderDetailId}
+              onDetailOrderRequestHandled={() => setRequestedOrderDetailId(undefined)}
+              onShare={shareActiveOrder}
+              onCancel={cancelActiveOrder}
+              onBackToHome={goHomeFromBack}
+            />
+          )}
+          {tab === 'wallet' && (
+            <WalletScreen
+              wallet={
+                data.wallet ?? {
+                  balance: data.user.customerProfile?.walletBalance ?? 0,
+                  coins: data.user.customerProfile?.coins ?? 0,
+                  ledger: [],
+                  coinLedger: []
+                }
+              }
+              busy={busy}
+              onTopup={topUpCoins}
+              onCoupon={async () => {
+                setBusy(true);
+                try {
+                  const result = await api.applyCoupon('FIRST50');
+                  setData((current) => current ? {
+                    ...current,
+                    user: result.user,
+                    wallet: {
+                      ...current.wallet,
+                      coins: result.user.customerProfile?.coins ?? current.wallet.coins
+                    }
+                  } : current);
+                  return result;
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            />
+          )}
+          {tab === 'account' && (
+            <AccountScreen
+              data={data}
+              busy={busy}
+              language={language}
+              onSaveProfile={saveProfile}
+              onChangeLanguage={(nextLanguage) => {
+                setLanguage(nextLanguage);
+                showToast(copyFor(nextLanguage, nextLanguage === 'hi' ? 'languageSetHindi' : 'languageSetEnglish'));
+              }}
+              onDeleteAddress={deleteSavedAddress}
+              onLogout={logout}
+              onRequestAccountDeletion={requestAccountDeletion}
+              onBackToHome={goHomeFromBack}
+            />
+          )}
         </View>
-      </View>
 
-      <View style={[
-        styles.content,
-        tab === 'home' && styles.homeContent,
-        tab !== 'home' && styles.otherPageContent,
-        { maxWidth: responsive.contentMaxWidth }
-      ]}>
-        {tab !== 'home' ? <View pointerEvents="none" style={styles.otherPageCurveSurface} /> : null}
-        {tab === 'home' && (
-          <HomeScreen
+        <BottomTabs active={tab} onChange={setTab} activeOrder={activeOrders.length > 0} />
+        {pickupSearchOpen ? (
+          <PickupSearchModal
             api={api}
-            data={data}
-            booking={booking}
-            setBooking={setBooking}
-            onPickupPress={() => setPickupSearchOpen(true)}
-            onVehicleSelect={handleHomeVehicleSelect}
-            onBook={openBook}
+            initialValue={booking.pickup}
+            onClose={() => setPickupSearchOpen(false)}
+            onSelectLocation={(location) => applyHomePickupLocation(location, true)}
+            onUseCurrentLocation={(location) => applyHomePickupLocation(location, false)}
+            onSelectTyped={applyHomeTypedPickup}
           />
-        )}
-        {tab === 'book' && (
-          <BookScreen
+        ) : null}
+        {pickupDetailsMode ? (
+          <ContactDetailsModal
+            key={`home-pickup-${pickupDetailsMode}`}
             api={api}
+            target="pickup"
             user={data.user}
-            savedAddresses={data.user.customerProfile?.savedAddresses ?? []}
-            vehicles={data.vehicles}
             booking={booking}
             setBooking={setBooking}
-            step={step}
-            setStep={setStep}
-            fare={fareRouteKey === bookingFareRouteKey(booking) ? fare : null}
-            fareVehicleId={fareRouteKey === bookingFareRouteKey(booking) ? fareVehicleId : undefined}
-            busy={busy}
             onSaveAddress={addSavedAddress}
-            estimateNow={estimateNow}
-            placeOrder={placeOrder}
-            onBackToHome={goHomeFromBack}
-          />
-        )}
-        {tab === 'orders' && (
-          <OrdersScreen
-            orders={data.orders}
-            activeOrders={activeOrders}
-            activeOrder={activeOrder}
-            tripOtp={visibleTripOtp(activeOrder, activeOrder ? tripOtpByOrder[activeOrder.id] : undefined)}
-            busy={busy}
-            refreshing={refreshing}
-            onBook={() => openBook()}
-            onRefresh={() => void refresh(true)}
-            onSelectActiveOrder={setSelectedActiveOrderId}
-            detailOrderRequestId={requestedOrderDetailId}
-            onDetailOrderRequestHandled={() => setRequestedOrderDetailId(undefined)}
-            onShare={shareActiveOrder}
-            onCancel={cancelActiveOrder}
-            onBackToHome={goHomeFromBack}
-          />
-        )}
-        {tab === 'wallet' && (
-          <WalletScreen
-            wallet={
-              data.wallet ?? {
-                balance: data.user.customerProfile?.walletBalance ?? 0,
-                coins: data.user.customerProfile?.coins ?? 0,
-                ledger: [],
-                coinLedger: []
-              }
-            }
-            busy={busy}
-            onTopup={topUpCoins}
-            onCoupon={async () => {
-              setBusy(true);
-              try {
-                const result = await api.applyCoupon('FIRST50');
-                setData((current) => current ? {
-                  ...current,
-                  user: result.user,
-                  wallet: {
-                    ...current.wallet,
-                    coins: result.user.customerProfile?.coins ?? current.wallet.coins
-                  }
-                } : current);
-                return result;
-              } finally {
-                setBusy(false);
-              }
+            onClose={() => setPickupDetailsMode(null)}
+            onChangeLocation={() => {
+              setPickupDetailsMode(null);
+              setPickupSearchOpen(true);
+            }}
+            onSaved={() => {
+              const nextMode = pickupDetailsMode;
+              setPickupDetailsMode(null);
+              if (nextMode === 'book') openBook(1);
+              else setTab('home');
             }}
           />
-        )}
-        {tab === 'account' && (
-          <AccountScreen
-            data={data}
-            busy={busy}
-            language={language}
-            onSaveProfile={saveProfile}
-            onChangeLanguage={(nextLanguage) => {
-              setLanguage(nextLanguage);
-              showToast(copyFor(nextLanguage, nextLanguage === 'hi' ? 'languageSetHindi' : 'languageSetEnglish'));
-            }}
-            onDeleteAddress={deleteSavedAddress}
-            onLogout={logout}
-            onRequestAccountDeletion={requestAccountDeletion}
-            onBackToHome={goHomeFromBack}
-          />
-        )}
-      </View>
-
-      <BottomTabs active={tab} onChange={setTab} activeOrder={activeOrders.length > 0} />
-      {pickupSearchOpen ? (
-        <PickupSearchModal
-          api={api}
-          initialValue={booking.pickup}
-          onClose={() => setPickupSearchOpen(false)}
-          onSelectLocation={(location) => applyHomePickupLocation(location, true)}
-          onUseCurrentLocation={(location) => applyHomePickupLocation(location, false)}
-          onSelectTyped={applyHomeTypedPickup}
-        />
-      ) : null}
-      {pickupDetailsMode ? (
-        <ContactDetailsModal
-          key={`home-pickup-${pickupDetailsMode}`}
-          api={api}
-          target="pickup"
-          user={data.user}
-          booking={booking}
-          setBooking={setBooking}
-          onSaveAddress={addSavedAddress}
-          onClose={() => setPickupDetailsMode(null)}
-          onChangeLocation={() => {
-            setPickupDetailsMode(null);
-            setPickupSearchOpen(true);
-          }}
-          onSaved={() => {
-            const nextMode = pickupDetailsMode;
-            setPickupDetailsMode(null);
-            if (nextMode === 'book') openBook(1);
-            else setTab('home');
-          }}
-        />
-      ) : null}
-      {toast ? (
-        <View
-          style={[
-            styles.toast,
-            {
-              bottom: responsive.tabBarHeight + rootBottomInset + 12,
-              left: Math.max(
-                responsive.horizontalPadding,
-                (responsive.width - Math.min(560, responsive.width - (responsive.horizontalPadding * 2))) / 2
-              ),
-              width: Math.min(560, responsive.width - (responsive.horizontalPadding * 2))
-            }
-          ]}
-        >
-          <Text style={styles.toastText}>{toast}</Text>
-        </View>
-      ) : null}
-    </SafeAreaView>
+        ) : null}
+        {toast ? (
+          <View
+            style={[
+              styles.toast,
+              {
+                bottom: responsive.tabBarHeight + rootBottomInset + 12,
+                left: Math.max(
+                  responsive.horizontalPadding,
+                  (responsive.width - Math.min(560, responsive.width - (responsive.horizontalPadding * 2))) / 2
+                ),
+                width: Math.min(560, responsive.width - (responsive.horizontalPadding * 2))
+              }
+            ]}
+          >
+            <Text style={styles.toastText}>{toast}</Text>
+          </View>
+        ) : null}
+      </SafeAreaView>
     </LanguageContext.Provider>
   );
 }
@@ -2981,134 +2981,134 @@ function LoginScreen({
 
   return (
     <>
-    <SafeAreaView
-      edges={appSafeAreaEdges}
-      style={styles.loginShell}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      <KeyboardAvoidingView
-        style={[styles.authKeyboard, androidKeyboardPadding > 0 && { paddingBottom: androidKeyboardPadding }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <SafeAreaView
+        edges={appSafeAreaEdges}
+        style={styles.loginShell}
       >
-        {loginStep === 'profile' ? (
-          <LoginProfileStep
-            profileName={profileName}
-            profileEmail={profileEmail}
-            profileCity={profileCity}
-            phone={normalizedPhone}
-            error={error}
-            busy={busy}
-            keyboardVisible={keyboardLayoutVisible}
-            scrollRef={loginScrollRef}
-            onChangeName={setProfileName}
-            onChangeEmail={setProfileEmail}
-            onChangeCity={setProfileCity}
-            onBack={changePhoneNumber}
-            onContinue={continueFromProfile}
-            onKeyboardFocus={() => setKeyboardVisible(true)}
-          />
-        ) : loginStep === 'phone' ? (
-          <LoginPhoneStep
-            phone={phone}
-            error={error}
-            busy={busy}
-            phoneReady={phoneReady}
-            keyboardVisible={keyboardLayoutVisible}
-            compactKeyboardLayout={
-              keyboardLayoutVisible && fullLoginViewportRef.current.height < 750
-            }
-            scrollRef={loginScrollRef}
-            onChangePhone={setPhone}
-            onContinue={continueFromPhone}
-            onOpenPolicy={openLoginPolicy}
-            onKeyboardFocus={() => setKeyboardVisible(true)}
-          />
-        ) : (
-        <ScrollView
-          ref={loginScrollRef}
-          style={styles.authScrollViewport}
-          contentContainerStyle={[styles.authScroll, styles.authScrollOtp]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+        <KeyboardAvoidingView
+          style={[styles.authKeyboard, androidKeyboardPadding > 0 && { paddingBottom: androidKeyboardPadding }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View
-            style={[
-              styles.authResponsiveFrame,
-              { maxWidth: Math.min(640, responsive.contentMaxWidth) }
-            ]}
-          >
-            <View style={[styles.authForm, styles.authFormOtp]}>
-              <>
-                <Pressable
-                  style={styles.loginOtpBackButton}
-                  onPress={goBackFromOtp}
-                  hitSlop={7}
-                  accessibilityRole="button"
-                  accessibilityLabel={copy.goBackToMobile}
-                >
-                  <Ionicons name="arrow-back" size={21} color={colors.ink} />
-                </Pressable>
-                <View style={styles.loginOtpIcon}>
-                  <Ionicons name="shield-checkmark" size={24} color={colors.customer} />
+          {loginStep === 'profile' ? (
+            <LoginProfileStep
+              profileName={profileName}
+              profileEmail={profileEmail}
+              profileCity={profileCity}
+              phone={normalizedPhone}
+              error={error}
+              busy={busy}
+              keyboardVisible={keyboardLayoutVisible}
+              scrollRef={loginScrollRef}
+              onChangeName={setProfileName}
+              onChangeEmail={setProfileEmail}
+              onChangeCity={setProfileCity}
+              onBack={changePhoneNumber}
+              onContinue={continueFromProfile}
+              onKeyboardFocus={() => setKeyboardVisible(true)}
+            />
+          ) : loginStep === 'phone' ? (
+            <LoginPhoneStep
+              phone={phone}
+              error={error}
+              busy={busy}
+              phoneReady={phoneReady}
+              keyboardVisible={keyboardLayoutVisible}
+              compactKeyboardLayout={
+                keyboardLayoutVisible && fullLoginViewportRef.current.height < 750
+              }
+              scrollRef={loginScrollRef}
+              onChangePhone={setPhone}
+              onContinue={continueFromPhone}
+              onOpenPolicy={openLoginPolicy}
+              onKeyboardFocus={() => setKeyboardVisible(true)}
+            />
+          ) : (
+            <ScrollView
+              ref={loginScrollRef}
+              style={styles.authScrollViewport}
+              contentContainerStyle={[styles.authScroll, styles.authScrollOtp]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            >
+              <View
+                style={[
+                  styles.authResponsiveFrame,
+                  { maxWidth: Math.min(640, responsive.contentMaxWidth) }
+                ]}
+              >
+                <View style={[styles.authForm, styles.authFormOtp]}>
+                  <>
+                    <Pressable
+                      style={styles.loginOtpBackButton}
+                      onPress={goBackFromOtp}
+                      hitSlop={7}
+                      accessibilityRole="button"
+                      accessibilityLabel={copy.goBackToMobile}
+                    >
+                      <Ionicons name="arrow-back" size={21} color={colors.ink} />
+                    </Pressable>
+                    <View style={styles.loginOtpIcon}>
+                      <Ionicons name="shield-checkmark" size={24} color={colors.customer} />
+                    </View>
+                    <Text style={styles.loginOtpTitle}>{copy.otpVerification}</Text>
+                    <Text style={styles.loginOtpSubtitle}>{copy.enterOtpSentTo}</Text>
+                    <View style={styles.loginOtpDestinationRow}>
+                      <Text style={styles.loginOtpPhone}>+91 {normalizedPhone}</Text>
+                      <Pressable onPress={changePhoneNumber} hitSlop={6} accessibilityRole="button">
+                        <Text style={styles.loginOtpChange}>{copy.change}</Text>
+                      </Pressable>
+                    </View>
+                    <OtpCodeField
+                      value={code}
+                      onChangeText={setCode}
+                      onSubmit={otpReady && !busy ? verifyOtp : undefined}
+                    />
+                    <View style={styles.loginOtpHintRow}>
+                      <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
+                      <Text style={styles.loginOtpHint}>{copy.otpPrivateNotice}</Text>
+                    </View>
+                    {error ? <Text style={styles.loginError}>{error}</Text> : null}
+                    <AuthActionButton
+                      title={busy ? copy.verifying : copy.verifyAndContinue}
+                      onPress={verifyOtp}
+                      disabled={!otpReady || busy}
+                    />
+                    <View style={styles.loginResendBlock}>
+                      <Text style={styles.loginResendLabel}>
+                        {resendSeconds > 0 ? `${copy.resendOtpIn} ${resendSeconds}s` : copy.didNotReceiveCode}
+                      </Text>
+                      <Pressable
+                        style={[styles.loginResendButton, (resendSeconds > 0 || busy) && styles.loginResendButtonDisabled]}
+                        onPress={sendOtp}
+                        disabled={resendSeconds > 0 || busy}
+                        accessibilityRole="button"
+                      >
+                        <Ionicons name="refresh-outline" size={15} color={resendSeconds > 0 || busy ? colors.muted : colors.customer} />
+                        <Text style={[styles.loginResendText, (resendSeconds > 0 || busy) && styles.loginResendTextDisabled]}>
+                          {copy.resendOtp}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
                 </View>
-                <Text style={styles.loginOtpTitle}>{copy.otpVerification}</Text>
-                <Text style={styles.loginOtpSubtitle}>{copy.enterOtpSentTo}</Text>
-                <View style={styles.loginOtpDestinationRow}>
-                  <Text style={styles.loginOtpPhone}>+91 {normalizedPhone}</Text>
-                  <Pressable onPress={changePhoneNumber} hitSlop={6} accessibilityRole="button">
-                    <Text style={styles.loginOtpChange}>{copy.change}</Text>
-                  </Pressable>
-                </View>
-                <OtpCodeField
-                  value={code}
-                  onChangeText={setCode}
-                  onSubmit={otpReady && !busy ? verifyOtp : undefined}
-                />
-                <View style={styles.loginOtpHintRow}>
-                  <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
-                  <Text style={styles.loginOtpHint}>{copy.otpPrivateNotice}</Text>
-                </View>
-                {error ? <Text style={styles.loginError}>{error}</Text> : null}
-                <AuthActionButton
-                  title={busy ? copy.verifying : copy.verifyAndContinue}
-                  onPress={verifyOtp}
-                  disabled={!otpReady || busy}
-                />
-                <View style={styles.loginResendBlock}>
-                  <Text style={styles.loginResendLabel}>
-                    {resendSeconds > 0 ? `${copy.resendOtpIn} ${resendSeconds}s` : copy.didNotReceiveCode}
-                  </Text>
-                  <Pressable
-                    style={[styles.loginResendButton, (resendSeconds > 0 || busy) && styles.loginResendButtonDisabled]}
-                    onPress={sendOtp}
-                    disabled={resendSeconds > 0 || busy}
-                    accessibilityRole="button"
-                  >
-                    <Ionicons name="refresh-outline" size={15} color={resendSeconds > 0 || busy ? colors.muted : colors.customer} />
-                    <Text style={[styles.loginResendText, (resendSeconds > 0 || busy) && styles.loginResendTextDisabled]}>
-                      {copy.resendOtp}
-                    </Text>
-                  </Pressable>
-                </View>
-              </>
-            </View>
-          </View>
-        </ScrollView>
-        )}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-    <Modal
-      visible={Boolean(loginPolicy)}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={() => setLoginPolicy(null)}
-    >
-      <SafeAreaView edges={appSafeAreaEdges} style={styles.loginPolicyShell}>
-        <AppStatusBar variant="light" />
-        {loginPolicy ? <AccountPolicyDetail policy={loginPolicy} onBack={() => setLoginPolicy(null)} /> : null}
+              </View>
+            </ScrollView>
+          )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
-    </Modal>
+      <Modal
+        visible={Boolean(loginPolicy)}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setLoginPolicy(null)}
+      >
+        <SafeAreaView edges={appSafeAreaEdges} style={styles.loginPolicyShell}>
+          <AppStatusBar variant="light" />
+          {loginPolicy ? <AccountPolicyDetail policy={loginPolicy} onBack={() => setLoginPolicy(null)} /> : null}
+        </SafeAreaView>
+      </Modal>
     </>
   );
 }
@@ -3974,28 +3974,28 @@ function HomeScreen({
     title: string;
     subtitle: string;
   }> = [
-    {
-      id: 'instant',
-      icon: 'megaphone',
-      iconColor: colors.blue,
-      title: copy.instantBooking,
-      subtitle: `${copy.otpSecured} - ${copy.liveTracking}`
-    },
-    {
-      id: 'coins',
-      icon: 'gift',
-      iconColor: colors.amber,
-      title: copy.indieryCoins,
-      subtitle: copy.useCoinsDiscount
-    },
-    {
-      id: 'tracking',
-      icon: 'navigate-circle',
-      iconColor: colors.customer,
-      title: copy.liveTracking,
-      subtitle: copy.completedCancelledBookingsAppear
-    }
-  ];
+      {
+        id: 'instant',
+        icon: 'megaphone',
+        iconColor: colors.blue,
+        title: copy.instantBooking,
+        subtitle: `${copy.otpSecured} - ${copy.liveTracking}`
+      },
+      {
+        id: 'coins',
+        icon: 'gift',
+        iconColor: colors.amber,
+        title: copy.indieryCoins,
+        subtitle: copy.useCoinsDiscount
+      },
+      {
+        id: 'tracking',
+        icon: 'navigate-circle',
+        iconColor: colors.customer,
+        title: copy.liveTracking,
+        subtitle: copy.completedCancelledBookingsAppear
+      }
+    ];
 
   useEffect(() => {
     if (!announcementWidth || homeAnnouncements.length <= 1) return undefined;
@@ -4023,13 +4023,13 @@ function HomeScreen({
           current.pickup
             ? current
             : {
-                ...current,
-                pickup: location.address || location.label,
-                pickupPlaceId: location.placeId,
-                pickupLat: location.lat,
-                pickupLng: location.lng,
-                pickupContactConfirmed: false
-              }
+              ...current,
+              pickup: location.address || location.label,
+              pickupPlaceId: location.placeId,
+              pickupLat: location.lat,
+              pickupLng: location.lng,
+              pickupContactConfirmed: false
+            }
         ));
       } catch {
         // Home stays usable if location permission or GPS is not available.
@@ -4107,20 +4107,20 @@ function HomeScreen({
           ))}
         </View>
 
-      {lastOrder ? (
-        <Pressable style={[styles.rebookCard, compact && styles.rebookCardCompact]} onPress={() => onBook(1)}>
-          <View style={[styles.rebookIcon, compact && styles.rebookIconCompact]}>
-            <Ionicons name="repeat" size={compact ? 16 : 18} color={colors.customer} />
-          </View>
-          <View style={styles.flex}>
-            <Text style={[styles.cardTitle, compact && styles.cardTitleCompact]}>{copy.repeatLastRoute}</Text>
-            <Text style={[styles.mutedSmall, compact && styles.mutedSmallCompact]} numberOfLines={small ? 1 : 2}>
-              {lastOrder.pickup.label} {copy.to} {lastOrder.drop.label}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={compact ? 16 : 18} color={colors.muted} />
-        </Pressable>
-      ) : null}
+        {lastOrder ? (
+          <Pressable style={[styles.rebookCard, compact && styles.rebookCardCompact]} onPress={() => onBook(1)}>
+            <View style={[styles.rebookIcon, compact && styles.rebookIconCompact]}>
+              <Ionicons name="repeat" size={compact ? 16 : 18} color={colors.customer} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={[styles.cardTitle, compact && styles.cardTitleCompact]}>{copy.repeatLastRoute}</Text>
+              <Text style={[styles.mutedSmall, compact && styles.mutedSmallCompact]} numberOfLines={small ? 1 : 2}>
+                {lastOrder.pickup.label} {copy.to} {lastOrder.drop.label}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={compact ? 16 : 18} color={colors.muted} />
+          </Pressable>
+        ) : null}
 
         <View style={[styles.homeAnnouncementHeader, compact && styles.homeAnnouncementHeaderCompact]}>
           <Text style={[styles.homeAnnouncementTitle, compact && styles.homeAnnouncementTitleCompact]}>{copy.announcements}</Text>
@@ -4266,77 +4266,77 @@ function PickupSearchModal({
       <SafeAreaView edges={appSafeAreaEdges} style={styles.pickupSearchShell}>
         <KeyboardAvoidingView style={styles.pickupSearchKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.pickupSearchContent, { maxWidth: responsive.contentMaxWidth }]}>
-          <View style={styles.pickupSearchTopBar}>
-            <Pressable
-              style={styles.pickupSearchBackButton}
-              onPress={onClose}
-              hitSlop={4}
-              accessibilityRole="button"
-              accessibilityLabel={copy.closePickupSearch}
-            >
-              <Ionicons name="arrow-back" size={22} color={colors.ink} />
-            </Pressable>
-          </View>
-          <View style={styles.pickupSearchCard}>
-            <View style={styles.pickupSearchInputShell}>
-              <View style={styles.pickupSearchDot} />
-              <TextInput
-                value={query}
-                autoFocus
-                onChangeText={(value) => {
-                  setQuery(value);
-                  setLocalError('');
-                }}
-                placeholder={copy.setPickupLocation}
-                placeholderTextColor="#9AA7BD"
-                style={styles.pickupSearchInput}
-                returnKeyType="search"
-                onSubmitEditing={() => onSelectTyped(query)}
-              />
-              {loading ? (
-                <ActivityIndicator size="small" color={colors.customer} />
-              ) : (
-                <Ionicons name="mic-outline" size={19} color={colors.customer} />
-              )}
-            </View>
-          </View>
-
-          <Pressable style={styles.pickupSearchMapButton} onPress={() => onSelectTyped(query || initialValue)}>
-            <Ionicons name="map" size={15} color={colors.customer} />
-            <Text style={styles.pickupSearchMapText}>{copy.selectOnMap}</Text>
-          </Pressable>
-
-          <Pressable style={styles.pickupSearchCurrentButton} onPress={useCurrentLocation}>
-            {locating ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="locate" size={16} color={colors.customer} />}
-            <Text style={styles.pickupSearchCurrentText}>{copy.useCurrentLocation}</Text>
-          </Pressable>
-
-          {localError ? <Text style={styles.pickupSearchError}>{localError}</Text> : null}
-
-          <ScrollView
-            style={styles.pickupSearchResults}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.pickupSearchResultsContent}
-          >
-            {suggestions.map((suggestion) => (
+            <View style={styles.pickupSearchTopBar}>
               <Pressable
-                key={suggestion.placeId}
-                style={styles.pickupSearchResultItem}
-                onPress={() => chooseSuggestion(suggestion)}
+                style={styles.pickupSearchBackButton}
+                onPress={onClose}
+                hitSlop={4}
+                accessibilityRole="button"
+                accessibilityLabel={copy.closePickupSearch}
               >
-                <View style={styles.pickupSearchResultIcon}>
-                  <Ionicons name="location-outline" size={17} color={colors.customer} />
-                </View>
-                <View style={styles.flex}>
-                  <Text style={styles.pickupSearchResultTitle}>{suggestion.mainText}</Text>
-                  {suggestion.secondaryText ? (
-                    <Text style={styles.pickupSearchResultSubtitle} numberOfLines={1}>{suggestion.secondaryText}</Text>
-                  ) : null}
-                </View>
+                <Ionicons name="arrow-back" size={22} color={colors.ink} />
               </Pressable>
-            ))}
-          </ScrollView>
+            </View>
+            <View style={styles.pickupSearchCard}>
+              <View style={styles.pickupSearchInputShell}>
+                <View style={styles.pickupSearchDot} />
+                <TextInput
+                  value={query}
+                  autoFocus
+                  onChangeText={(value) => {
+                    setQuery(value);
+                    setLocalError('');
+                  }}
+                  placeholder={copy.setPickupLocation}
+                  placeholderTextColor="#9AA7BD"
+                  style={styles.pickupSearchInput}
+                  returnKeyType="search"
+                  onSubmitEditing={() => onSelectTyped(query)}
+                />
+                {loading ? (
+                  <ActivityIndicator size="small" color={colors.customer} />
+                ) : (
+                  <Ionicons name="mic-outline" size={19} color={colors.customer} />
+                )}
+              </View>
+            </View>
+
+            <Pressable style={styles.pickupSearchMapButton} onPress={() => onSelectTyped(query || initialValue)}>
+              <Ionicons name="map" size={15} color={colors.customer} />
+              <Text style={styles.pickupSearchMapText}>{copy.selectOnMap}</Text>
+            </Pressable>
+
+            <Pressable style={styles.pickupSearchCurrentButton} onPress={useCurrentLocation}>
+              {locating ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="locate" size={16} color={colors.customer} />}
+              <Text style={styles.pickupSearchCurrentText}>{copy.useCurrentLocation}</Text>
+            </Pressable>
+
+            {localError ? <Text style={styles.pickupSearchError}>{localError}</Text> : null}
+
+            <ScrollView
+              style={styles.pickupSearchResults}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.pickupSearchResultsContent}
+            >
+              {suggestions.map((suggestion) => (
+                <Pressable
+                  key={suggestion.placeId}
+                  style={styles.pickupSearchResultItem}
+                  onPress={() => chooseSuggestion(suggestion)}
+                >
+                  <View style={styles.pickupSearchResultIcon}>
+                    <Ionicons name="location-outline" size={17} color={colors.customer} />
+                  </View>
+                  <View style={styles.flex}>
+                    <Text style={styles.pickupSearchResultTitle}>{suggestion.mainText}</Text>
+                    {suggestion.secondaryText ? (
+                      <Text style={styles.pickupSearchResultSubtitle} numberOfLines={1}>{suggestion.secondaryText}</Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -4881,13 +4881,13 @@ function BookScreen({
           currentBooking.pickup
             ? currentBooking
             : {
-                ...currentBooking,
-                pickup: location.address || location.label,
-                pickupPlaceId: location.placeId,
-                pickupLat: location.lat,
-                pickupLng: location.lng,
-                pickupContactConfirmed: false
-              }
+              ...currentBooking,
+              pickup: location.address || location.label,
+              pickupPlaceId: location.placeId,
+              pickupLat: location.lat,
+              pickupLng: location.lng,
+              pickupContactConfirmed: false
+            }
         ));
       } catch {
         // The pickup field remains editable if current location cannot be read.
@@ -5000,19 +5000,19 @@ function BookScreen({
       ...current,
       ...(target === 'pickup'
         ? {
-            pickup: location.address || location.label,
-            pickupPlaceId: location.placeId,
-            pickupLat: location.lat,
-            pickupLng: location.lng,
-            pickupContactConfirmed: false
-          }
+          pickup: location.address || location.label,
+          pickupPlaceId: location.placeId,
+          pickupLat: location.lat,
+          pickupLng: location.lng,
+          pickupContactConfirmed: false
+        }
         : {
-            drop: location.address || location.label,
-            dropPlaceId: location.placeId,
-            dropLat: location.lat,
-            dropLng: location.lng,
-            dropContactConfirmed: false
-          })
+          drop: location.address || location.label,
+          dropPlaceId: location.placeId,
+          dropLat: location.lat,
+          dropLng: location.lng,
+          dropContactConfirmed: false
+        })
     }));
     setContactError('');
     if (openContact) setContactSheetTarget(target);
@@ -5117,21 +5117,21 @@ function BookScreen({
       ...current,
       ...(target === 'pickup'
         ? {
-            pickup: savedAddress.address,
-            pickupPlaceId: savedAddress.id,
-            pickupLat: savedAddress.lat,
-            pickupLng: savedAddress.lng,
-            pickupAddressLine: savedAddress.addressLine || '',
-            pickupContactConfirmed: false
-          }
+          pickup: savedAddress.address,
+          pickupPlaceId: savedAddress.id,
+          pickupLat: savedAddress.lat,
+          pickupLng: savedAddress.lng,
+          pickupAddressLine: savedAddress.addressLine || '',
+          pickupContactConfirmed: false
+        }
         : {
-            drop: savedAddress.address,
-            dropPlaceId: savedAddress.id,
-            dropLat: savedAddress.lat,
-            dropLng: savedAddress.lng,
-            dropAddressLine: savedAddress.addressLine || '',
-            dropContactConfirmed: false
-          })
+          drop: savedAddress.address,
+          dropPlaceId: savedAddress.id,
+          dropLat: savedAddress.lat,
+          dropLng: savedAddress.lng,
+          dropAddressLine: savedAddress.addressLine || '',
+          dropContactConfirmed: false
+        })
     }));
     setContactError('');
     if (openContact) setContactSheetTarget(target);
@@ -5153,19 +5153,19 @@ function BookScreen({
         ...current,
         ...(isPickup
           ? {
-              pickup: typedLocation,
-              pickupPlaceId: '',
-              pickupLat: undefined,
-              pickupLng: undefined,
-              pickupContactConfirmed: false
-            }
+            pickup: typedLocation,
+            pickupPlaceId: '',
+            pickupLat: undefined,
+            pickupLng: undefined,
+            pickupContactConfirmed: false
+          }
           : {
-              drop: typedLocation,
-              dropPlaceId: '',
-              dropLat: undefined,
-              dropLng: undefined,
-              dropContactConfirmed: false
-            })
+            drop: typedLocation,
+            dropPlaceId: '',
+            dropLat: undefined,
+            dropLng: undefined,
+            dropContactConfirmed: false
+          })
       };
     });
     setContactError('');
@@ -5182,473 +5182,481 @@ function BookScreen({
 
   return (
     <>
-    <KeyboardAvoidingView
-      style={[
-        styles.bookingScreenKeyboard,
-        goodsAndroidKeyboardPadding > 0 && { paddingBottom: goodsAndroidKeyboardPadding }
-      ]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-    <ScrollView
-      style={styles.bookingScreenScroll}
-      contentContainerStyle={[
-        styles.scroll,
-        responsive.isCompact && styles.scrollCompact,
-        showGoodsKeyboardFooter && styles.bookingScreenScrollKeyboard,
-        styles.bookingCurveScrollContent
-      ]}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="always"
-      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-    >
-      <View style={[styles.bookingStepHeader, responsive.isCompact && styles.bookingStepHeaderCompact]}>
-        <Pressable
-          style={[styles.bookingStepBack, responsive.isCompact && styles.bookingStepBackCompact]}
-          onPress={() => {
-            if (step > 1) {
-              setStep(step - 1);
-              return;
-            }
-            onBackToHome();
-          }}
-          hitSlop={5}
-          accessibilityRole="button"
-          accessibilityLabel={step > 1 ? copy.previousBookingStep : copy.backToHome}
-        >
-          <Ionicons name="arrow-back" size={responsive.isCompact ? 17 : 20} color={colors.ink} />
-        </Pressable>
-        <View style={styles.flex}>
-          <Text style={[styles.bookingStepTitle, responsive.isCompact && styles.bookingStepTitleCompact]}>{currentStepMeta.title}</Text>
-          <Text style={[styles.bookingStepSubtitle, responsive.isCompact && styles.bookingStepSubtitleCompact]} numberOfLines={1}>{currentStepMeta.subtitle}</Text>
-        </View>
-        <Text style={[styles.bookingStepCount, responsive.isCompact && styles.bookingStepCountCompact]}>{step}/4</Text>
-      </View>
-      <View style={[styles.bookingProgressTrack, responsive.isCompact && styles.bookingProgressTrackCompact]}>
-        <View style={[styles.bookingProgressFill, { width: `${step * 25}%` }]} />
-      </View>
-
-      {step === 1 && (
-        <View>
-          {autoPickupLoading ? (
-            <View style={[styles.noticeInfo, responsive.isCompact && styles.noticeInfoCompact]}>
-              <ActivityIndicator size="small" color={colors.blue} />
-              <Text style={[styles.noticeInfoText, responsive.isCompact && styles.noticeInfoTextCompact]}>{copy.settingPickupLocation}</Text>
-            </View>
-          ) : null}
-
-          <View style={[styles.routeEntryCard, responsive.isCompact && styles.routeEntryCardCompact]}>
-            <View style={[styles.routeEntryPickupRow, responsive.isCompact && styles.routeEntryPickupRowCompact]}>
-              <View style={[styles.routeEntryDot, styles.routeEntryDotPickup]} />
-              <View style={styles.flex}>
-                <LocationPickerField
-                  api={api}
-                  label={copy.pickup}
-                  value={booking.pickup}
-                  selected={typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number'}
-                  variant="route"
-                  placeholder={copy.setPickupLocation}
-                  onChangeText={(pickup) =>
-                    setBooking((current) => ({
-                      ...current,
-                      pickup,
-                      pickupPlaceId: '',
-                      pickupLat: undefined,
-                      pickupLng: undefined,
-                      pickupContactConfirmed: false
-                    }))
-                  }
-                  onSelect={(location) => applyRouteLocation('pickup', location)}
-                  onDoneTyping={openPickupMap}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.routeEntryDivider, responsive.isCompact && styles.routeEntryDividerCompact]} />
-
-            <View style={[styles.routeEntryDropRow, responsive.isCompact && styles.routeEntryDropRowCompact]}>
-              <View style={[styles.routeEntryDot, styles.routeEntryDotDrop]} />
-              <View style={styles.flex}>
-                <LocationPickerField
-                  api={api}
-                  label={copy.drop}
-                  value={booking.drop}
-                  selected={typeof booking.dropLat === 'number' && typeof booking.dropLng === 'number'}
-                  variant="route"
-                  placeholder={copy.enterDropLocation}
-                  onChangeText={(drop) =>
-                    setBooking((current) => ({
-                      ...current,
-                      drop,
-                      dropPlaceId: '',
-                      dropLat: undefined,
-                      dropLng: undefined,
-                      dropContactConfirmed: false
-                    }))
-                  }
-                  onSelect={(location) => applyRouteLocation('drop', location)}
-                  onDoneTyping={openDropMap}
-                />
-              </View>
-            </View>
-          </View>
-
-          <SavedAddressStrip
-            title={copy.savedDropAddresses}
-            addresses={savedAddresses}
-            onSelect={(address) => applySavedAddress('drop', address)}
-          />
-          {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
-        </View>
-      )}
-
-      {step === 2 && (
-        <View>
-          <View style={[styles.routeReviewCard, responsive.isCompact && styles.routeReviewCardCompact]}>
-            <View style={[styles.routeReviewHeader, responsive.isCompact && styles.routeReviewHeaderCompact]}>
-              <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeSummary}</Text>
-              <Pressable style={[styles.changeRouteButton, responsive.isCompact && styles.changeRouteButtonCompact]} onPress={() => setStep(1)}>
-                <Ionicons name="create-outline" size={14} color={colors.customer} />
-                <Text style={[styles.changeRouteText, responsive.isCompact && styles.changeRouteTextCompact]}>{copy.changeRoute}</Text>
-              </Pressable>
-            </View>
-            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
-              <View style={styles.routeReviewDot} />
-              <View style={styles.flex}>
-                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
-                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
-              </View>
-            </View>
-            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
-              <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
-              <View style={styles.flex}>
-                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
-                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
-              </View>
-            </View>
-          </View>
-          <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact]}>{copy.goodsType}</Text>
-          <Pressable style={[styles.goodsTypeSelector, responsive.isCompact && styles.goodsTypeSelectorCompact]} onPress={openGoodsTypePicker}>
-            <View style={[styles.goodsTypeSelectorIcon, responsive.isCompact && styles.goodsTypeSelectorIconCompact]}>
-              <Ionicons name={goodsTypeIcon(booking.goodsType)} size={responsive.isCompact ? 18 : 21} color={colors.customer} />
-            </View>
-            <View style={styles.flex}>
-              <Text style={[styles.goodsTypeSelectorValue, responsive.isCompact && styles.goodsTypeSelectorValueCompact]}>{goodsLabel(language, booking.goodsType)}</Text>
-              <Text style={[styles.goodsTypeSelectorHint, responsive.isCompact && styles.goodsTypeSelectorHintCompact]}>{copy.tapToChooseGoods}</Text>
-            </View>
-            <Ionicons name="chevron-down" size={19} color={colors.customer} />
-          </Pressable>
-          <Field
-            label={copy.weightKg}
-            keyboardType="numeric"
-            value={booking.weightKg}
-            onChangeText={updateBookingWeight}
-          />
-          <Pressable style={[styles.notice, responsive.isCompact && styles.noticeCompact]} onPress={() => setGoodsRulesOpen(true)}>
-            <Ionicons name="warning" size={16} color={colors.amber} />
-            <Text style={[styles.noticeText, responsive.isCompact && styles.noticeTextCompact]}>{copy.viewGoodsRules}</Text>
-            <Ionicons name="chevron-up" size={16} color={colors.amber} />
-          </Pressable>
-          {bookingWeightKg && !suggestedVehicle ? (
-            <View style={styles.notice}>
-              <Ionicons name="warning" size={16} color={colors.amber} />
-              <Text style={styles.noticeText}>{copy.noVehicleAvailableForWeight} {bookingWeightKg} {copy.kgUnit}.</Text>
-            </View>
-          ) : null}
-          {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
-          <View style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}>
-            <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeSummary}</Text>
-            <SummaryRow label={copy.service} value={serviceTitle(language, booking.serviceCategory)} />
-            <SummaryRow label={copy.vehicle} value={selectedVehicle?.name || copy.selectVehicleValue} />
-            <SummaryRow label={copy.route} value={copy.direct} />
-          </View>
-          {!showGoodsKeyboardFooter ? (
-            <View style={styles.row}>
-              <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
-              <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromGoodsDetails} />
-            </View>
-          ) : null}
-        </View>
-      )}
-
-      {step === 3 && (
-        <View>
-          <View style={[styles.vehicleRoutePanel, responsive.isCompact && styles.vehicleRoutePanelCompact]}>
-            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
-              <View style={styles.routeReviewDot} />
-              <View style={styles.flex}>
-                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
-                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{booking.pickupContactName || user.name}</Text>
-              </View>
-            </View>
-            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
-              <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
-              <View style={styles.flex}>
-                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
-                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{booking.dropContactName || copy.receiver}</Text>
-              </View>
-            </View>
-            <View style={styles.vehicleRouteActions}>
-              <Pressable style={styles.vehicleRouteAction} onPress={() => setStep(1)}>
-                <Ionicons name="create" size={14} color={colors.customer} />
-                <Text style={styles.vehicleRouteActionText}>{copy.changeRoute}</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          <View style={[styles.vehicleFareList, responsive.isCompact && styles.vehicleFareListCompact]}>
-            {vehicleChoices.map((vehicle) => {
-              const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
-              const selected = booking.vehicleId === vehicle.id || (!booking.vehicleId && selectedVehicle?.id === vehicle.id);
-              const price = typeof routeBillableKm === 'number'
-                ? porterVehicleQuoteForBillableKm(vehicle, routeBillableKm)
-                : undefined;
-              return (
-                <VehicleFareOption
-                  key={vehicle.id}
-                  vehicle={vehicle}
-                  selected={selected}
-                  suggested={suggestedVehicle?.id === vehicle.id}
-                  disabled={disabled}
-                  price={price}
-                  onPress={() => chooseVehicle(vehicle, true, 3)}
-                />
-              );
-            })}
-          </View>
-          {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
-          <View style={styles.row}>
-            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(2)} />
-            <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromVehiclePricing} />
-          </View>
-        </View>
-      )}
-
-      {step === 4 && (
-        <View>
-          <View style={[styles.routeReviewCard, responsive.isCompact && styles.routeReviewCardCompact]}>
-            <View style={[styles.routeReviewHeader, responsive.isCompact && styles.routeReviewHeaderCompact]}>
-              <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeAndContacts}</Text>
-              <Pressable style={[styles.changeRouteButton, responsive.isCompact && styles.changeRouteButtonCompact]} onPress={() => setStep(1)}>
-                <Ionicons name="create-outline" size={14} color={colors.customer} />
-                <Text style={[styles.changeRouteText, responsive.isCompact && styles.changeRouteTextCompact]}>{copy.changeRoute}</Text>
-              </Pressable>
-            </View>
-            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
-              <View style={styles.routeReviewDot} />
-              <View style={styles.flex}>
-                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
-                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
-              </View>
-            </View>
-            <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
-              <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
-              <View style={styles.flex}>
-                <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
-                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
-              </View>
-            </View>
-          </View>
-
-          {selectedVehicle ? (
-            <View style={[styles.vehicleFareCard, responsive.isCompact && styles.vehicleFareCardCompact]}>
-              <View style={[styles.vehicleFareIcon, responsive.isCompact && styles.vehicleFareIconCompact]}>
-                <Ionicons name={vehicleIcon(selectedVehicle)} size={26} color={colors.customer} />
-              </View>
-              <View style={styles.vehicleFareCopy}>
-                <Text style={[styles.vehicleName, responsive.isCompact && styles.vehicleNameCompact]}>{selectedVehicle.shortName}</Text>
-                <Text style={[styles.vehicleFareMeta, responsive.isCompact && styles.vehicleFareMetaCompact]}>
-                  {vehicleCapacityText(selectedVehicle, copy.upTo, copy.kgUnit)} - {selectedFare?.etaMinutes || selectedVehicle.etaMinutes} {copy.min}
-                </Text>
-                <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.pricedAfterRoute}</Text>
-              </View>
-              <Text style={[styles.vehicleFarePrice, responsive.isCompact && styles.vehicleFarePriceCompact]}>
-                {selectedFare
-                  ? money(selectedFare.total)
-                  : typeof routeBillableKm === 'number'
-                    ? money(porterVehicleQuoteForBillableKm(selectedVehicle, routeBillableKm))
-                    : copy.estimating}
-              </Text>
-            </View>
-          ) : null}
-
-          <Pressable style={[styles.notice, responsive.isCompact && styles.noticeCompact]} onPress={() => setGoodsRulesOpen(true)}>
-            <Ionicons name="warning" size={16} color={colors.amber} />
-            <Text style={[styles.noticeText, responsive.isCompact && styles.noticeTextCompact]}>{copy.viewGoodsRules}</Text>
-            <Ionicons name="chevron-up" size={16} color={colors.amber} />
-          </Pressable>
-
-          <View style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}>
-            <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.bookingSummary}</Text>
-            <SummaryRow
-              label={copy.route}
-              value={`${composeBookingAddress(booking.pickup, booking.pickupAddressLine)} ${copy.to} ${composeBookingAddress(booking.drop, booking.dropAddressLine)}`}
-            />
-            <SummaryRow label={copy.vehicle} value={selectedVehicle?.shortName || copy.vehicle} />
-            <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} ${copy.kgUnit}`} />
-            <SummaryRow label={copy.eta} value={`${selectedFare?.etaMinutes || selectedVehicle?.etaMinutes || 0} ${copy.min}`} />
-          </View>
-          {selectedFare ? <FareCard fare={selectedFare} /> : null}
-          {(['upi', 'cash'] as PaymentMode[]).map((mode) => {
-            const subtitle = mode === 'cash' ? copy.payPartnerAfterDelivery : copy.secureOnlinePayment;
-            return (
-              <Pressable
-                key={mode}
-                style={[
-                  styles.payRow,
-                  responsive.isCompact && styles.payRowCompact,
-                  booking.paymentMode === mode && styles.payRowActive
-                ]}
-                onPress={() => {
-                  setBooking((current) => ({ ...current, paymentMode: mode }));
-                }}
-              >
-                <Ionicons
-                  name={booking.paymentMode === mode ? 'radio-button-on' : 'radio-button-off'}
-                  size={18}
-                  color={colors.customer}
-                />
-                <View style={styles.flex}>
-                  <Text style={[styles.payText, responsive.isCompact && styles.payTextCompact]}>{paymentModeLabel(language, mode)}</Text>
-                  <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{subtitle}</Text>
-                </View>
-              </Pressable>
-            );
-          })}
-          <View style={styles.row}>
-            <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(3)} />
-            <PrimaryButton title={busy ? copy.booking : copy.payAndBook} icon="checkmark" onPress={placeOrder} />
-          </View>
-        </View>
-      )}
-    </ScrollView>
-    {showGoodsKeyboardFooter ? (
-      <View style={[styles.bookingKeyboardFooter, responsive.isCompact && styles.bookingKeyboardFooterCompact]}>
-        <View style={[styles.bookingKeyboardFooterInner, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
-          <PrimaryButton
-            title={busy ? copy.estimating : copy.continue}
-            icon="arrow-forward"
-            onPress={continueFromGoodsDetails}
-          />
-        </View>
-      </View>
-    ) : null}
-    </KeyboardAvoidingView>
-    {mapPickerTarget ? (
-      <MapLocationPicker
-        api={api}
-        title={mapPickerTarget.title}
-        initialValue={mapPickerTarget.value}
-        initialLat={mapPickerTarget.lat}
-        initialLng={mapPickerTarget.lng}
-        onClose={() => setMapPickerTarget(null)}
-        onConfirm={applyMapLocation}
-      />
-    ) : null}
-    {contactSheetTarget ? (
-      <ContactDetailsModal
-        key={contactSheetTarget}
-        api={api}
-        target={contactSheetTarget}
-        user={user}
-        booking={booking}
-        setBooking={setBooking}
-        onSaveAddress={onSaveAddress}
-        onClose={() => {
-          setContactError('');
-          setContactSheetTarget(null);
-        }}
-        onChangeLocation={() => {
-          setContactError('');
-          setContactSheetTarget(null);
-        }}
-        onSaved={(nextBooking) => {
-          if (contactSheetTarget === 'drop') continueFromRouteDetails(nextBooking);
-        }}
-      />
-    ) : null}
-    <Modal
-      visible={goodsTypePickerOpen}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setGoodsTypePickerOpen(false)}
-    >
-      <View style={styles.contactSheetOverlay}>
-        <Pressable style={styles.contactSheetBackdrop} onPress={() => setGoodsTypePickerOpen(false)} />
-        <View
-          style={[
-            styles.contactSheet,
-            styles.goodsTypePickerSheet,
-            {
-              paddingBottom: Math.max(24, bottomInset + 12),
-              paddingLeft: Math.max(16, leftInset + 12),
-              paddingRight: Math.max(16, rightInset + 12)
-            }
+      <KeyboardAvoidingView
+        style={[
+          styles.bookingScreenKeyboard,
+          goodsAndroidKeyboardPadding > 0 && { paddingBottom: goodsAndroidKeyboardPadding }
+        ]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={styles.bookingScreenScroll}
+          contentContainerStyle={[
+            styles.scroll,
+            responsive.isCompact && styles.scrollCompact,
+            showGoodsKeyboardFooter && styles.bookingScreenScrollKeyboard,
+            styles.bookingCurveScrollContent
           ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         >
-          <View style={styles.contactSheetHandle} />
-          <View style={styles.contactSheetHeader}>
-            <View style={styles.goodsTypePickerHeading}>
-              <View style={styles.goodsTypeSelectorIcon}>
-                <Ionicons name="cube-outline" size={21} color={colors.customer} />
-              </View>
-              <View style={styles.flex}>
-                <Text style={styles.contactSheetTitle}>{copy.selectGoodsCategory}</Text>
-                <Text style={styles.contactSheetSubtitle}>{copy.tapToChooseGoods}</Text>
-              </View>
-            </View>
+          <View style={[styles.bookingStepHeader, responsive.isCompact && styles.bookingStepHeaderCompact]}>
             <Pressable
-              style={styles.mapPickerClose}
-              onPress={() => setGoodsTypePickerOpen(false)}
-              hitSlop={3}
+              style={[styles.bookingStepBack, responsive.isCompact && styles.bookingStepBackCompact]}
+              onPress={() => {
+                if (step > 1) {
+                  setStep(step - 1);
+                  return;
+                }
+                onBackToHome();
+              }}
+              hitSlop={5}
               accessibilityRole="button"
-              accessibilityLabel={copy.closeGoodsCategory}
+              accessibilityLabel={step > 1 ? copy.previousBookingStep : copy.backToHome}
             >
-              <Ionicons name="close" size={20} color={colors.ink} />
+              <Ionicons name="arrow-back" size={responsive.isCompact ? 17 : 20} color={colors.ink} />
             </Pressable>
+            <View style={styles.flex}>
+              <Text style={[styles.bookingStepTitle, responsive.isCompact && styles.bookingStepTitleCompact]}>{currentStepMeta.title}</Text>
+              <Text style={[styles.bookingStepSubtitle, responsive.isCompact && styles.bookingStepSubtitleCompact]} numberOfLines={1}>{currentStepMeta.subtitle}</Text>
+            </View>
+            <Text style={[styles.bookingStepCount, responsive.isCompact && styles.bookingStepCountCompact]}>{step}/4</Text>
+          </View>
+          <View style={[styles.bookingProgressTrack, responsive.isCompact && styles.bookingProgressTrackCompact]}>
+            <View style={[styles.bookingProgressFill, { width: `${step * 25}%` }]} />
           </View>
 
-          <ScrollView
-            style={styles.goodsTypePickerScroll}
-            contentContainerStyle={styles.goodsTypePickerContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {goodsOptions.map((item) => {
-              const active = draftGoodsType === item;
-              return (
-                <Pressable
-                  key={item}
-                  style={[styles.goodsTypeOption, active && styles.goodsTypeOptionActive]}
-                  onPress={() => setDraftGoodsType(item)}
-                >
-                  <View style={[styles.goodsTypeOptionIcon, active && styles.goodsTypeOptionIconActive]}>
-                    <Ionicons
-                      name={goodsTypeIcon(item)}
-                      size={20}
-                      color={active ? colors.white : colors.customer}
+          {step === 1 && (
+            <View>
+              {autoPickupLoading ? (
+                <View style={[styles.noticeInfo, responsive.isCompact && styles.noticeInfoCompact]}>
+                  <ActivityIndicator size="small" color={colors.blue} />
+                  <Text style={[styles.noticeInfoText, responsive.isCompact && styles.noticeInfoTextCompact]}>{copy.settingPickupLocation}</Text>
+                </View>
+              ) : null}
+
+              <View style={[styles.routeEntryCard, responsive.isCompact && styles.routeEntryCardCompact]}>
+                <View style={[styles.routeEntryPickupRow, responsive.isCompact && styles.routeEntryPickupRowCompact]}>
+                  <View style={[styles.routeEntryDot, styles.routeEntryDotPickup]} />
+                  <View style={styles.flex}>
+                    <LocationPickerField
+                      api={api}
+                      label={copy.pickup}
+                      value={booking.pickup}
+                      selected={typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number'}
+                      variant="route"
+                      placeholder={copy.setPickupLocation}
+                      onChangeText={(pickup) =>
+                        setBooking((current) => ({
+                          ...current,
+                          pickup,
+                          pickupPlaceId: '',
+                          pickupLat: undefined,
+                          pickupLng: undefined,
+                          pickupContactConfirmed: false
+                        }))
+                      }
+                      onSelect={(location) => applyRouteLocation('pickup', location)}
+                      onDoneTyping={openPickupMap}
                     />
                   </View>
-                  <Text style={[styles.goodsTypeOptionText, active && styles.goodsTypeOptionTextActive]}>
-                    {goodsLabel(language, item)}
-                  </Text>
-                  <Ionicons
-                    name={active ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={20}
-                    color={active ? colors.customer : colors.line}
-                  />
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+                </View>
 
-          <View style={styles.goodsTypePickerFooter}>
-            <View style={styles.goodsTypePickerConfirmRow}>
-              <PrimaryButton title={copy.confirmGoodsCategory} icon="checkmark" onPress={confirmGoodsType} />
+                <View style={[styles.routeEntryDivider, responsive.isCompact && styles.routeEntryDividerCompact]} />
+
+                <View style={[styles.routeEntryDropRow, responsive.isCompact && styles.routeEntryDropRowCompact]}>
+                  <View style={[styles.routeEntryDot, styles.routeEntryDotDrop]} />
+                  <View style={styles.flex}>
+                    <LocationPickerField
+                      api={api}
+                      label={copy.drop}
+                      value={booking.drop}
+                      selected={typeof booking.dropLat === 'number' && typeof booking.dropLng === 'number'}
+                      variant="route"
+                      placeholder={copy.enterDropLocation}
+                      onChangeText={(drop) =>
+                        setBooking((current) => ({
+                          ...current,
+                          drop,
+                          dropPlaceId: '',
+                          dropLat: undefined,
+                          dropLng: undefined,
+                          dropContactConfirmed: false
+                        }))
+                      }
+                      onSelect={(location) => applyRouteLocation('drop', location)}
+                      onDoneTyping={openDropMap}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <SavedAddressStrip
+                title={copy.savedDropAddresses}
+                addresses={savedAddresses}
+                onSelect={(address) => applySavedAddress('drop', address)}
+              />
+              {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
+              <View style={[styles.row, { marginTop: 14 }]}>
+                <SecondaryButton title={copy.back} icon="arrow-back" onPress={onBackToHome} />
+                <PrimaryButton
+                  title={copy.continue}
+                  icon="arrow-forward"
+                  onPress={() => continueFromRouteDetails()}
+                />
+              </View>
+            </View>
+          )}
+
+          {step === 2 && (
+            <View>
+              <View style={[styles.routeReviewCard, responsive.isCompact && styles.routeReviewCardCompact]}>
+                <View style={[styles.routeReviewHeader, responsive.isCompact && styles.routeReviewHeaderCompact]}>
+                  <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeSummary}</Text>
+                  <Pressable style={[styles.changeRouteButton, responsive.isCompact && styles.changeRouteButtonCompact]} onPress={() => setStep(1)}>
+                    <Ionicons name="create-outline" size={14} color={colors.customer} />
+                    <Text style={[styles.changeRouteText, responsive.isCompact && styles.changeRouteTextCompact]}>{copy.changeRoute}</Text>
+                  </Pressable>
+                </View>
+                <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
+                  <View style={styles.routeReviewDot} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                    <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+                  </View>
+                </View>
+                <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
+                  <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                    <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
+                  </View>
+                </View>
+              </View>
+              <Text style={[styles.fieldLabel, responsive.isCompact && styles.fieldLabelCompact]}>{copy.goodsType}</Text>
+              <Pressable style={[styles.goodsTypeSelector, responsive.isCompact && styles.goodsTypeSelectorCompact]} onPress={openGoodsTypePicker}>
+                <View style={[styles.goodsTypeSelectorIcon, responsive.isCompact && styles.goodsTypeSelectorIconCompact]}>
+                  <Ionicons name={goodsTypeIcon(booking.goodsType)} size={responsive.isCompact ? 18 : 21} color={colors.customer} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={[styles.goodsTypeSelectorValue, responsive.isCompact && styles.goodsTypeSelectorValueCompact]}>{goodsLabel(language, booking.goodsType)}</Text>
+                  <Text style={[styles.goodsTypeSelectorHint, responsive.isCompact && styles.goodsTypeSelectorHintCompact]}>{copy.tapToChooseGoods}</Text>
+                </View>
+                <Ionicons name="chevron-down" size={19} color={colors.customer} />
+              </Pressable>
+              <Field
+                label={copy.weightKg}
+                keyboardType="numeric"
+                value={booking.weightKg}
+                onChangeText={updateBookingWeight}
+              />
+              <Pressable style={[styles.notice, responsive.isCompact && styles.noticeCompact]} onPress={() => setGoodsRulesOpen(true)}>
+                <Ionicons name="warning" size={16} color={colors.amber} />
+                <Text style={[styles.noticeText, responsive.isCompact && styles.noticeTextCompact]}>{copy.viewGoodsRules}</Text>
+                <Ionicons name="chevron-up" size={16} color={colors.amber} />
+              </Pressable>
+              {bookingWeightKg && !suggestedVehicle ? (
+                <View style={styles.notice}>
+                  <Ionicons name="warning" size={16} color={colors.amber} />
+                  <Text style={styles.noticeText}>{copy.noVehicleAvailableForWeight} {bookingWeightKg} {copy.kgUnit}.</Text>
+                </View>
+              ) : null}
+              {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
+              <View style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}>
+                <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeSummary}</Text>
+                <SummaryRow label={copy.service} value={serviceTitle(language, booking.serviceCategory)} />
+                <SummaryRow label={copy.vehicle} value={selectedVehicle?.name || copy.selectVehicleValue} />
+                <SummaryRow label={copy.route} value={copy.direct} />
+              </View>
+              {!showGoodsKeyboardFooter ? (
+                <View style={styles.row}>
+                  <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(1)} />
+                  <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromGoodsDetails} />
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          {step === 3 && (
+            <View>
+              <View style={[styles.vehicleRoutePanel, responsive.isCompact && styles.vehicleRoutePanelCompact]}>
+                <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
+                  <View style={styles.routeReviewDot} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                    <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{booking.pickupContactName || user.name}</Text>
+                  </View>
+                </View>
+                <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
+                  <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                    <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{booking.dropContactName || copy.receiver}</Text>
+                  </View>
+                </View>
+                <View style={styles.vehicleRouteActions}>
+                  <Pressable style={styles.vehicleRouteAction} onPress={() => setStep(1)}>
+                    <Ionicons name="create" size={14} color={colors.customer} />
+                    <Text style={styles.vehicleRouteActionText}>{copy.changeRoute}</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={[styles.vehicleFareList, responsive.isCompact && styles.vehicleFareListCompact]}>
+                {vehicleChoices.map((vehicle) => {
+                  const disabled = !vehicleCanCarryWeight(vehicle, bookingWeightKg);
+                  const selected = booking.vehicleId === vehicle.id || (!booking.vehicleId && selectedVehicle?.id === vehicle.id);
+                  const price = typeof routeBillableKm === 'number'
+                    ? porterVehicleQuoteForBillableKm(vehicle, routeBillableKm)
+                    : undefined;
+                  return (
+                    <VehicleFareOption
+                      key={vehicle.id}
+                      vehicle={vehicle}
+                      selected={selected}
+                      suggested={suggestedVehicle?.id === vehicle.id}
+                      disabled={disabled}
+                      price={price}
+                      onPress={() => chooseVehicle(vehicle, true, 3)}
+                    />
+                  );
+                })}
+              </View>
+              {contactError ? <Text style={styles.contactError}>{contactError}</Text> : null}
+              <View style={styles.row}>
+                <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(2)} />
+                <PrimaryButton title={busy ? copy.estimating : copy.continue} icon="arrow-forward" onPress={continueFromVehiclePricing} />
+              </View>
+            </View>
+          )}
+
+          {step === 4 && (
+            <View>
+              <View style={[styles.routeReviewCard, responsive.isCompact && styles.routeReviewCardCompact]}>
+                <View style={[styles.routeReviewHeader, responsive.isCompact && styles.routeReviewHeaderCompact]}>
+                  <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.routeAndContacts}</Text>
+                  <Pressable style={[styles.changeRouteButton, responsive.isCompact && styles.changeRouteButtonCompact]} onPress={() => setStep(1)}>
+                    <Ionicons name="create-outline" size={14} color={colors.customer} />
+                    <Text style={[styles.changeRouteText, responsive.isCompact && styles.changeRouteTextCompact]}>{copy.changeRoute}</Text>
+                  </Pressable>
+                </View>
+                <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
+                  <View style={styles.routeReviewDot} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.pickup, booking.pickupAddressLine)}</Text>
+                    <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.sender}: {booking.pickupContactName || copy.addNameMobile}</Text>
+                  </View>
+                </View>
+                <View style={[styles.routeReviewLine, responsive.isCompact && styles.routeReviewLineCompact]}>
+                  <View style={[styles.routeReviewDot, styles.routeReviewDotDrop]} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.routeReviewTitle, responsive.isCompact && styles.routeReviewTitleCompact]} numberOfLines={1}>{composeBookingAddress(booking.drop, booking.dropAddressLine)}</Text>
+                    <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.receiver}: {booking.dropContactName || copy.addNameMobile}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {selectedVehicle ? (
+                <View style={[styles.vehicleFareCard, responsive.isCompact && styles.vehicleFareCardCompact]}>
+                  <View style={[styles.vehicleFareIcon, responsive.isCompact && styles.vehicleFareIconCompact]}>
+                    <Ionicons name={vehicleIcon(selectedVehicle)} size={26} color={colors.customer} />
+                  </View>
+                  <View style={styles.vehicleFareCopy}>
+                    <Text style={[styles.vehicleName, responsive.isCompact && styles.vehicleNameCompact]}>{selectedVehicle.shortName}</Text>
+                    <Text style={[styles.vehicleFareMeta, responsive.isCompact && styles.vehicleFareMetaCompact]}>
+                      {vehicleCapacityText(selectedVehicle, copy.upTo, copy.kgUnit)} - {selectedFare?.etaMinutes || selectedVehicle.etaMinutes} {copy.min}
+                    </Text>
+                    <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{copy.pricedAfterRoute}</Text>
+                  </View>
+                  <Text style={[styles.vehicleFarePrice, responsive.isCompact && styles.vehicleFarePriceCompact]}>
+                    {selectedFare
+                      ? money(selectedFare.total)
+                      : typeof routeBillableKm === 'number'
+                        ? money(porterVehicleQuoteForBillableKm(selectedVehicle, routeBillableKm))
+                        : copy.estimating}
+                  </Text>
+                </View>
+              ) : null}
+
+              <Pressable style={[styles.notice, responsive.isCompact && styles.noticeCompact]} onPress={() => setGoodsRulesOpen(true)}>
+                <Ionicons name="warning" size={16} color={colors.amber} />
+                <Text style={[styles.noticeText, responsive.isCompact && styles.noticeTextCompact]}>{copy.viewGoodsRules}</Text>
+                <Ionicons name="chevron-up" size={16} color={colors.amber} />
+              </Pressable>
+
+              <View style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}>
+                <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.bookingSummary}</Text>
+                <SummaryRow
+                  label={copy.route}
+                  value={`${composeBookingAddress(booking.pickup, booking.pickupAddressLine)} ${copy.to} ${composeBookingAddress(booking.drop, booking.dropAddressLine)}`}
+                />
+                <SummaryRow label={copy.vehicle} value={selectedVehicle?.shortName || copy.vehicle} />
+                <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} ${copy.kgUnit}`} />
+                <SummaryRow label={copy.eta} value={`${selectedFare?.etaMinutes || selectedVehicle?.etaMinutes || 0} ${copy.min}`} />
+              </View>
+              {selectedFare ? <FareCard fare={selectedFare} /> : null}
+              {(['upi', 'cash'] as PaymentMode[]).map((mode) => {
+                const subtitle = mode === 'cash' ? copy.payPartnerAfterDelivery : copy.secureOnlinePayment;
+                return (
+                  <Pressable
+                    key={mode}
+                    style={[
+                      styles.payRow,
+                      responsive.isCompact && styles.payRowCompact,
+                      booking.paymentMode === mode && styles.payRowActive
+                    ]}
+                    onPress={() => {
+                      setBooking((current) => ({ ...current, paymentMode: mode }));
+                    }}
+                  >
+                    <Ionicons
+                      name={booking.paymentMode === mode ? 'radio-button-on' : 'radio-button-off'}
+                      size={18}
+                      color={colors.customer}
+                    />
+                    <View style={styles.flex}>
+                      <Text style={[styles.payText, responsive.isCompact && styles.payTextCompact]}>{paymentModeLabel(language, mode)}</Text>
+                      <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{subtitle}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+              <View style={styles.row}>
+                <SecondaryButton title={copy.back} icon="arrow-back" onPress={() => setStep(3)} />
+                <PrimaryButton title={busy ? copy.booking : copy.payAndBook} icon="checkmark" onPress={placeOrder} />
+              </View>
+            </View>
+          )}
+        </ScrollView>
+        {showGoodsKeyboardFooter ? (
+          <View style={[styles.bookingKeyboardFooter, responsive.isCompact && styles.bookingKeyboardFooterCompact]}>
+            <View style={[styles.bookingKeyboardFooterInner, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
+              <PrimaryButton
+                title={busy ? copy.estimating : copy.continue}
+                icon="arrow-forward"
+                onPress={continueFromGoodsDetails}
+              />
+            </View>
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
+      {mapPickerTarget ? (
+        <MapLocationPicker
+          api={api}
+          title={mapPickerTarget.title}
+          initialValue={mapPickerTarget.value}
+          initialLat={mapPickerTarget.lat}
+          initialLng={mapPickerTarget.lng}
+          onClose={() => setMapPickerTarget(null)}
+          onConfirm={applyMapLocation}
+        />
+      ) : null}
+      {contactSheetTarget ? (
+        <ContactDetailsModal
+          key={contactSheetTarget}
+          api={api}
+          target={contactSheetTarget}
+          user={user}
+          booking={booking}
+          setBooking={setBooking}
+          onSaveAddress={onSaveAddress}
+          onClose={() => {
+            setContactError('');
+            setContactSheetTarget(null);
+          }}
+          onChangeLocation={() => {
+            setContactError('');
+            setContactSheetTarget(null);
+          }}
+          onSaved={(nextBooking) => {
+            if (contactSheetTarget === 'drop') continueFromRouteDetails(nextBooking);
+          }}
+        />
+      ) : null}
+      <Modal
+        visible={goodsTypePickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setGoodsTypePickerOpen(false)}
+      >
+        <View style={styles.contactSheetOverlay}>
+          <Pressable style={styles.contactSheetBackdrop} onPress={() => setGoodsTypePickerOpen(false)} />
+          <View
+            style={[
+              styles.contactSheet,
+              styles.goodsTypePickerSheet,
+              {
+                paddingBottom: Math.max(24, bottomInset + 12),
+                paddingLeft: Math.max(16, leftInset + 12),
+                paddingRight: Math.max(16, rightInset + 12)
+              }
+            ]}
+          >
+            <View style={styles.contactSheetHandle} />
+            <View style={styles.contactSheetHeader}>
+              <View style={styles.goodsTypePickerHeading}>
+                <View style={styles.goodsTypeSelectorIcon}>
+                  <Ionicons name="cube-outline" size={21} color={colors.customer} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.contactSheetTitle}>{copy.selectGoodsCategory}</Text>
+                  <Text style={styles.contactSheetSubtitle}>{copy.tapToChooseGoods}</Text>
+                </View>
+              </View>
+              <Pressable
+                style={styles.mapPickerClose}
+                onPress={() => setGoodsTypePickerOpen(false)}
+                hitSlop={3}
+                accessibilityRole="button"
+                accessibilityLabel={copy.closeGoodsCategory}
+              >
+                <Ionicons name="close" size={20} color={colors.ink} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.goodsTypePickerScroll}
+              contentContainerStyle={styles.goodsTypePickerContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {goodsOptions.map((item) => {
+                const active = draftGoodsType === item;
+                return (
+                  <Pressable
+                    key={item}
+                    style={[styles.goodsTypeOption, active && styles.goodsTypeOptionActive]}
+                    onPress={() => setDraftGoodsType(item)}
+                  >
+                    <View style={[styles.goodsTypeOptionIcon, active && styles.goodsTypeOptionIconActive]}>
+                      <Ionicons
+                        name={goodsTypeIcon(item)}
+                        size={20}
+                        color={active ? colors.white : colors.customer}
+                      />
+                    </View>
+                    <Text style={[styles.goodsTypeOptionText, active && styles.goodsTypeOptionTextActive]}>
+                      {goodsLabel(language, item)}
+                    </Text>
+                    <Ionicons
+                      name={active ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={20}
+                      color={active ? colors.customer : colors.line}
+                    />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.goodsTypePickerFooter}>
+              <View style={styles.goodsTypePickerConfirmRow}>
+                <PrimaryButton title={copy.confirmGoodsCategory} icon="checkmark" onPress={confirmGoodsType} />
+              </View>
             </View>
           </View>
         </View>
-      </View>
-    </Modal>
-    {goodsRulesOpen ? <GoodsRulesSheet onClose={() => setGoodsRulesOpen(false)} /> : null}
+      </Modal>
+      {goodsRulesOpen ? <GoodsRulesSheet onClose={() => setGoodsRulesOpen(false)} /> : null}
     </>
   );
 }
@@ -5834,14 +5842,14 @@ function InlineExactLocationPicker({
       : Math.max(110, Math.min(150, responsive.height * 0.24))
     : responsive.isLandscape && responsive.isShort
       ? Math.max(160, Math.min(240, responsive.height * 0.45))
-    : responsive.isCompact && !expanded
-      ? responsive.isSmall
-        ? 258
-        : 288
-    : Math.max(
-        responsive.isShort ? 230 : 300,
-        Math.min(410, responsive.height * (responsive.isLandscape ? 0.62 : 0.46))
-      );
+      : responsive.isCompact && !expanded
+        ? responsive.isSmall
+          ? 258
+          : 288
+        : Math.max(
+          responsive.isShort ? 230 : 300,
+          Math.min(410, responsive.height * (responsive.isLandscape ? 0.62 : 0.46))
+        );
 
   useEffect(() => {
     const search = query.trim();
@@ -6188,57 +6196,57 @@ function ContactDetailsModal({
   function updateTypedLocation(nextValue: string) {
     updateContact(isPickup
       ? {
-          pickup: nextValue,
-          pickupPlaceId: '',
-          pickupLat: undefined,
-          pickupLng: undefined
-        }
+        pickup: nextValue,
+        pickupPlaceId: '',
+        pickupLat: undefined,
+        pickupLng: undefined
+      }
       : {
-          drop: nextValue,
-          dropPlaceId: '',
-          dropLat: undefined,
-          dropLng: undefined
-        });
+        drop: nextValue,
+        dropPlaceId: '',
+        dropLat: undefined,
+        dropLng: undefined
+      });
   }
 
   function updateExactLocation(location: LocationDetails) {
     updateContact(isPickup
       ? {
-          pickup: location.address || location.label,
-          pickupPlaceId: location.placeId,
-          pickupLat: location.lat,
-          pickupLng: location.lng
-        }
+        pickup: location.address || location.label,
+        pickupPlaceId: location.placeId,
+        pickupLat: location.lat,
+        pickupLng: location.lng
+      }
       : {
-          drop: location.address || location.label,
-          dropPlaceId: location.placeId,
-          dropLat: location.lat,
-          dropLng: location.lng
-        });
+        drop: location.address || location.label,
+        dropPlaceId: location.placeId,
+        dropLat: location.lat,
+        dropLng: location.lng
+      });
   }
 
   function useMine() {
     updateContact(isPickup
       ? {
-          pickupContactName: user.name,
-          pickupContactPhone: user.phone
-        }
+        pickupContactName: user.name,
+        pickupContactPhone: user.phone
+      }
       : {
-          dropContactName: user.name,
-          dropContactPhone: user.phone
-        });
+        dropContactName: user.name,
+        dropContactPhone: user.phone
+      });
   }
 
   function enterManually() {
     updateContact(isPickup
       ? {
-          pickupContactName: '',
-          pickupContactPhone: ''
-        }
+        pickupContactName: '',
+        pickupContactPhone: ''
+      }
       : {
-          dropContactName: '',
-          dropContactPhone: ''
-        });
+        dropContactName: '',
+        dropContactPhone: ''
+      });
   }
 
   function maximizeMap() {
@@ -6369,109 +6377,109 @@ function ContactDetailsModal({
               </ScrollView>
             </View>
           ) : (
-          <>
-            <ScrollView
-              ref={contactScrollRef}
-              style={[styles.contactPagePanel, responsive.isCompact && styles.contactPagePanelCompact]}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-              scrollEnabled
-              bounces={false}
-              overScrollMode="never"
-              contentContainerStyle={[
-                styles.contactPagePanelContent,
-                {
-                  width: '100%',
-                  maxWidth: Math.min(680, responsive.contentMaxWidth),
-                  alignSelf: 'center',
-                  paddingHorizontal: responsive.horizontalPadding,
-                  paddingBottom: 22
-                }
-              ]}
-            >
-            <View style={styles.contactSheetHandle} />
-            <View style={[styles.contactAddressHeader, responsive.isCompact && styles.contactAddressHeaderCompact]}>
-              <Ionicons name="location" size={responsive.isCompact ? 20 : 24} color={locationColor} />
-              <View style={styles.flex}>
-                <Text style={[styles.contactAddressTitle, responsive.isCompact && styles.contactAddressTitleCompact]} numberOfLines={1}>{locationTitle}</Text>
-                <Text style={[styles.contactAddressSubtitle, responsive.isCompact && styles.contactAddressSubtitleCompact]} numberOfLines={1}>{locationSubtitle}</Text>
-              </View>
-              <Pressable
-                style={[styles.contactChangeButton, responsive.isCompact && styles.contactChangeButtonCompact]}
-                onPress={onChangeLocation || onClose}
-                hitSlop={7}
-                accessibilityRole="button"
-                accessibilityLabel={copy.changeLocation}
+            <>
+              <ScrollView
+                ref={contactScrollRef}
+                style={[styles.contactPagePanel, responsive.isCompact && styles.contactPagePanelCompact]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                scrollEnabled
+                bounces={false}
+                overScrollMode="never"
+                contentContainerStyle={[
+                  styles.contactPagePanelContent,
+                  {
+                    width: '100%',
+                    maxWidth: Math.min(680, responsive.contentMaxWidth),
+                    alignSelf: 'center',
+                    paddingHorizontal: responsive.horizontalPadding,
+                    paddingBottom: 22
+                  }
+                ]}
               >
-                <Text style={[styles.contactChangeButtonText, responsive.isCompact && styles.contactChangeButtonTextCompact]}>{copy.change}</Text>
-              </Pressable>
-            </View>
-            <ContactFormField
-              label={isPickup ? copy.pickupLandmarkOptional : copy.dropLandmarkOptional}
-              value={addressLine}
-              onChangeText={(value) => updateContact(isPickup ? { pickupAddressLine: value } : { dropAddressLine: value })}
-            />
-            <ContactFormField
-              label={isPickup ? copy.senderName : copy.receiverName}
-              value={name}
-              onChangeText={(value) => updateContact(isPickup ? { pickupContactName: value } : { dropContactName: value })}
-              icon="id-card-outline"
-            />
-            <ContactFormField
-              label={isPickup ? copy.senderMobile : copy.receiverMobile}
-              keyboardType="phone-pad"
-              value={phone}
-              onChangeText={(value) => updateContact(isPickup ? { pickupContactPhone: value } : { dropContactPhone: value })}
-            />
-            <Pressable
-              style={[styles.contactMobileCheckRow, responsive.isCompact && styles.contactMobileCheckRowCompact]}
-              onPress={usingMine ? enterManually : useMine}
-              hitSlop={8}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: usingMine }}
-              accessibilityLabel={`${copy.useMyMobileNumber} ${user.phone}`}
-            >
-              <Ionicons name={usingMine ? 'checkbox' : 'square-outline'} size={18} color={colors.customer} />
-              <Text style={[styles.contactMobileCheckText, responsive.isCompact && styles.contactMobileCheckTextCompact]}>{copy.useMyMobileNumber}: {user.phone}</Text>
-            </Pressable>
-            <Text style={[styles.contactSaveAsLabel, responsive.isCompact && styles.contactSaveAsLabelCompact]}>{copy.saveThisAddressAs}</Text>
-            <View style={[styles.contactTypeRow, responsive.isCompact && styles.contactTypeRowCompact]}>
-              {[
-                { type: 'home' as const, icon: 'home' as const, label: copy.homeAddress },
-                { type: 'work' as const, icon: 'business' as const, label: copy.shopAddress },
-                { type: 'other' as const, icon: 'heart' as const, label: copy.otherAddress }
-              ].map((option) => {
-                const active = selectedAddressType === option.type;
-                return (
+                <View style={styles.contactSheetHandle} />
+                <View style={[styles.contactAddressHeader, responsive.isCompact && styles.contactAddressHeaderCompact]}>
+                  <Ionicons name="location" size={responsive.isCompact ? 20 : 24} color={locationColor} />
+                  <View style={styles.flex}>
+                    <Text style={[styles.contactAddressTitle, responsive.isCompact && styles.contactAddressTitleCompact]} numberOfLines={1}>{locationTitle}</Text>
+                    <Text style={[styles.contactAddressSubtitle, responsive.isCompact && styles.contactAddressSubtitleCompact]} numberOfLines={1}>{locationSubtitle}</Text>
+                  </View>
                   <Pressable
-                    key={option.type}
-                    style={[
-                      styles.contactTypeChip,
-                      responsive.isCompact && styles.contactTypeChipCompact,
-                      active && styles.contactTypeChipActive
-                    ]}
-                    onPress={() => setSelectedAddressType(active ? null : option.type)}
-                    hitSlop={6}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: active }}
-                    accessibilityLabel={`${copy.saveAddressAs} ${option.label}`}
+                    style={[styles.contactChangeButton, responsive.isCompact && styles.contactChangeButtonCompact]}
+                    onPress={onChangeLocation || onClose}
+                    hitSlop={7}
+                    accessibilityRole="button"
+                    accessibilityLabel={copy.changeLocation}
                   >
-                    <Ionicons name={option.icon} size={13} color={active ? colors.customer : colors.ink} />
-                    <Text style={[
-                      styles.contactTypeChipText,
-                      responsive.isCompact && styles.contactTypeChipTextCompact,
-                      active && styles.contactTypeChipTextActive
-                    ]}>
-                      {option.label}
-                    </Text>
+                    <Text style={[styles.contactChangeButtonText, responsive.isCompact && styles.contactChangeButtonTextCompact]}>{copy.change}</Text>
                   </Pressable>
-                );
-              })}
-            </View>
-            </ScrollView>
-            {contactFooter}
-          </>
+                </View>
+                <ContactFormField
+                  label={isPickup ? copy.pickupLandmarkOptional : copy.dropLandmarkOptional}
+                  value={addressLine}
+                  onChangeText={(value) => updateContact(isPickup ? { pickupAddressLine: value } : { dropAddressLine: value })}
+                />
+                <ContactFormField
+                  label={isPickup ? copy.senderName : copy.receiverName}
+                  value={name}
+                  onChangeText={(value) => updateContact(isPickup ? { pickupContactName: value } : { dropContactName: value })}
+                  icon="id-card-outline"
+                />
+                <ContactFormField
+                  label={isPickup ? copy.senderMobile : copy.receiverMobile}
+                  keyboardType="phone-pad"
+                  value={phone}
+                  onChangeText={(value) => updateContact(isPickup ? { pickupContactPhone: value } : { dropContactPhone: value })}
+                />
+                <Pressable
+                  style={[styles.contactMobileCheckRow, responsive.isCompact && styles.contactMobileCheckRowCompact]}
+                  onPress={usingMine ? enterManually : useMine}
+                  hitSlop={8}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: usingMine }}
+                  accessibilityLabel={`${copy.useMyMobileNumber} ${user.phone}`}
+                >
+                  <Ionicons name={usingMine ? 'checkbox' : 'square-outline'} size={18} color={colors.customer} />
+                  <Text style={[styles.contactMobileCheckText, responsive.isCompact && styles.contactMobileCheckTextCompact]}>{copy.useMyMobileNumber}: {user.phone}</Text>
+                </Pressable>
+                <Text style={[styles.contactSaveAsLabel, responsive.isCompact && styles.contactSaveAsLabelCompact]}>{copy.saveThisAddressAs}</Text>
+                <View style={[styles.contactTypeRow, responsive.isCompact && styles.contactTypeRowCompact]}>
+                  {[
+                    { type: 'home' as const, icon: 'home' as const, label: copy.homeAddress },
+                    { type: 'work' as const, icon: 'business' as const, label: copy.shopAddress },
+                    { type: 'other' as const, icon: 'heart' as const, label: copy.otherAddress }
+                  ].map((option) => {
+                    const active = selectedAddressType === option.type;
+                    return (
+                      <Pressable
+                        key={option.type}
+                        style={[
+                          styles.contactTypeChip,
+                          responsive.isCompact && styles.contactTypeChipCompact,
+                          active && styles.contactTypeChipActive
+                        ]}
+                        onPress={() => setSelectedAddressType(active ? null : option.type)}
+                        hitSlop={6}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={`${copy.saveAddressAs} ${option.label}`}
+                      >
+                        <Ionicons name={option.icon} size={13} color={active ? colors.customer : colors.ink} />
+                        <Text style={[
+                          styles.contactTypeChipText,
+                          responsive.isCompact && styles.contactTypeChipTextCompact,
+                          active && styles.contactTypeChipTextActive
+                        ]}>
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+              {contactFooter}
+            </>
           )}
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -6678,100 +6686,100 @@ function MapLocationPicker({
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
         >
-        <View style={styles.mapPickerHeader}>
-          <Pressable
-            style={styles.mapPickerClose}
-            onPress={onClose}
-            hitSlop={3}
-            accessibilityRole="button"
-            accessibilityLabel={copy.closeLocationMap}
-          >
-            <Ionicons name="close" size={22} color={colors.ink} />
-          </Pressable>
-          <View style={styles.flex}>
-            <Text style={styles.mapPickerTitle}>{title}</Text>
-            <Text style={styles.mapPickerSubtitle}>{copy.searchPlacePin}</Text>
-          </View>
-        </View>
-
-        <View style={styles.mapPickerSearchShell}>
-          <Ionicons name="search" size={18} color={colors.customer} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder={copy.mapSearchPlaceholder}
-            placeholderTextColor={colors.muted}
-            style={styles.mapPickerSearchInput}
-          />
-          {loading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
-        </View>
-
-        {localError ? <Text style={styles.locationError}>{localError}</Text> : null}
-
-        {suggestions.length ? (
-          <View style={styles.mapPickerSuggestionBox}>
-            {suggestions.map((suggestion) => (
-              <Pressable key={suggestion.placeId} style={styles.locationSuggestionItem} onPress={() => chooseSuggestion(suggestion)}>
-                <Ionicons name="location-outline" size={18} color={colors.customer} />
-                <View style={styles.flex}>
-                  <Text style={styles.locationSuggestionTitle}>{suggestion.mainText}</Text>
-                  {suggestion.secondaryText ? <Text style={styles.locationSuggestionSubtitle}>{suggestion.secondaryText}</Text> : null}
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-
-        <View style={[styles.mapPickerCanvas, { minHeight: mapCanvasMinHeight }]}>
-          {canRenderNativeMap ? (
-            <>
-              <MapView
-                ref={mapRef}
-                provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                style={styles.mapPickerRealMap}
-                initialRegion={initialRegion}
-                onRegionChangeComplete={updatePinFromMap}
-              >
-                <Marker
-                  draggable
-                  coordinate={{ latitude: region.latitude, longitude: region.longitude }}
-                  onDragEnd={(event) => updatePinFromMarker(event.nativeEvent.coordinate.latitude, event.nativeEvent.coordinate.longitude)}
-                />
-              </MapView>
-              <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
-                <Ionicons name="location" size={34} color={colors.customer} />
-              </View>
-              <View pointerEvents="none" style={styles.mapPickerHint}>
-                <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.mapPickerFallback}>
-              <Ionicons name="map-outline" size={32} color={colors.customer} />
-              <Text style={styles.mapPickerFallbackText}>{copy.mapPreviewUnavailable}</Text>
+          <View style={styles.mapPickerHeader}>
+            <Pressable
+              style={styles.mapPickerClose}
+              onPress={onClose}
+              hitSlop={3}
+              accessibilityRole="button"
+              accessibilityLabel={copy.closeLocationMap}
+            >
+              <Ionicons name="close" size={22} color={colors.ink} />
+            </Pressable>
+            <View style={styles.flex}>
+              <Text style={styles.mapPickerTitle}>{title}</Text>
+              <Text style={styles.mapPickerSubtitle}>{copy.searchPlacePin}</Text>
             </View>
-          )}
-        </View>
-
-        <View style={styles.mapPickerSelectedCard}>
-          <Ionicons name="navigate-circle" size={22} color={colors.customer} />
-          <View style={styles.flex}>
-            <Text style={styles.mapPickerSelectedTitle} numberOfLines={1}>{pinLabel}</Text>
-            <Text style={styles.mapPickerCoords}>{lat.toFixed(5)}, {lng.toFixed(5)}</Text>
           </View>
-        </View>
 
-        <View style={styles.mapPickerBottomPanel}>
-          <Pressable style={styles.mapPickerCurrentButton} onPress={useCurrentLocation}>
-            {locating ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="locate" size={18} color={colors.customer} />}
-            <Text style={styles.mapPickerCurrentText}>{copy.useCurrentLocation}</Text>
-          </Pressable>
-
-          <View style={styles.mapPickerActions}>
-            <SecondaryButton title={copy.cancel} icon="close" onPress={onClose} />
-            <PrimaryButton title={copy.confirmLocation} icon="checkmark" onPress={confirmPin} />
+          <View style={styles.mapPickerSearchShell}>
+            <Ionicons name="search" size={18} color={colors.customer} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={copy.mapSearchPlaceholder}
+              placeholderTextColor={colors.muted}
+              style={styles.mapPickerSearchInput}
+            />
+            {loading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
           </View>
-        </View>
+
+          {localError ? <Text style={styles.locationError}>{localError}</Text> : null}
+
+          {suggestions.length ? (
+            <View style={styles.mapPickerSuggestionBox}>
+              {suggestions.map((suggestion) => (
+                <Pressable key={suggestion.placeId} style={styles.locationSuggestionItem} onPress={() => chooseSuggestion(suggestion)}>
+                  <Ionicons name="location-outline" size={18} color={colors.customer} />
+                  <View style={styles.flex}>
+                    <Text style={styles.locationSuggestionTitle}>{suggestion.mainText}</Text>
+                    {suggestion.secondaryText ? <Text style={styles.locationSuggestionSubtitle}>{suggestion.secondaryText}</Text> : null}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={[styles.mapPickerCanvas, { minHeight: mapCanvasMinHeight }]}>
+            {canRenderNativeMap ? (
+              <>
+                <MapView
+                  ref={mapRef}
+                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                  style={styles.mapPickerRealMap}
+                  initialRegion={initialRegion}
+                  onRegionChangeComplete={updatePinFromMap}
+                >
+                  <Marker
+                    draggable
+                    coordinate={{ latitude: region.latitude, longitude: region.longitude }}
+                    onDragEnd={(event) => updatePinFromMarker(event.nativeEvent.coordinate.latitude, event.nativeEvent.coordinate.longitude)}
+                  />
+                </MapView>
+                <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
+                  <Ionicons name="location" size={34} color={colors.customer} />
+                </View>
+                <View pointerEvents="none" style={styles.mapPickerHint}>
+                  <Text style={styles.mapPickerHintText}>{copy.dragMapPin}</Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.mapPickerFallback}>
+                <Ionicons name="map-outline" size={32} color={colors.customer} />
+                <Text style={styles.mapPickerFallbackText}>{copy.mapPreviewUnavailable}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.mapPickerSelectedCard}>
+            <Ionicons name="navigate-circle" size={22} color={colors.customer} />
+            <View style={styles.flex}>
+              <Text style={styles.mapPickerSelectedTitle} numberOfLines={1}>{pinLabel}</Text>
+              <Text style={styles.mapPickerCoords}>{lat.toFixed(5)}, {lng.toFixed(5)}</Text>
+            </View>
+          </View>
+
+          <View style={styles.mapPickerBottomPanel}>
+            <Pressable style={styles.mapPickerCurrentButton} onPress={useCurrentLocation}>
+              {locating ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="locate" size={18} color={colors.customer} />}
+              <Text style={styles.mapPickerCurrentText}>{copy.useCurrentLocation}</Text>
+            </Pressable>
+
+            <View style={styles.mapPickerActions}>
+              <SecondaryButton title={copy.cancel} icon="close" onPress={onClose} />
+              <PrimaryButton title={copy.confirmLocation} icon="checkmark" onPress={confirmPin} />
+            </View>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </Modal>
@@ -7455,98 +7463,98 @@ function WalletScreen({
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
-        <View style={[styles.walletCoinsCard, responsive.isCompact && styles.walletCoinsCardCompact]}>
-          <View style={[styles.walletCoinsHeader, responsive.isCompact && styles.walletCoinsHeaderCompact]}>
-            <View style={[styles.walletCoinsIcon, responsive.isCompact && styles.walletCoinsIconCompact]}>
-              <Ionicons name="wallet-outline" size={responsive.isCompact ? 18 : 21} color={colors.customer} />
-            </View>
-            <View style={styles.flex}>
-              <Text style={[styles.walletCoinsEyebrow, responsive.isCompact && styles.walletCoinsEyebrowCompact]}>{copy.indieryCoins}</Text>
-              <Text style={[styles.walletCoinsCaption, responsive.isCompact && styles.walletCoinsCaptionCompact]}>{copy.useCoinsDiscount}</Text>
-            </View>
+      <View style={[styles.walletCoinsCard, responsive.isCompact && styles.walletCoinsCardCompact]}>
+        <View style={[styles.walletCoinsHeader, responsive.isCompact && styles.walletCoinsHeaderCompact]}>
+          <View style={[styles.walletCoinsIcon, responsive.isCompact && styles.walletCoinsIconCompact]}>
+            <Ionicons name="wallet-outline" size={responsive.isCompact ? 18 : 21} color={colors.customer} />
           </View>
-
-          <View style={[styles.walletCoinsBalanceRow, responsive.isCompact && styles.walletCoinsBalanceRowCompact]}>
-            <View style={[styles.walletCoinsBalanceMain, responsive.isCompact && styles.walletCoinsBalanceMainCompact]}>
-              <Text style={[styles.walletCoinsValue, responsive.isCompact && styles.walletCoinsValueCompact]}>{wallet.coins}</Text>
-              <Text style={[styles.walletCoinsAvailable, responsive.isCompact && styles.walletCoinsAvailableCompact]}>{copy.coinsAvailable}</Text>
-            </View>
-            <View style={[styles.walletCoinsDiscountBox, responsive.isCompact && styles.walletCoinsDiscountBoxCompact]}>
-              <Ionicons name="sparkles" size={responsive.isCompact ? 14 : 16} color={colors.green} />
-              <View style={styles.flex}>
-                <Text style={[styles.walletCoinsDiscountValue, responsive.isCompact && styles.walletCoinsDiscountValueCompact]}>{money(nextOrderDiscount)}</Text>
-                <Text style={[styles.walletCoinsDiscount, responsive.isCompact && styles.walletCoinsDiscountCompact]}>{copy.coinDiscountNextOrders}</Text>
-              </View>
-            </View>
+          <View style={styles.flex}>
+            <Text style={[styles.walletCoinsEyebrow, responsive.isCompact && styles.walletCoinsEyebrowCompact]}>{copy.indieryCoins}</Text>
+            <Text style={[styles.walletCoinsCaption, responsive.isCompact && styles.walletCoinsCaptionCompact]}>{copy.useCoinsDiscount}</Text>
           </View>
-
-          <View style={styles.walletDebtNotice}>
-            <Ionicons name="information-circle-outline" size={17} color={wallet.coins <= customerCoinDebtLimit ? colors.red : colors.customer} />
-            <Text style={styles.walletDebtNoticeText}>{copy.coinDebtNotice}</Text>
-          </View>
-
-          <View style={styles.walletRechargeInputShell}>
-            <Text style={styles.walletRechargeCurrency}>₹</Text>
-            <TextInput
-              style={styles.walletRechargeInput}
-              value={rechargeAmountInput}
-              onChangeText={updateRechargeAmount}
-              placeholder={copy.enterRechargeAmount}
-              placeholderTextColor={colors.muted}
-              keyboardType="decimal-pad"
-              maxLength={8}
-            />
-          </View>
-
-          <Pressable
-            style={[
-              styles.walletRechargeButton,
-              (!rechargeAmountValid || busy) && styles.walletCouponButtonBusy
-            ]}
-            onPress={() => void rechargeCoins()}
-            disabled={!rechargeAmountValid || busy}
-          >
-            {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="add-circle-outline" size={18} color={colors.white} />}
-            <Text style={styles.walletRechargeButtonText}>{copy.rechargeCoins}</Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.walletCouponButton,
-              responsive.isCompact && styles.walletCouponButtonCompact,
-              busy && styles.walletCouponButtonBusy
-            ]}
-            onPress={applyFirst50}
-            disabled={busy}
-          >
-            {busy ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="gift-outline" size={17} color={colors.customer} />}
-            <Text style={[styles.walletCouponText, responsive.isCompact && styles.walletCouponTextCompact]}>{busy ? copy.applying : `${copy.applyCoupon} FIRST50`}</Text>
-          </Pressable>
-          {couponMessage ? (
-            <Text style={couponMessageKind === 'success' ? styles.walletCouponSuccess : styles.walletCouponError}>
-              {couponMessage}
-            </Text>
-          ) : null}
-
         </View>
 
-        <SectionTitle title={copy.coinActivity} />
-        {recentCoinLedger.length ? (
-          <View style={[styles.coinActivityCard, responsive.isCompact && styles.coinActivityCardCompact]}>
-            {recentCoinLedger.map((item, index) => (
-              <CoinActivityRow
-                key={item.id}
-                item={item}
-                showDivider={index < recentCoinLedger.length - 1}
-              />
-            ))}
+        <View style={[styles.walletCoinsBalanceRow, responsive.isCompact && styles.walletCoinsBalanceRowCompact]}>
+          <View style={[styles.walletCoinsBalanceMain, responsive.isCompact && styles.walletCoinsBalanceMainCompact]}>
+            <Text style={[styles.walletCoinsValue, responsive.isCompact && styles.walletCoinsValueCompact]}>{wallet.coins}</Text>
+            <Text style={[styles.walletCoinsAvailable, responsive.isCompact && styles.walletCoinsAvailableCompact]}>{copy.coinsAvailable}</Text>
           </View>
-        ) : (
-          <View style={styles.emptyHistoryCard}>
-            <Ionicons name="gift-outline" size={24} color={colors.muted} />
-            <Text style={styles.cardTitle}>{copy.noCoinActivity}</Text>
+          <View style={[styles.walletCoinsDiscountBox, responsive.isCompact && styles.walletCoinsDiscountBoxCompact]}>
+            <Ionicons name="sparkles" size={responsive.isCompact ? 14 : 16} color={colors.green} />
+            <View style={styles.flex}>
+              <Text style={[styles.walletCoinsDiscountValue, responsive.isCompact && styles.walletCoinsDiscountValueCompact]}>{money(nextOrderDiscount)}</Text>
+              <Text style={[styles.walletCoinsDiscount, responsive.isCompact && styles.walletCoinsDiscountCompact]}>{copy.coinDiscountNextOrders}</Text>
+            </View>
           </View>
-        )}
+        </View>
+
+        <View style={styles.walletDebtNotice}>
+          <Ionicons name="information-circle-outline" size={17} color={wallet.coins <= customerCoinDebtLimit ? colors.red : colors.customer} />
+          <Text style={styles.walletDebtNoticeText}>{copy.coinDebtNotice}</Text>
+        </View>
+
+        <View style={styles.walletRechargeInputShell}>
+          <Text style={styles.walletRechargeCurrency}>₹</Text>
+          <TextInput
+            style={styles.walletRechargeInput}
+            value={rechargeAmountInput}
+            onChangeText={updateRechargeAmount}
+            placeholder={copy.enterRechargeAmount}
+            placeholderTextColor={colors.muted}
+            keyboardType="decimal-pad"
+            maxLength={8}
+          />
+        </View>
+
+        <Pressable
+          style={[
+            styles.walletRechargeButton,
+            (!rechargeAmountValid || busy) && styles.walletCouponButtonBusy
+          ]}
+          onPress={() => void rechargeCoins()}
+          disabled={!rechargeAmountValid || busy}
+        >
+          {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="add-circle-outline" size={18} color={colors.white} />}
+          <Text style={styles.walletRechargeButtonText}>{copy.rechargeCoins}</Text>
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.walletCouponButton,
+            responsive.isCompact && styles.walletCouponButtonCompact,
+            busy && styles.walletCouponButtonBusy
+          ]}
+          onPress={applyFirst50}
+          disabled={busy}
+        >
+          {busy ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="gift-outline" size={17} color={colors.customer} />}
+          <Text style={[styles.walletCouponText, responsive.isCompact && styles.walletCouponTextCompact]}>{busy ? copy.applying : `${copy.applyCoupon} FIRST50`}</Text>
+        </Pressable>
+        {couponMessage ? (
+          <Text style={couponMessageKind === 'success' ? styles.walletCouponSuccess : styles.walletCouponError}>
+            {couponMessage}
+          </Text>
+        ) : null}
+
+      </View>
+
+      <SectionTitle title={copy.coinActivity} />
+      {recentCoinLedger.length ? (
+        <View style={[styles.coinActivityCard, responsive.isCompact && styles.coinActivityCardCompact]}>
+          {recentCoinLedger.map((item, index) => (
+            <CoinActivityRow
+              key={item.id}
+              item={item}
+              showDivider={index < recentCoinLedger.length - 1}
+            />
+          ))}
+        </View>
+      ) : (
+        <View style={styles.emptyHistoryCard}>
+          <Ionicons name="gift-outline" size={24} color={colors.muted} />
+          <Text style={styles.cardTitle}>{copy.noCoinActivity}</Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -7705,6 +7713,7 @@ function AccountScreen({
     return (
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
+          style={styles.accountCurveScroll}
           contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -7730,10 +7739,10 @@ function AccountScreen({
               <Field label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" />
               <Field label={copy.city} value={city} onChangeText={setCity} />
               <Field label={copy.mobileNumber} value={data.user.phone} editable={false} keyboardType="phone-pad" />
-        <View style={[styles.accountInfoStrip, responsive.isCompact && styles.accountInfoStripCompact]}>
-          <Ionicons name="shield-checkmark" size={19} color={colors.customer} />
-          <Text style={[styles.accountInfoText, responsive.isCompact && styles.accountInfoTextCompact]}>{copy.mobileLinkedText}</Text>
-        </View>
+              <View style={[styles.accountInfoStrip, responsive.isCompact && styles.accountInfoStripCompact]}>
+                <Ionicons name="shield-checkmark" size={19} color={colors.customer} />
+                <Text style={[styles.accountInfoText, responsive.isCompact && styles.accountInfoTextCompact]}>{copy.mobileLinkedText}</Text>
+              </View>
               {localError ? <Text style={styles.accountEditError}>{localError}</Text> : null}
               <View style={[styles.accountEditActions, responsive.isCompact && styles.accountEditActionsCompact]}>
                 <SecondaryButton title={copy.cancel} icon="close" onPress={cancelEditDetails} />
@@ -7924,27 +7933,27 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
     title: string;
     subtitle: string;
   }> = [
-    {
-      icon: 'repeat-outline',
-      title: copy.recurringRoutes,
-      subtitle: copy.recurringRoutesText
-    },
-    {
-      icon: 'receipt-outline',
-      title: copy.monthlyBilling,
-      subtitle: copy.monthlyBillingText
-    },
-    {
-      icon: 'cube-outline',
-      title: copy.bulkOrders,
-      subtitle: copy.bulkOrdersText
-    },
-    {
-      icon: 'headset-outline',
-      title: copy.prioritySupport,
-      subtitle: copy.prioritySupportText
-    }
-  ];
+      {
+        icon: 'repeat-outline',
+        title: copy.recurringRoutes,
+        subtitle: copy.recurringRoutesText
+      },
+      {
+        icon: 'receipt-outline',
+        title: copy.monthlyBilling,
+        subtitle: copy.monthlyBillingText
+      },
+      {
+        icon: 'cube-outline',
+        title: copy.bulkOrders,
+        subtitle: copy.bulkOrdersText
+      },
+      {
+        icon: 'headset-outline',
+        title: copy.prioritySupport,
+        subtitle: copy.prioritySupportText
+      }
+    ];
   const businessTypes = [copy.retailStores, copy.wholesalers, copy.restaurants, copy.manufacturers, copy.offices, copy.ecommerceSellers];
 
   return (
@@ -7958,7 +7967,7 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
           onPress={onBack}
           hitSlop={3}
           accessibilityRole="button"
-        accessibilityLabel={copy.goBack}
+          accessibilityLabel={copy.goBack}
         >
           <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.ink} />
         </Pressable>
@@ -8005,7 +8014,7 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
         <Text style={[styles.enterpriseFeatureText, responsive.isCompact && styles.enterpriseFeatureTextCompact]}>{copy.shareBusinessRoutes}</Text>
         <View style={styles.row}>
           <SecondaryButton title={copy.emailButton} icon="mail-outline" onPress={() => Linking.openURL('mailto:support@indiery.com?subject=Indiery%20Enterprises')} />
-          <PrimaryButton title={copy.callButton} icon="call-outline" onPress={() => Linking.openURL('tel:+919000000000')} />
+          <PrimaryButton title={copy.callButton} icon="call-outline" onPress={() => Linking.openURL('tel:+919264926552')} />
         </View>
       </View>
     </ScrollView>
@@ -8114,25 +8123,25 @@ function SupportPanel() {
     subtitle: string;
     action: () => void;
   }> = [
-    {
-      icon: 'mail-outline',
-      title: copy.emailSupport,
-      subtitle: 'support@indiery.com',
-      action: () => Linking.openURL('mailto:support@indiery.com?subject=Indiery%20Customer%20Support')
-    },
-    {
-      icon: 'call-outline',
-      title: copy.callSupport,
-      subtitle: '+91 90000 00000',
-      action: () => Linking.openURL('tel:+919000000000')
-    },
-    {
-      icon: 'document-text-outline',
-      title: copy.reportOrderIssue,
-      subtitle: copy.reportOrderIssueSubtitle,
-      action: () => Linking.openURL('mailto:support@indiery.com?subject=Order%20Issue')
-    }
-  ];
+      {
+        icon: 'mail-outline',
+        title: copy.emailSupport,
+        subtitle: 'support@indiery.com',
+        action: () => Linking.openURL('mailto:support@indiery.com?subject=Indiery%20Customer%20Support')
+      },
+      {
+        icon: 'call-outline',
+        title: copy.callSupport,
+        subtitle: '+91 92649 26552',
+        action: () => Linking.openURL('tel:+919264926552')
+      },
+      {
+        icon: 'document-text-outline',
+        title: copy.reportOrderIssue,
+        subtitle: copy.reportOrderIssueSubtitle,
+        action: () => Linking.openURL('mailto:support@indiery.com?subject=Order%20Issue')
+      }
+    ];
 
   return (
     <View style={[styles.accountPanel, responsive.isCompact && styles.accountPanelCompact]}>
@@ -8246,6 +8255,7 @@ function AccountPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: 
   const displayedPolicy = language === 'hi' ? customerLegalPoliciesHi[policy.id] : policy;
   return (
     <ScrollView
+      style={styles.accountCurveScroll}
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
@@ -10141,12 +10151,12 @@ const styles = StyleSheet.create({
   walletCoinsCaptionCompact: { fontSize: 10, lineHeight: 13, marginTop: 1 },
   walletCoinsBalanceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14, paddingVertical: 16 },
   walletCoinsBalanceRowCompact: { gap: 10, paddingVertical: 11 },
-  walletCoinsBalanceMain: { flexBasis: 80, flexShrink: 0 },
-  walletCoinsBalanceMainCompact: { flexBasis: 68 },
+  walletCoinsBalanceMain: { flexDirection: 'row', alignItems: 'baseline', flexShrink: 0, gap: 6 },
+  walletCoinsBalanceMainCompact: { gap: 4 },
   walletCoinsValue: { color: colors.customer, fontSize: 36, fontWeight: '700', lineHeight: 40 },
   walletCoinsValueCompact: { fontSize: 29, lineHeight: 32 },
-  walletCoinsAvailable: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
-  walletCoinsAvailableCompact: { fontSize: 10, marginTop: 1 },
+  walletCoinsAvailable: { color: colors.muted, fontSize: 11, fontWeight: '600' },
+  walletCoinsAvailableCompact: { fontSize: 10 },
   walletCoinsDiscountBox: { flex: 1, minWidth: 0, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
   walletCoinsDiscountBoxCompact: { minHeight: 48, borderRadius: 12, gap: 6, paddingHorizontal: 9, paddingVertical: 7 },
   walletCoinsDiscountValue: { color: colors.green, fontSize: 14, fontWeight: '600' },
@@ -10319,6 +10329,7 @@ const styles = StyleSheet.create({
   savedAddressEmptyCompact: { borderRadius: 13, padding: 12, gap: 4 },
   savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   savedAddressEmptyTitleCompact: { fontSize: 12 },
+  accountCurveScroll: { flex: 1, marginHorizontal: 14, borderTopLeftRadius: 25, borderTopRightRadius: 25, overflow: 'hidden' },
   accountDetailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   accountDetailHeaderCompact: { gap: 9, marginBottom: 10 },
   accountDetailTitle: { color: colors.ink, fontSize: 21, fontWeight: '700', marginTop: 2 },

@@ -6971,7 +6971,9 @@ function OrdersScreen({
               <Ionicons name="navigate-outline" size={responsive.isCompact ? 25 : 30} color={colors.muted} />
               <Text style={[styles.emptyTitle, responsive.isCompact && styles.emptyTitleCompact]}>{copy.noActiveDelivery}</Text>
               <Text style={[styles.muted, responsive.isCompact && styles.mutedCompact]}>{copy.liveTrackingAppear}</Text>
-              <PrimaryButton title={copy.bookDelivery} icon="add" onPress={onBook} />
+              <View style={[styles.noActiveOrderButtonRow, responsive.isCompact && styles.noActiveOrderButtonRowCompact]}>
+                <PrimaryButton title={copy.bookDelivery} icon="add" onPress={onBook} />
+              </View>
             </View>
           )}
 
@@ -7388,7 +7390,9 @@ function TrackScreen({
         <Ionicons name="cube-outline" size={42} color={colors.muted} />
         <Text style={styles.emptyTitle}>{copy.noActiveDelivery}</Text>
         <Text style={styles.muted}>{copy.liveTrackingAppear}</Text>
-        <PrimaryButton title={refreshing ? copy.refreshing : copy.refresh} icon="refresh" onPress={onRefresh} disabled={refreshing} loading={refreshing} />
+        <View style={{ width: '100%', maxWidth: 220, flexDirection: 'row', marginTop: 4 }}>
+          <PrimaryButton title={refreshing ? copy.refreshing : copy.refresh} icon="refresh" onPress={onRefresh} disabled={refreshing} loading={refreshing} />
+        </View>
       </View>
     );
   }
@@ -9572,8 +9576,10 @@ const styles = StyleSheet.create({
   timelinePanel: { marginBottom: 4 },
   timelinePanelCompact: { marginBottom: 2 },
   timelinePanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  noActiveOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 8 },
-  noActiveOrderCardCompact: { borderRadius: 14, padding: 13, gap: 6 },
+  noActiveOrderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 18, alignItems: 'center', gap: 8, marginBottom: 14 },
+  noActiveOrderCardCompact: { borderRadius: 14, padding: 13, gap: 6, marginBottom: 10 },
+  noActiveOrderButtonRow: { width: '100%', maxWidth: 220, flexDirection: 'row', marginTop: 4 },
+  noActiveOrderButtonRowCompact: { maxWidth: 200, marginTop: 2 },
   historyHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   historyHeaderCompact: { gap: 6 },
   orderHistoryFilterButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: colors.customer, borderRadius: 10, backgroundColor: colors.white, paddingHorizontal: 10, paddingVertical: 5 },

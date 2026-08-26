@@ -50,7 +50,8 @@ import {
   statusLabels,
   uploadFileToCloudinary,
   UserProfile,
-  Vehicle
+  Vehicle,
+  withTransientRetry
 } from '@indiery/shared';
 
 declare const process: { env?: Record<string, string | undefined> };
@@ -1337,7 +1338,7 @@ export default function App() {
         setData(null);
         return;
       }
-      const firebaseIdToken = await currentUser.getIdToken();
+      const firebaseIdToken = await withTransientRetry(() => currentUser.getIdToken());
       await completeFirebaseLogin(firebaseIdToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : copyFor(language, 'unableToLoadPartnerApp'));
@@ -1348,9 +1349,12 @@ export default function App() {
 
   async function completeFirebaseLogin(firebaseIdToken: string) {
     setError('');
-    const login = await api.firebaseLogin('partner', firebaseIdToken);
-    api.setToken(login.token);
-    const bootstrap = await api.partnerBootstrap();
+    const { login, bootstrap } = await withTransientRetry(async () => {
+      const login = await api.firebaseLogin('partner', firebaseIdToken);
+      api.setToken(login.token);
+      const bootstrap = await api.partnerBootstrap();
+      return { login, bootstrap };
+    });
     setData(bootstrap);
     setTab('dashboard');
     setProfileDetailOpen(false);
@@ -2145,6 +2149,7 @@ function LoginScreen({
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const loginScrollRef = useRef<ScrollView | null>(null);
+  const verificationInFlightRef = useRef<Promise<void> | null>(null);
   const fullLoginViewportRef = useRef({
     width: loginViewport.width,
     height: loginViewport.height
@@ -2170,10 +2175,21 @@ function LoginScreen({
   const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
   const phoneReady = normalizedPhone.length === 10;
   const otpReady = code.trim().length === 6;
+  const expectedFirebasePhone = `+91${normalizedPhone}`;
 
   useEffect(() => {
     setError(initialError);
   }, [initialError]);
+
+  useEffect(() => {
+    if (!confirmation) return undefined;
+    return auth().onAuthStateChanged((user) => {
+      if (!user || user.phoneNumber !== expectedFirebasePhone) return;
+      void completeAuthenticatedUser(user).catch((err) => {
+        setError(err instanceof Error ? err.message : copy.unableToVerifyOtp);
+      });
+    });
+  }, [confirmation, expectedFirebasePhone]);
 
   useEffect(() => {
     if (!confirmation || resendSeconds <= 0) return undefined;
@@ -2245,17 +2261,61 @@ function LoginScreen({
     }
   }
 
+  function completeAuthenticatedUser(user: FirebaseAuthTypes.User) {
+    const existingCompletion = verificationInFlightRef.current;
+    if (existingCompletion) return existingCompletion;
+
+    const completion = (async () => {
+      setBusy(true);
+      setError('');
+      const firebaseIdToken = await user.getIdToken();
+      await onVerified(firebaseIdToken);
+    })();
+    verificationInFlightRef.current = completion;
+    const clearCompletion = () => {
+      if (verificationInFlightRef.current === completion) verificationInFlightRef.current = null;
+      setBusy(false);
+    };
+    void completion.then(clearCompletion, clearCompletion);
+    return completion;
+  }
+
   async function verifyOtp() {
     if (!confirmation || !otpReady || busy) return;
     setBusy(true);
     setError('');
     try {
-      const credential = await confirmation.confirm(code.trim());
+      const automaticallyVerifiedUser = auth().currentUser;
+      if (automaticallyVerifiedUser?.phoneNumber === expectedFirebasePhone) {
+        await completeAuthenticatedUser(automaticallyVerifiedUser);
+        return;
+      }
+
+      let credential: FirebaseAuthTypes.UserCredential | null;
+      try {
+        credential = await confirmation.confirm(code.trim());
+      } catch (confirmationError) {
+        const userAfterConfirmation = auth().currentUser;
+        if (userAfterConfirmation?.phoneNumber === expectedFirebasePhone) {
+          await completeAuthenticatedUser(userAfterConfirmation);
+          return;
+        }
+        throw confirmationError;
+      }
       if (!credential?.user) throw new Error(copy.unableToVerifyOtp);
-      const firebaseIdToken = await credential.user.getIdToken();
-      await onVerified(firebaseIdToken);
+      await completeAuthenticatedUser(credential.user);
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.invalidOtp);
+      const errorCode = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+      if (errorCode === 'auth/session-expired') setResendSeconds(0);
+      setError(
+        errorCode === 'auth/invalid-verification-code'
+          ? copy.invalidOtp
+          : errorCode === 'auth/session-expired'
+            ? `${copy.unableToVerifyOtp}. ${copy.resendOtp}.`
+            : err instanceof Error
+              ? err.message
+              : copy.invalidOtp
+      );
     } finally {
       setBusy(false);
     }

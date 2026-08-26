@@ -31,6 +31,35 @@ export class ApiError extends Error {
   }
 }
 
+function isTransientRequestError(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String(error.code) : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  return (
+    code === 'auth/network-request-failed' ||
+    message.includes('failed to fetch') ||
+    message.includes('network request failed') ||
+    message.includes('network error')
+  );
+}
+
+export async function withTransientRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isTransientRequestError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** (attempt - 1))));
+    }
+  }
+  throw lastError;
+}
+
 export class IndieryApi {
   private baseUrl: string;
   private token?: string;
@@ -114,7 +143,11 @@ export class IndieryApi {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new ApiError(0, 'The server is taking too long. Please try again.', {});
       }
-      throw error;
+      throw new ApiError(
+        0,
+        'Unable to connect to Indiery. Check your internet connection and try again.',
+        { cause: error instanceof Error ? error.message : String(error) }
+      );
     } finally {
       clearTimeout(timeout);
     }

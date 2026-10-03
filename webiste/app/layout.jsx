@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./legacy.css";
 
 export const metadata = {
   title: {

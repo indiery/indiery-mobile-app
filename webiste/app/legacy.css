@@ -1,0 +1,22 @@
+.legacy-head {
+  display: none !important;
+}
+
+.legacy-document {
+  display: contents;
+}
+
+#preloader {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .legacy-document *,
+  .legacy-document *::before,
+  .legacy-document *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

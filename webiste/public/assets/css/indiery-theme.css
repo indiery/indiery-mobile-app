@@ -1,0 +1,1175 @@
+/* ==========================================================================
+   INDIERY OFFICIAL WHITE & ELECTRIC PURPLE THEME (NO BLACK)
+   Clean, Luminous, Production-Level Aesthetic
+   Primary: #7027E8 | Background: #FFFFFF / #F8FAFC | Accent: #10B981 | Light: #F5F2FE
+   ========================================================================== */
+
+/* Self-host the template icons. The original remote font is blocked on some
+   pages/browsers and appears as empty square glyphs. */
+@font-face {
+  font-family: "indiery-logistics-icons";
+  src: url("../fonts/logistex-icons-local.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
+i[class^="logistex-"]::before,
+i[class*=" logistex-"]::before {
+  font-family: "indiery-logistics-icons" !important;
+  font-style: normal !important;
+  font-weight: 400 !important;
+}
+
+:root {
+  --tanspot-base: #7027E8 !important;
+  --tanspot-base-rgb: 112, 39, 232 !important;
+  --tanspot-black: #0F172A !important;
+  --tanspot-black-rgb: 15, 23, 42 !important;
+  --indiery-purple: #7027E8 !important;
+  --indiery-purple-hover: #5B18D6 !important;
+  --indiery-purple-dark: #1E1235 !important;
+  --indiery-purple-light: #F5F2FE !important;
+  --indiery-purple-border: #DDD6FE !important;
+  --indiery-green: #10B981 !important;
+  --indiery-green-light: #D1FAE5 !important;
+  --indiery-slate-900: #0F172A !important;
+  --indiery-slate-600: #475569 !important;
+  --indiery-slate-100: #F1F5F9 !important;
+  --tg-theme-primary: #7027E8 !important;
+  --tg-theme-primary-two: #7027E8 !important;
+  --unit-primary-color: #7027E8 !important;
+  --e-global-color-primary: #7027E8 !important;
+  --e-global-color-accent: #7027E8 !important;
+}
+
+/* The imported WordPress template labels several pages `theme-red` and also
+   writes an old primary colour directly on <body>. Keep every page on brand. */
+body,
+body.theme-red,
+body.elementor-kit-9511 {
+  --tg-theme-primary: #7027E8 !important;
+  --tg-theme-primary-two: #7027E8 !important;
+  --unit-primary-color: #7027E8 !important;
+  --e-global-color-primary: #7027E8 !important;
+  --e-global-color-accent: #7027E8 !important;
+}
+
+/* Base Body: Bright White with Rich Slate Typography */
+body {
+  background-color: #FFFFFF !important;
+  color: #475569 !important;
+  font-family: "Poppins", sans-serif;
+  overflow-x: hidden;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  color: #0F172A !important;
+  font-family: "Rubik", sans-serif;
+}
+
+/* Primary Button (.thm-btn) */
+.thm-btn {
+  background-color: #7027E8 !important;
+  color: #FFFFFF !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+  padding: 14px 28px !important;
+  box-shadow: 0 8px 24px -4px rgba(112, 39, 232, 0.4) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  border: none !important;
+}
+.thm-btn:hover {
+  background-color: #5B18D6 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 14px 30px -4px rgba(112, 39, 232, 0.55) !important;
+  transform: translateY(-2px) !important;
+}
+.thm-btn span {
+  background-color: #5B18D6 !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+}
+.thm-btn:hover span {
+  background-color: #7027E8 !important;
+  color: #FFFFFF !important;
+}
+
+/* Header Top Bar: Clean White / Slate */
+.main-header .main-menu__top {
+  background-color: #F8FAFC !important;
+  border-bottom: 1px solid #E2E8F0 !important;
+  padding: 10px 0 !important;
+}
+.main-menu__contact-list li .icon i {
+  color: #7027E8 !important;
+}
+.main-menu__contact-list li .text p,
+.main-menu__contact-list li .text p a {
+  color: #334155 !important;
+  font-weight: 500;
+}
+.main-menu__contact-list li .text p a:hover {
+  color: #7027E8 !important;
+}
+.main-menu__top-welcome-text {
+  color: #64748B !important;
+  font-weight: 500 !important;
+}
+.main-menu__top-time-icon span {
+  color: #7027E8 !important;
+}
+.main-menu__top-text {
+  color: #334155 !important;
+}
+.main-menu__social a {
+  color: #64748B !important;
+  background: #EDF2F7 !important;
+  border-radius: 50% !important;
+  transition: all 0.3s ease !important;
+}
+.main-menu__social a:hover {
+  background: #7027E8 !important;
+  color: #FFFFFF !important;
+}
+
+/* Main Navigation: Pure White */
+.main-menu__wrapper {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
+  border-bottom: 1px solid #F1F5F9 !important;
+}
+.main-menu__logo {
+  background-color: #7027E8 !important;
+  border-radius: 0 0 16px 16px !important;
+  padding: 8px 24px !important;
+}
+.main-menu__list > li > a {
+  color: #0F172A !important;
+  font-weight: 600 !important;
+}
+.main-menu__list > li.current > a,
+.main-menu__list > li:hover > a {
+  color: #7027E8 !important;
+}
+.main-menu__list > li > a::before {
+  background-color: #7027E8 !important;
+}
+.main-menu__call-icon {
+  background-color: #F5F2FE !important;
+  color: #7027E8 !important;
+  border-radius: 12px !important;
+}
+.main-menu__call-icon i {
+  color: #7027E8 !important;
+}
+.main-menu__call-sub-title {
+  color: #64748B !important;
+}
+.main-menu__call-number a {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+.main-menu__call-number a:hover {
+  color: #7027E8 !important;
+}
+.main-menu__search-box a {
+  color: #0F172A !important;
+}
+.main-menu__cart {
+  color: #0F172A !important;
+}
+.main-menu__cart-count {
+  background-color: #7027E8 !important;
+  color: #FFFFFF !important;
+}
+
+/* Sticky Header */
+.stricky-header.main-menu {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 4px 25px rgba(0, 0, 0, 0.08) !important;
+}
+.stricky-header .main-menu__list > li > a {
+  color: #0F172A !important;
+}
+
+/* ==========================================================================
+   HERO BANNER: LUMINOUS WHITE & ELECTRIC PURPLE (NO BLACK)
+   ========================================================================== */
+.banner-one {
+  position: relative !important;
+  background: linear-gradient(135deg, #FFFFFF 0%, #FAF8FF 55%, #F3EDFD 100%) !important;
+  padding: 160px 0 120px !important;
+  overflow: hidden !important;
+  border-bottom: 1px solid #EDE9FE !important;
+}
+.banner-one__pattern {
+  opacity: 0.03 !important;
+  filter: invert(1) !important;
+}
+.banner-one__line-shpae1 {
+  background: linear-gradient(135deg, rgba(112, 39, 232, 0.12) 0%, rgba(139, 92, 246, 0.22) 100%) !important;
+}
+.banner-one__line-shpae2 {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(112, 39, 232, 0.25) 100%) !important;
+}
+.banner-one__content-box {
+  max-width: 630px !important;
+  position: relative;
+  z-index: 6;
+}
+.banner-one__sub-title {
+  color: #7027E8 !important;
+}
+.banner-one__title {
+  color: #0F172A !important;
+  font-size: 60px !important;
+  font-weight: 800 !important;
+  line-height: 1.15em !important;
+  margin-top: 16px !important;
+  margin-bottom: 16px !important;
+}
+.banner-one__title span {
+  color: #7027E8 !important;
+}
+.banner-one__text {
+  color: #334155 !important;
+  font-size: 16.5px !important;
+  line-height: 28px !important;
+  max-width: 580px !important;
+}
+
+/* Hero Fleet Pills (Light Purple Badges) */
+.hero-pills-wrap span {
+  background: #F5F2FE !important;
+  color: #7027E8 !important;
+  border: 1px solid #DDD6FE !important;
+  padding: 6px 14px !important;
+  border-radius: 20px !important;
+  font-weight: 600 !important;
+  font-size: 12.5px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  box-shadow: 0 2px 6px rgba(112, 39, 232, 0.08) !important;
+}
+.hero-pills-wrap span i {
+  color: #7027E8 !important;
+}
+
+/* Review Block in Hero */
+.hero-rating-badge {
+  background: #FFFFFF !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06) !important;
+  border-radius: 14px !important;
+  padding: 8px 16px !important;
+}
+.hero-rating-badge .stars {
+  color: #FFB800 !important;
+}
+.hero-rating-badge .text {
+  color: #0F172A !important;
+}
+
+/* Hero Truck Image: Grounded on Light Background with Shadow */
+.banner-one__img {
+  position: absolute !important;
+  bottom: 25px !important;
+  right: -25px !important;
+  z-index: 3 !important;
+  pointer-events: none !important;
+  transition: all 0.3s ease !important;
+}
+.banner-one__img img {
+  max-height: 520px !important;
+  max-width: 52vw !important;
+  width: auto !important;
+  display: block !important;
+  filter: drop-shadow(0 25px 35px rgba(112, 39, 232, 0.22)) !important;
+}
+
+@media (max-width: 1400px) {
+  .banner-one {
+    padding: 150px 0 100px !important;
+  }
+  .banner-one__content-box {
+    max-width: 550px !important;
+  }
+  .banner-one__title {
+    font-size: 52px !important;
+  }
+  .banner-one__img {
+    bottom: 30px !important;
+    right: -30px !important;
+  }
+  .banner-one__img img {
+    max-height: 460px !important;
+    max-width: 50vw !important;
+  }
+}
+
+@media (max-width: 1200px) {
+  .banner-one__content-box {
+    max-width: 480px !important;
+  }
+  .banner-one__title {
+    font-size: 44px !important;
+  }
+  .banner-one__img {
+    bottom: 35px !important;
+    right: -40px !important;
+  }
+  .banner-one__img img {
+    max-height: 390px !important;
+  }
+}
+
+@media (max-width: 991px) {
+  .banner-one {
+    padding: 140px 0 50px !important;
+  }
+  .banner-one__content-box {
+    max-width: 100% !important;
+    text-align: center !important;
+  }
+  .hero-pills-wrap {
+    justify-content: center !important;
+  }
+  .banner-one__btn-and-review-box {
+    justify-content: center !important;
+  }
+  .banner-one__img {
+    position: relative !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    margin-top: 35px !important;
+    text-align: center !important;
+  }
+  .banner-one__img img {
+    max-width: 92% !important;
+    max-height: 380px !important;
+    margin: 0 auto !important;
+  }
+}
+
+/* ==========================================================================
+   ABOUT SECTION: WHITE & CRISP
+   ========================================================================== */
+.about-one {
+  background-color: #FFFFFF !important;
+  padding: 100px 0 !important;
+}
+.section-title__tagline {
+  color: #7027E8 !important;
+  font-weight: 700 !important;
+}
+.section-title__tagline-border {
+  background-color: #7027E8 !important;
+}
+.section-title__title {
+  color: #0F172A !important;
+}
+.section-title__title span {
+  color: #7027E8 !important;
+}
+.about-one__text {
+  color: #475569 !important;
+  font-size: 16px !important;
+  line-height: 28px !important;
+}
+.about-one__point-icon span::before {
+  color: #7027E8 !important;
+}
+.about-one__point-content h4 {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+.about-one__point-content p {
+  color: #64748B !important;
+}
+.about-one__point-two .icon span {
+  color: #10B981 !important;
+}
+.about-one__point-two .text p {
+  color: #1E293B !important;
+  font-weight: 600 !important;
+}
+.about-one__experience-box {
+  background: linear-gradient(135deg, #7027E8 0%, #5B18D6 100%) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 15px 35px -5px rgba(112, 39, 232, 0.45) !important;
+}
+.about-one__curved-circle {
+  color: #7027E8 !important;
+}
+.about-one__video-icon {
+  background-color: #7027E8 !important;
+}
+
+/* ==========================================================================
+   MARQUEE TICKER (PURPLE BANNER WITH WHITE TEXT)
+   ========================================================================== */
+.sliding-text-one {
+  background: linear-gradient(90deg, #5B18D6 0%, #7027E8 50%, #8B5CF6 100%) !important;
+  padding: 18px 0 !important;
+}
+.sliding-text__title {
+  color: #FFFFFF !important;
+  font-weight: 800 !important;
+  letter-spacing: 1px !important;
+}
+
+/* ==========================================================================
+   SERVICES SECTION: CRISP WHITE CARDS ON SOFT LAVENDER
+   ========================================================================== */
+.services-one {
+  background-color: #F8F9FE !important;
+  padding: 100px 0 !important;
+}
+.services-one__single {
+  background-color: #FFFFFF !important;
+  border: 1px solid #EDE9FE !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  box-shadow: 0 10px 25px -5px rgba(112, 39, 232, 0.06) !important;
+  transition: all 0.35s ease !important;
+}
+.services-one__single:hover {
+  border-color: #7027E8 !important;
+  transform: translateY(-6px) !important;
+  box-shadow: 0 20px 40px -10px rgba(112, 39, 232, 0.18) !important;
+}
+.services-one__count {
+  color: #7027E8 !important;
+  font-weight: 800 !important;
+}
+.services-one__title a {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+.services-one__title a:hover {
+  color: #7027E8 !important;
+}
+.services-one__text {
+  color: #64748B !important;
+}
+.services-one__btn-box a {
+  color: #7027E8 !important;
+  font-weight: 700 !important;
+}
+.services-one__icon span::before {
+  color: #7027E8 !important;
+}
+
+/* ==========================================================================
+   PLATFORM RELIABILITY & COUNTER SECTION (WHITE & PURPLE)
+   ========================================================================== */
+.skill-one {
+  background-color: #FFFFFF !important;
+  padding: 90px 0 !important;
+}
+.skill-one__bg {
+  display: none !important;
+}
+.skill-one .section-title__title {
+  color: #0F172A !important;
+}
+.skill-one__text {
+  color: #475569 !important;
+}
+.skill-one__progress-box .progress-box .bar-title {
+  color: #0F172A !important;
+  font-weight: 600 !important;
+}
+.skill-one__progress-box .progress-box .bar {
+  background-color: #EDE9FE !important;
+  border-radius: 10px !important;
+}
+.bar-inner.count-bar {
+  background: linear-gradient(90deg, #7027E8 0%, #A78BFA 100%) !important;
+  border-radius: 10px !important;
+}
+
+.counter-one {
+  background-color: #F8F9FE !important;
+  padding: 70px 0 !important;
+  border-top: 1px solid #EDE9FE !important;
+  border-bottom: 1px solid #EDE9FE !important;
+}
+.counter-one__count h3 {
+  color: #0F172A !important;
+  font-weight: 800 !important;
+}
+.counter-one__count span {
+  color: #7027E8 !important;
+}
+.counter-one__text {
+  color: #64748B !important;
+  font-weight: 600 !important;
+}
+.counter-one__icon span::before {
+  color: #7027E8 !important;
+}
+
+/* ==========================================================================
+   WHY CHOOSE US / INSTANT FARE CALCULATOR: WHITE & PURPLE
+   ========================================================================== */
+.why-choose-one {
+  background-color: #FFFFFF !important;
+  padding: 100px 0 !important;
+}
+.why-choose-one__point-icon span::before {
+  color: #7027E8 !important;
+}
+.why-choose-one__point-content h4 {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+.why-choose-one__point-content p {
+  color: #64748B !important;
+}
+.why-choose-one__point-two .icon span {
+  color: #10B981 !important;
+}
+.why-choose-one__point-two .text p {
+  color: #1E293B !important;
+  font-weight: 600 !important;
+}
+
+/* Fare Calculator Card: Pure White Card with Purple Border & Shadow */
+.why-choose-one__right .why-choose-one__form-box {
+  background: #FFFFFF !important;
+  border: 2px solid #EDE9FE !important;
+  box-shadow: 0 20px 50px -10px rgba(112, 39, 232, 0.15) !important;
+  border-radius: 24px !important;
+  padding: 40px !important;
+}
+.why-choose-one__form-box .title-box h2 {
+  color: #0F172A !important;
+  font-size: 26px !important;
+  font-weight: 800 !important;
+  margin-bottom: 25px !important;
+}
+.why-choose-one__form .input-box input,
+.why-choose-one__form .input-box select {
+  background-color: #F8FAFC !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #0F172A !important;
+  border-radius: 12px !important;
+  height: 52px !important;
+  font-weight: 500 !important;
+  padding: 0 16px !important;
+}
+.why-choose-one__form .input-box input:focus,
+.why-choose-one__form .input-box select:focus {
+  border-color: #7027E8 !important;
+  background-color: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(112, 39, 232, 0.15) !important;
+}
+.ui-slider .ui-slider-range {
+  background: #7027E8 !important;
+}
+.ui-slider .ui-slider-handle {
+  background: #7027E8 !important;
+  border-color: #FFFFFF !important;
+  box-shadow: 0 2px 8px rgba(112, 39, 232, 0.5) !important;
+}
+
+/* ==========================================================================
+   4-STEP PROCESS (HOW INDIERY WORKS): CLEAN WHITE
+   ========================================================================== */
+.process-one {
+  background-color: #F8FAFD !important;
+  padding: 100px 0 !important;
+}
+.process-one__count {
+  background-color: #7027E8 !important;
+  color: #FFFFFF !important;
+}
+.process-one__icon {
+  background-color: #EDE9FE !important;
+  border-radius: 20px !important;
+}
+.process-one__icon span::before {
+  color: #7027E8 !important;
+}
+.process-one__list li:hover .process-one__icon {
+  background-color: #7027E8 !important;
+}
+.process-one__list li:hover .process-one__icon span::before {
+  color: #FFFFFF !important;
+}
+.process-one__title {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+.process-one__text {
+  color: #64748B !important;
+}
+
+/* ==========================================================================
+   DOWNLOAD APP SECTION: LIGHT LAVENDER (NO BLACK)
+   ========================================================================== */
+.download-app-one {
+  background: linear-gradient(135deg, #F5F0FF 0%, #EDE5FF 100%) !important;
+  padding: 90px 0 !important;
+  border-top: 1px solid #EDE9FE !important;
+  border-bottom: 1px solid #EDE9FE !important;
+}
+.download-app-one__sub-title {
+  color: #7027E8 !important;
+  font-weight: 700 !important;
+}
+.download-app-one__title {
+  color: #0F172A !important;
+  font-weight: 800 !important;
+}
+.download-app-one__title span {
+  color: #7027E8 !important;
+}
+.download-app-one__text {
+  color: #475569 !important;
+}
+
+/* App Screenshot showcase in Download Section */
+.app-screen-frame {
+  max-width: 320px;
+  background: #1A132B;
+  border-radius: 44px;
+  padding: 10px;
+  box-shadow: 0 25px 60px -15px rgba(112, 39, 232, 0.4), 0 0 0 3px #2D204A;
+  margin: 0 auto;
+}
+.app-screen-frame img {
+  width: 100%;
+  border-radius: 36px;
+  display: block;
+}
+
+/* ==========================================================================
+   TESTIMONIALS & FAQ: CLEAN WHITE
+   ========================================================================== */
+.testimonial-one {
+  background-color: #FFFFFF !important;
+  padding: 100px 0 !important;
+}
+.testimonial-one__ratting span {
+  color: #FFB800 !important;
+}
+.testimonial-one__client-info h3 a {
+  color: #0F172A !important;
+}
+.testimonial-one__client-info p {
+  color: #7027E8 !important;
+  font-weight: 600 !important;
+}
+.testimonial-one__text {
+  color: #334155 !important;
+}
+
+.faq-one {
+  background-color: #F8F9FE !important;
+  padding: 100px 0 !important;
+}
+.accrodion {
+  background-color: #FFFFFF !important;
+  border: 1px solid #EDE9FE !important;
+  border-radius: 14px !important;
+  margin-bottom: 15px !important;
+}
+.accrodion-title h4 {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+}
+.accrodion.active .accrodion-title h4 {
+  color: #7027E8 !important;
+}
+.accrodion-title h4::before {
+  background-color: #7027E8 !important;
+}
+.faq-one__experience-box {
+  background: linear-gradient(135deg, #7027E8 0%, #5B18D6 100%) !important;
+  box-shadow: 0 15px 35px -5px rgba(112, 39, 232, 0.45) !important;
+}
+
+/* ==========================================================================
+   FOOTER: ELEGANT SLATE ANCHOR (NO HEAVY BLACK)
+   ========================================================================== */
+.site-footer {
+  background-color: #170E2C !important;
+  color: #C4B5FD !important;
+  padding-top: 80px !important;
+}
+.footer-widget__title {
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+}
+.footer-widget__link-list li a {
+  color: #DDD6FE !important;
+}
+.footer-widget__link-list li a:hover {
+  color: #A78BFA !important;
+  padding-left: 6px;
+}
+.footer-widget__contact-list li a,
+.footer-widget__contact-list li {
+  color: #DDD6FE !important;
+}
+.footer-widget__contact-list li span {
+  color: #A78BFA !important;
+}
+.site-footer__bottom {
+  background-color: #100821 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding: 22px 0 !important;
+}
+.site-footer__bottom p {
+  color: #94A3B8 !important;
+}
+.site-footer__bottom p a {
+  color: #A78BFA !important;
+}
+
+/* Floating Elements */
+.chat-icon .chat-toggler {
+  background-color: #7027E8 !important;
+  box-shadow: 0 8px 25px rgba(112, 39, 232, 0.4) !important;
+}
+.scroll-to-top {
+  background-color: #7027E8 !important;
+  box-shadow: 0 8px 25px rgba(112, 39, 232, 0.4) !important;
+}
+
+/* ========================================================================== 
+   LEGACY ELEMENTOR RED CLEANUP
+   Some downloaded Elementor page styles contain literal #D70006 values, so
+   changing the theme variable alone does not reach these sections.
+   ========================================================================== */
+.elementor .progress__wrap .progress-bar,
+.elementor .progress-bar,
+.elementor .metform-btn,
+.elementor .elementor-button,
+.elementor .elementor-social-icon:hover {
+  background-color: #7027E8 !important;
+  background: #7027E8 !important;
+}
+
+/* About-page statistics band and equivalent imported counter bands. */
+.elementor-element-e9e7328,
+.elementor-element-7083f6b,
+.elementor-element-367b8e9,
+.elementor-element-8267db6 {
+  background-color: #7027E8 !important;
+  background-image: none !important;
+}
+
+.elementor-element-e9e7328 > .elementor-motion-effects-container > .elementor-motion-effects-layer,
+.elementor-element-7083f6b > .elementor-motion-effects-container > .elementor-motion-effects-layer,
+.elementor-element-367b8e9 > .elementor-motion-effects-container > .elementor-motion-effects-layer,
+.elementor-element-8267db6 > .elementor-motion-effects-container > .elementor-motion-effects-layer {
+  background-color: #7027E8 !important;
+  background-image: none !important;
+}
+
+/* Maintain readable copy over the dark warehouse image. */
+.elementor-element-0ce87af .elementor-heading-title,
+.elementor-element-0ce87af .progress__title,
+.elementor-element-0ce87af .progress-value,
+.elementor-element-0ce87af .counter-number {
+  color: #FFFFFF !important;
+}
+
+/* Literal red headings and icon fills from page-specific Elementor CSS. */
+.elementor-element-f9fc8e0 .elementor-heading-title,
+.elementor-element-7932126 .elementor-heading-title {
+  color: #7027E8 !important;
+}
+
+.elementor-element-1362d9b .elementor-icon,
+.elementor-element-e7a0ce4 .elementor-icon,
+.elementor-element-1d36c81 .elementor-icon,
+.elementor-element-cd6fb78 .elementor-icon {
+  background-color: #7027E8 !important;
+  color: #FFFFFF !important;
+  border-color: #7027E8 !important;
+}
+
+.elementor-element-8ba8f6a {
+  border-color: #DDD6FE !important;
+}
+
+.elementor-element-1362d9b .elementor-icon svg,
+.elementor-element-e7a0ce4 .elementor-icon svg,
+.elementor-element-1d36c81 .elementor-icon svg,
+.elementor-element-cd6fb78 .elementor-icon svg,
+.elementor-element-314bd62 .tg-icon svg path {
+  fill: #7027E8 !important;
+}
+
+/* Do not depend on the remote Font Awesome file for the large video button. */
+.video__play-btn .play-btn {
+  background: #FFFFFF !important;
+  color: #7027E8 !important;
+  border: 1px solid rgba(112, 39, 232, 0.22) !important;
+  box-shadow: 0 14px 36px rgba(112, 39, 232, 0.28) !important;
+}
+
+.video__play-btn .play-btn i {
+  display: none !important;
+}
+
+.video__play-btn .play-btn::after {
+  content: "" !important;
+  display: block !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin-left: 5px !important;
+  border-top: 10px solid transparent !important;
+  border-bottom: 10px solid transparent !important;
+  border-left: 16px solid #7027E8 !important;
+}
+
+.video__play-btn .play-btn::before {
+  border-color: rgba(112, 39, 232, 0.42) !important;
+}
+
+/* ==========================================================================
+   LEGACY BLUE REMOVAL
+   The downloaded Elementor layouts still contain literal navy and cyan fills
+   that bypass the theme variables. Keep every visible section in the purple,
+   lavender, white and deep-plum Indiery palette.
+   ========================================================================== */
+:root,
+body,
+body.theme-red,
+body.elementor-kit-9511 {
+  --tg-theme-secondary: #8B5CF6 !important;
+  --tg-heading-color: #0F172A !important;
+}
+
+/* Homepage services backdrop and the remaining cyan feature accents. */
+.elementor-element-8653ea3 {
+  background-color: #FAF8FF !important;
+  background-image: none !important;
+}
+
+.elementor-element-52a381e,
+.elementor-element-cde25d9,
+.elementor-element-c31cac0 {
+  background-color: #FAF8FF !important;
+  background-image: none !important;
+}
+
+.elementor-element-fe93821 {
+  background-color: #8B5CF6 !important;
+  background-image: none !important;
+}
+
+.elementor-element-fb03be1 {
+  background-color: #C4B5FD !important;
+  background-image: none !important;
+}
+
+.elementor-element-029df30 .elementor-icon,
+.elementor-element-4b5a2a0 .elementor-icon,
+.elementor-element-a0f2339 .elementor-icon,
+.elementor-element-9a0e768 .elementor-icon {
+  color: #FFFFFF !important;
+  background-color: #8B5CF6 !important;
+}
+
+/* Why Choose Us: replace the template navy with an on-brand purple field. */
+.elementor-element-b4a08cd {
+  background-color: #7027E8 !important;
+  background-image: linear-gradient(135deg, #7027E8 0%, #5B18D6 100%) !important;
+}
+
+.elementor-element-b4a08cd .elementor-heading-title,
+.elementor-element-b4a08cd .elementor-counter-number-wrapper,
+.elementor-element-b4a08cd .elementor-counter-number,
+.elementor-element-b4a08cd .elementor-icon,
+.elementor-element-b4a08cd h1,
+.elementor-element-b4a08cd h2,
+.elementor-element-b4a08cd h3,
+.elementor-element-b4a08cd h4,
+.elementor-element-b4a08cd h5,
+.elementor-element-b4a08cd h6 {
+  color: #FFFFFF !important;
+}
+
+.elementor-element-b4a08cd p,
+.elementor-element-b4a08cd .elementor-counter-title {
+  color: #EDE9FE !important;
+}
+
+.elementor-element-b4a08cd .btn {
+  color: #7027E8 !important;
+  background-color: #FFFFFF !important;
+  border-color: #FFFFFF !important;
+}
+
+.elementor-element-b4a08cd .btn:hover {
+  color: #FFFFFF !important;
+  background-color: #1E1235 !important;
+  border-color: #1E1235 !important;
+}
+
+.elementor-element-bf30246 {
+  background-color: #5B18D6 !important;
+  background-image: none !important;
+}
+
+/* How It Works used the same legacy navy as the section above. */
+.elementor-element-73ddf2a {
+  background-color: #7027E8 !important;
+  background-image: linear-gradient(135deg, #5B18D6 0%, #7027E8 100%) !important;
+}
+
+.elementor-element-73ddf2a .elementor-heading-title,
+.elementor-element-73ddf2a .work__content .title,
+.elementor-element-73ddf2a .work__icon,
+.elementor-element-73ddf2a .work__shape {
+  color: #FFFFFF !important;
+}
+
+.elementor-element-73ddf2a .work__content p {
+  color: #EDE9FE !important;
+}
+
+.elementor-element-73ddf2a .indiery-process-glyph {
+  color: #7027E8 !important;
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols", sans-serif !important;
+  font-size: 42px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+
+/* Fleet tabs and progress tracks previously retained navy/blue-gray fills. */
+button.nav-link {
+  color: #7027E8 !important;
+  background-color: #F5F2FE !important;
+  border-color: #DDD6FE !important;
+}
+
+button.nav-link.active,
+button.nav-link:hover {
+  color: #FFFFFF !important;
+  background-color: #7027E8 !important;
+  border-color: #7027E8 !important;
+}
+
+.progress {
+  background-color: #EDE9FE !important;
+}
+
+/* The imported homepage footer uses Elementor IDs instead of .site-footer. */
+.elementor-element-b84ae67,
+.elementor-element-038d4b6 {
+  background-color: #170E2C !important;
+  background-image: none !important;
+}
+
+.elementor-element-8b991f7 {
+  background-color: #7027E8 !important;
+  background-image: linear-gradient(135deg, #7027E8 0%, #5B18D6 100%) !important;
+}
+
+.elementor-element-b84ae67 .elementor-heading-title,
+.elementor-element-b84ae67 h1,
+.elementor-element-b84ae67 h2,
+.elementor-element-b84ae67 h3,
+.elementor-element-b84ae67 h4,
+.elementor-element-b84ae67 h5,
+.elementor-element-b84ae67 h6,
+.elementor-element-038d4b6 .elementor-heading-title,
+.elementor-element-038d4b6 h1,
+.elementor-element-038d4b6 h2,
+.elementor-element-038d4b6 h3,
+.elementor-element-038d4b6 h4,
+.elementor-element-038d4b6 h5,
+.elementor-element-038d4b6 h6 {
+  color: #FFFFFF !important;
+}
+
+.elementor-element-b84ae67 p,
+.elementor-element-b84ae67 li,
+.elementor-element-b84ae67 a,
+.elementor-element-b84ae67 .elementor-icon-list-text,
+.elementor-element-038d4b6 p,
+.elementor-element-038d4b6 li,
+.elementor-element-038d4b6 a,
+.elementor-element-038d4b6 .elementor-icon-list-text {
+  color: #C4B5FD !important;
+}
+
+.elementor-element-b84ae67 a:hover,
+.elementor-element-038d4b6 a:hover {
+  color: #FFFFFF !important;
+}
+
+.elementor-element-b84ae67 .btn {
+  color: #7027E8 !important;
+  background-color: #FFFFFF !important;
+  border-color: #FFFFFF !important;
+}
+
+.elementor-element-b84ae67 .btn:hover {
+  color: #FFFFFF !important;
+  background-color: #5B18D6 !important;
+  border-color: #5B18D6 !important;
+}
+
+.elementor-element-727ac3e,
+.elementor-element-aabb3c4,
+.elementor-element-e1c776c {
+  background-color: #8B5CF6 !important;
+  background-image: none !important;
+}
+
+.elementor-element-b84ae67 .elementor-social-icon,
+.elementor-element-038d4b6 .elementor-social-icon {
+  background-color: #2D204A !important;
+}
+
+
+/* ==========================================================================
+   PRODUCTION ENHANCEMENTS & BULLETPROOF ICON FALLBACKS
+   ========================================================================== */
+.icon-right-arrow,
+.icon-next {
+  display: inline-block !important;
+  font-family: "Font Awesome 6 Free", 'icomoon', sans-serif !important;
+  font-weight: 900 !important;
+}
+.icon-right-arrow::before,
+.icon-next::before {
+  content: "\f061" !important;
+}
+
+/* Chat button & Close button */
+.chat-icon .chat-toggler i {
+  color: #FFFFFF !important;
+  font-size: 20px !important;
+}
+.close-chat i {
+  color: #7027E8 !important;
+  font-size: 18px !important;
+}
+
+/* Hero Badge Icons */
+.hero-pills-wrap span i {
+  font-size: 13px !important;
+}
+
+/* Smooth shadow for truck */
+.banner-one__img img {
+  filter: drop-shadow(0 20px 30px rgba(112, 39, 232, 0.18)) !important;
+}
+
+/* Ensure no dark backgrounds in hero or main sections */
+.banner-one {
+  background: linear-gradient(135deg, #FFFFFF 0%, #FAF8FF 55%, #F4EEFD 100%) !important;
+  background-color: #FFFFFF !important;
+}
+.banner-one__pattern {
+  opacity: 0.04 !important;
+  filter: invert(1) !important;
+}
+
+
+/* ==========================================================================
+   HEADER TOP BAR: 100% PURE WHITE & PURPLE ACCENTS (ZERO BLACK / NO SLANTS)
+   ========================================================================== */
+.main-header .main-menu__top {
+  background-color: #FFFFFF !important;
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #EDE9FE !important;
+  position: relative !important;
+  padding: 8px 0 !important;
+  z-index: 10 !important;
+}
+.main-header .main-menu__top::before,
+.main-header .main-menu__top::after,
+.main-menu__top-inner::before,
+.main-menu__top-inner::after,
+.main-menu__top-right::before,
+.main-menu__top-right::after {
+  display: none !important;
+  content: none !important;
+  background: none !important;
+  background-color: transparent !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+.main-menu__top-inner {
+  background: transparent !important;
+  background-color: transparent !important;
+  position: relative !important;
+  z-index: 2 !important;
+}
+.main-menu__top-right {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+.main-menu__contact-list li .icon i {
+  color: #7027E8 !important;
+}
+.main-menu__contact-list li .text p,
+.main-menu__contact-list li .text p a {
+  color: #334155 !important;
+  font-weight: 500 !important;
+}
+.main-menu__contact-list li .text p a:hover {
+  color: #7027E8 !important;
+}
+.main-menu__top-welcome-text {
+  color: #64748B !important;
+  font-weight: 600 !important;
+}
+.main-menu__top-time-icon span {
+  color: #7027E8 !important;
+}
+.main-menu__top-text {
+  color: #334155 !important;
+  font-weight: 500 !important;
+}
+
+/* Fix dropdown arrow next to Services (no broken [] box) */
+.main-menu__list > li.dropdown > a::after {
+  display: none !important;
+}
+
+/* Clean Header Navbar */
+.main-menu__wrapper {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04) !important;
+  border-bottom: 1px solid #F1F5F9 !important;
+}
+.main-menu__list > li > a {
+  color: #0F172A !important;
+  font-weight: 600 !important;
+  padding: 30px 0 !important;
+}
+.main-menu__list > li:hover > a,
+.main-menu__list > li.current > a {
+  color: #7027E8 !important;
+}
+
+/* Keep every imported template footer on Indiery branding. */
+.elementor-element-1bb17f9 img,
+.elementor-element-a161672 img {
+  content: url('/indiery-official-logo-white.png') !important;
+  width: auto !important;
+  height: 42px !important;
+  object-fit: contain !important;
+}
+/* The exported freight quote widget posts to its original template backend.
+   Indiery bookings are handled through the site's own contact flow. */
+.elementor-element-52a381e {
+  display: none !important;
+}

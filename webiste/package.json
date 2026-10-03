@@ -1,16 +1,15 @@
 {
-  "name": "indiery-branding-site",
-  "version": "1.0.0",
+  "name": "indiery-logistics",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start"
+    "start": "next start --hostname 127.0.0.1"
   },
   "dependencies": {
-    "next": "15.5.13",
-    "react": "19.1.1",
-    "react-dom": "19.1.1"
-  },
-  "devDependencies": {}
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  }
 }

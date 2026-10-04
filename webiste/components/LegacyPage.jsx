@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import Link from "next/link";
 import LegacyRuntime from "./LegacyRuntime";
 
 const LEGACY_DIRECTORY = path.join(process.cwd(), "legacy-html");
@@ -133,6 +134,14 @@ export default function LegacyPage({ source }) {
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: page.markup }}
       />
+      <nav className="indieryLegalBar" aria-label="Legal and policy links">
+        <Link href="/privacy">Privacy Policy</Link>
+        <Link href="/terms">Customer Terms</Link>
+        <Link href="/partner-privacy">Partner Privacy</Link>
+        <Link href="/partner-terms">Partner Terms</Link>
+        <Link href="/refunds">Refunds &amp; Cancellations</Link>
+        <Link href="/account-deletion">Account Deletion</Link>
+      </nav>
       <LegacyRuntime
         bodyClass={page.bodyClass}
         bodyStyle={page.bodyStyle}

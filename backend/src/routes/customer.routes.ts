@@ -9,7 +9,7 @@ import { Order } from '../models/Order';
 import { Counter } from '../models/Counter';
 import { WalletLedger, type WalletLedgerDocument } from '../models/WalletLedger';
 import { estimateFare } from '../services/fare.service';
-import { resolveRouteMetrics } from '../services/maps.service';
+import { resolveRouteMetrics, resolveRoutePath } from '../services/maps.service';
 import { createFareQuote, verifyFareQuote } from '../services/fare-quote.service';
 import { createPaymentIntent, verifyRazorpayPaymentSignature } from '../services/payment.service';
 import { hashOtp, makeTripOtp } from '../services/otp.service';
@@ -70,6 +70,32 @@ const WalletTopupSchema = z.object({
   amount: z.coerce.number().min(1).max(20000),
   paymentMode: z.enum(['upi']).default('upi')
 });
+
+customerRouter.get(
+  '/orders/:orderId/route',
+  asyncRoute(async (req: AuthRequest, res) => {
+    const orderId = String(req.params.orderId);
+    if (!Types.ObjectId.isValid(orderId)) throw new ApiError(404, 'Order not found');
+    const order = await Order.findOne({ _id: orderId, customer: req.auth!.userId });
+    if (!order) throw new ApiError(404, 'Order not found');
+
+    const route = await resolveRoutePath({
+      pickup: order.pickup.address || order.pickup.label,
+      drop: order.drop.address || order.drop.label,
+      pickupLat: order.pickup.lat ?? undefined,
+      pickupLng: order.pickup.lng ?? undefined,
+      dropLat: order.drop.lat ?? undefined,
+      dropLng: order.drop.lng ?? undefined,
+      extraStops: order.extraStops.map((stop) => ({
+        label: stop.label,
+        address: stop.address,
+        lat: stop.lat ?? undefined,
+        lng: stop.lng ?? undefined
+      }))
+    });
+    res.json(route);
+  })
+);
 
 const RazorpayVerifySchema = z.object({
   razorpayOrderId: z.string().min(6),

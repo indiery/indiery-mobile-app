@@ -139,7 +139,7 @@ async function sendPartnerBatchPush(order: OrderDocument, partners: UserDocument
       }, {
         ttl: Math.ceil((DRIVER_OFFER_TIMEOUT_MS + 15_000) / 1000),
         collapseId: `offer-${String(order._id)}`,
-        channelId: 'driver-orders',
+        channelId: 'driver-order-alerts-v2',
         priority: 'high'
       });
     })

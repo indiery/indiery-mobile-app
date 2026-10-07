@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Linking,
   Modal,
+  NativeModules,
   PanResponder,
   Platform,
   Pressable,
@@ -85,6 +86,10 @@ const appSafeAreaEdges: Edge[] = Platform.OS === 'android'
   ? ['left', 'right', 'bottom']
   : ['top', 'right', 'bottom', 'left'];
 const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'bottom');
+const incomingOrderAlert = NativeModules.OrderAlert as
+  | { start: () => void; stop: () => void }
+  | undefined;
+const incomingOrderAlertDurationMs = 45_000;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -1076,8 +1081,8 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
         vibrationPattern: [0, 250, 250, 250],
         lightColor: colors.partner
       });
-      await Notifications.setNotificationChannelAsync('driver-orders', {
-        name: 'Driver order beep',
+      await Notifications.setNotificationChannelAsync('driver-order-alerts-v2', {
+        name: 'Incoming delivery requests',
         description: 'Loud alerts for new delivery offers and urgent driver updates',
         importance: Notifications.AndroidImportance.MAX,
         sound: 'default',
@@ -1188,6 +1193,7 @@ export default function App() {
   const knownAvailableOrderIdsRef = useRef<Set<string>>(new Set());
   const availableOrderTrackingReadyRef = useRef(false);
   const previousOnlineRef = useRef(false);
+  const incomingOrderAlertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tab, setTab] = useState<Tab>('dashboard');
   const [language, setLanguage] = useState<AppLanguage>('en');
   const [data, setData] = useState<PartnerBootstrap | null>(null);
@@ -1212,6 +1218,7 @@ export default function App() {
     return () => {
       socketRef.current?.disconnect();
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      stopIncomingOrderAlert();
       stopLocationStream();
     };
   }, []);
@@ -1304,9 +1311,17 @@ export default function App() {
     previousOnlineRef.current = online;
 
     if (hasNewOrder) {
-      Vibration.vibrate([0, 700, 250, 700, 250, 900]);
+      startIncomingOrderAlert();
     }
   }, [availableOrderIds, data?.user.partnerProfile?.online]);
+
+  useEffect(() => {
+    const shouldStopAlert =
+      !data?.user.partnerProfile?.online ||
+      !data.availableOrders.length ||
+      Boolean(data.activeOrders.length);
+    if (shouldStopAlert) stopIncomingOrderAlert();
+  }, [availableOrderIds, activeOrderIds, data?.user.partnerProfile?.online]);
 
   useEffect(() => {
     if (!data?.activeOrders.length) {
@@ -1328,6 +1343,31 @@ export default function App() {
     }
     return confirmExitFromRoot();
   }, [loading, data, tab, language]);
+
+  function stopIncomingOrderAlert() {
+    if (incomingOrderAlertTimerRef.current) {
+      clearTimeout(incomingOrderAlertTimerRef.current);
+      incomingOrderAlertTimerRef.current = null;
+    }
+    if (Platform.OS === 'android' && incomingOrderAlert) {
+      incomingOrderAlert.stop();
+    } else {
+      Vibration.cancel();
+    }
+  }
+
+  function startIncomingOrderAlert() {
+    stopIncomingOrderAlert();
+    if (Platform.OS === 'android' && incomingOrderAlert) {
+      incomingOrderAlert.start();
+    } else {
+      Vibration.vibrate([0, 700, 250, 700, 250, 900], true);
+    }
+    incomingOrderAlertTimerRef.current = setTimeout(
+      stopIncomingOrderAlert,
+      incomingOrderAlertDurationMs
+    );
+  }
 
   async function boot() {
     setLoading(true);
@@ -1955,6 +1995,7 @@ export default function App() {
             onToggle={() =>
               withBusy(async () => {
                 const online = !data.user.partnerProfile?.online;
+                if (!online) stopIncomingOrderAlert();
                 if (online) await syncLocation();
                 const result = await api.setAvailability(online);
                 setData((current) => current ? { ...current, user: result.user } : current);
@@ -1967,6 +2008,7 @@ export default function App() {
             onRefreshStatus={refreshVerificationStatus}
             onAccept={(orderId) =>
               withBusy(async () => {
+                stopIncomingOrderAlert();
                 await syncLocation();
                 if (!data.user.partnerProfile?.online) {
                   await api.setAvailability(true);
@@ -1981,6 +2023,7 @@ export default function App() {
             }
             onReject={(orderId) =>
               withBusy(async () => {
+                stopIncomingOrderAlert();
                 await api.rejectOrder(orderId);
                 setData((current) => current ? {
                   ...current,

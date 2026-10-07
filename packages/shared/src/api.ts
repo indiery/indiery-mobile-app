@@ -307,6 +307,10 @@ export class IndieryApi {
     });
   }
 
+  customerOrderRoute(orderId: string) {
+    return this.request<PartnerRoutePath>(`/customer/orders/${orderId}/route`);
+  }
+
   applyCoupon(code: string) {
     return this.request<{ user: UserProfile; addedCoins: number; alreadyApplied?: boolean }>('/customer/wallet/coupon', {
       method: 'POST',

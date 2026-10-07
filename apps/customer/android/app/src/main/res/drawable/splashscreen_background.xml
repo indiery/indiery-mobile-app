@@ -1,0 +1,11 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+  <item android:drawable="@color/splashscreen_background" />
+  <item
+    android:width="176dp"
+    android:height="176dp"
+    android:gravity="center">
+    <bitmap
+      android:gravity="fill"
+      android:src="@drawable/indiery_splash_mark" />
+  </item>
+</layer-list>

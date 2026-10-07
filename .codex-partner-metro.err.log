@@ -1,0 +1,7 @@
+npm error Lifecycle script `start` failed with error:
+npm error code 4294967295
+npm error path C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner
+npm error workspace @indiery/partner@1.0.0
+npm error location C:\Users\DELL\OneDrive\Desktop\indiery\apps\partner
+npm error command failed
+npm error command C:\WINDOWS\system32\cmd.exe /d /s /c expo start --clear --localhost

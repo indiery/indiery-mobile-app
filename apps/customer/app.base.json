@@ -5,7 +5,7 @@
     "owner": "indiery1235",
     "scheme": "indierycustomer",
     "version": "1.0.0",
-    "orientation": "default",
+    "orientation": "portrait",
     "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -52,7 +52,8 @@
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "READ_CONTACTS"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/app-icon.png",

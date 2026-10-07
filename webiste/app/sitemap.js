@@ -7,6 +7,13 @@ export default function sitemap() {
 
   return [
     { url: baseUrl, changeFrequency: "monthly", priority: 1 },
+    { url: `${baseUrl}/about`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${baseUrl}/services`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${baseUrl}/pricing`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${baseUrl}/how-it-works`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${baseUrl}/safety`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${baseUrl}/blog`, changeFrequency: "weekly", priority: 0.7 },
+    { url: `${baseUrl}/contact`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${baseUrl}/privacy`, changeFrequency: "yearly", priority: 0.6 },
     { url: `${baseUrl}/partner-privacy`, changeFrequency: "yearly", priority: 0.6 },
     { url: `${baseUrl}/terms`, changeFrequency: "yearly", priority: 0.6 },

@@ -4,7 +4,7 @@ export const services = {
     eyebrow: "Fast, lightweight city delivery",
     description: "Send documents, food, medicines, gifts, and parcels up to 20 kg with a verified two-wheeler partner.",
     icon: "BIKE",
-    image: "/assets/service-two-wheeler-v2.png",
+    image: "/assets/service-bike-cutout.png",
     includes: ["Doorstep pickup", "Live trip tracking", "Upfront fare estimate", "Delivery confirmation"],
   },
   "mini-truck": {
@@ -12,7 +12,7 @@ export const services = {
     eyebrow: "Flexible transport for bulky loads",
     description: "Book a Tata Ace or similar mini truck for furniture, appliances, shop stock, and loads up to 750 kg.",
     icon: "MINI",
-    image: "/assets/service-mini-truck-v2.png",
+    image: "/assets/service-tempo-cutout.png",
     includes: ["Vehicle matched to your load", "Same-day or scheduled pickup", "Live trip tracking", "Clear distance-based pricing"],
   },
   "commercial-truck": {
@@ -20,7 +20,7 @@ export const services = {
     eyebrow: "More capacity for larger moves",
     description: "Choose from larger commercial vehicles for heavy goods, wholesale stock, equipment, and high-volume city transport.",
     icon: "TRUCK",
-    image: "/assets/service-business-v2.png",
+    image: "/assets/service-business-truck-cutout.png",
     includes: ["Multiple vehicle sizes", "Verified driver partner", "Multi-stop route support", "Business account assistance"],
   },
   "business-delivery": {
@@ -28,7 +28,7 @@ export const services = {
     eyebrow: "Reliable dispatch for growing teams",
     description: "Manage recurring store, office, and customer deliveries with centralized booking, trip visibility, and billing support.",
     icon: "B2B",
-    image: "/assets/service-business-v2.png",
+    image: "/assets/service-business-truck-cutout.png",
     includes: ["Recurring route support", "Multi-user booking", "GST-ready invoices", "Priority account assistance"],
   },
   "house-shifting": {
@@ -36,7 +36,7 @@ export const services = {
     eyebrow: "A managed move from door to door",
     description: "Get packing, loading, transport, unloading, and optional unpacking support for local home and office relocations.",
     icon: "MOVE",
-    image: "/assets/service-home-move-v2.png",
+    image: "/assets/service-moving-truck-cutout.png",
     includes: ["Move assessment", "Packing material options", "Trained handling team", "Pickup-to-drop coordination"],
   },
   "driver-partners": {
@@ -44,7 +44,7 @@ export const services = {
     eyebrow: "Put your vehicle to work",
     description: "Attach your bike, mini truck, or commercial vehicle to Indiery and receive delivery opportunities through the partner platform.",
     icon: "EARN",
-    image: "/assets/service-truck.jpg",
+    image: "/assets/service-bike-cutout.png",
     includes: ["Guided onboarding", "Trip request access", "Earnings visibility", "Partner support"],
   },
 };

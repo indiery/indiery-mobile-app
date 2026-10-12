@@ -1,7 +1,1 @@
-import LegacyPage, { getLegacyMetadata } from "../../components/LegacyPage";
-
-export const metadata = getLegacyMetadata("pricing.html");
-
-export default function PricingPage() {
-  return <LegacyPage source="pricing.html" />;
-}
+export { default, metadata } from "../plans-eccomerce/page";

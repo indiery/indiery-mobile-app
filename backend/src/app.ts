@@ -12,6 +12,7 @@ import { uploadRouter } from './routes/upload.routes';
 import { paymentRouter } from './routes/payment.routes';
 import { legalRouter } from './routes/legal.routes';
 import { trackingRouter } from './routes/tracking.routes';
+import { adminRouter } from './routes/admin.routes';
 import { errorHandler, notFound } from './middleware/error';
 
 const requestBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -68,6 +69,7 @@ export function createApp() {
   app.use('/api/customer', customerRouter);
   app.use('/api/partner', partnerRouter);
   app.use('/api/uploads', uploadRouter);
+  app.use('/api/admin', adminRouter);
 
   app.use(notFound);
   app.use(errorHandler);

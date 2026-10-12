@@ -1,8 +1,10 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
+import bcrypt from 'bcryptjs';
+import { createHash } from 'crypto';
 import { z } from 'zod';
 import { User } from '../models/User';
 import { Vehicle } from '../models/Vehicle';
-import { requireAuth, signToken, type AuthRequest } from '../middleware/auth';
+import { ADMIN_SESSION_COOKIE, requireAuth, signToken, type AuthRequest } from '../middleware/auth';
 import { asyncRoute, ApiError } from '../middleware/error';
 import { serializeUser } from '../services/serialize.service';
 import { verifyFirebasePhoneToken } from '../services/firebase.service';
@@ -10,8 +12,109 @@ import { initialsFromName } from '../services/profile.service';
 import { normalizePhone } from '../services/phone.service';
 import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
 import { submitAccountDeletionRequest } from '../services/account-deletion.service';
+import { env } from '../config/env';
 
 export const authRouter = Router();
+
+const adminLoginAttempts = new Map<string, { failures: number; blockedUntil: number }>();
+const ADMIN_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const ADMIN_LOGIN_MAX_FAILURES = 5;
+
+const AdminLoginSchema = z.object({
+  email: z.string().trim().email().max(160),
+  password: z.string().min(8).max(256)
+});
+
+function adminAttemptKey(req: Request, email: string) {
+  return `${req.ip || req.socket?.remoteAddress || 'unknown'}:${email.toLowerCase()}`;
+}
+
+function adminCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    maxAge: 8 * 60 * 60 * 1000,
+    path: '/'
+  };
+}
+
+authRouter.post(
+  '/admin-login',
+  asyncRoute(async (req, res) => {
+    if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD_HASH) {
+      throw new ApiError(503, 'Admin login is not configured');
+    }
+
+    const body = AdminLoginSchema.parse(req.body);
+    const normalizedEmail = body.email.toLowerCase();
+    const attemptKey = adminAttemptKey(req, normalizedEmail);
+    const now = Date.now();
+    const attempt = adminLoginAttempts.get(attemptKey);
+    if (attempt?.blockedUntil && attempt.blockedUntil > now) {
+      res.setHeader('Retry-After', String(Math.ceil((attempt.blockedUntil - now) / 1000)));
+      throw new ApiError(429, 'Too many failed sign-in attempts. Try again later.');
+    }
+
+    // Always perform the password comparison before rejecting the email so login
+    // timing does not reveal which administrator address is configured.
+    const passwordMatches = await bcrypt.compare(body.password, env.ADMIN_PASSWORD_HASH);
+    const emailMatches = normalizedEmail === env.ADMIN_EMAIL.toLowerCase();
+    if (!passwordMatches || !emailMatches) {
+      const failures = (attempt?.blockedUntil && attempt.blockedUntil <= now ? 0 : attempt?.failures || 0) + 1;
+      adminLoginAttempts.set(attemptKey, {
+        failures,
+        blockedUntil: failures >= ADMIN_LOGIN_MAX_FAILURES ? now + ADMIN_LOGIN_WINDOW_MS : 0
+      });
+      throw new ApiError(401, 'Invalid admin credentials');
+    }
+
+    adminLoginAttempts.delete(attemptKey);
+    let admin = await User.findOne({ role: 'admin', email: normalizedEmail });
+    if (!admin) {
+      const internalPhone = `admin-${createHash('sha256').update(normalizedEmail).digest('hex').slice(0, 18)}`;
+      admin = await User.create({
+        role: 'admin',
+        name: 'Indiery Administrator',
+        initials: 'IA',
+        phone: internalPhone,
+        email: normalizedEmail,
+        city: 'Lucknow',
+        status: 'active'
+      });
+    }
+    if (admin.status !== 'active') throw new ApiError(403, 'Admin account is blocked');
+
+    const token = signToken(String(admin._id), 'admin');
+    res.cookie(ADMIN_SESSION_COOKIE, token, adminCookieOptions());
+    res.json({
+      success: true,
+      admin: { id: String(admin._id), name: admin.name, email: admin.email, role: admin.role }
+    });
+  })
+);
+
+authRouter.get(
+  '/admin-session',
+  requireAuth(['admin']),
+  asyncRoute<AuthRequest>(async (req, res) => {
+    const admin = await User.findOne({ _id: req.auth!.userId, role: 'admin', status: 'active' })
+      .select('name email role')
+      .lean();
+    if (!admin) throw new ApiError(401, 'Admin session is no longer valid');
+    res.json({ admin });
+  })
+);
+
+authRouter.post('/admin-logout', (_req, res) => {
+  res.clearCookie(ADMIN_SESSION_COOKIE, {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/'
+  });
+  res.json({ success: true });
+});
 
 const FirebaseLoginSchema = z.object({
   role: z.enum(['customer', 'partner']),

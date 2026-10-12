@@ -16,7 +16,7 @@ const steps = [
 export default function HowItWorksPage() {
   return (
     <main>
-      <SiteHeader />
+      <SiteHeader active="how" />
       <section className="textHero innerPageHero"><div className="shell"><h1>Book with Indiery in four simple steps</h1><p>From a small parcel to a complete local move, the booking flow stays clear.</p></div></section>
       <section className="section valuesSection"><div className="shell"><div className="valueGrid">{steps.map(([number, title, body]) => <article key={number}><b>{number}</b><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>
       <SiteFooter />

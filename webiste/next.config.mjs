@@ -2,6 +2,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+const apiOrigin = (
+  process.env.INDIERY_API_ORIGIN ||
+  (process.env.NODE_ENV === "production"
+    ? "https://indiery-mobile-app-1.onrender.com"
+    : "http://127.0.0.1:4000")
+).replace(/\/$/, "");
 
 const nextConfig = {
   turbopack: {
@@ -11,7 +17,7 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:4000/api/:path*",
+        destination: `${apiOrigin}/api/:path*`,
       },
     ];
   },

@@ -218,8 +218,20 @@ export class IndieryApi {
     return this.request<{ location: LocationDetails }>(`/maps/place-details?${params.toString()}`);
   }
 
+  reverseGeocodeLocation(lat: number, lng: number) {
+    const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+    return this.request<{ location: LocationDetails }>(`/maps/reverse-geocode?${params.toString()}`);
+  }
+
   customerBootstrap() {
     return this.request<CustomerBootstrap>('/customer/bootstrap');
+  }
+
+  submitEnterpriseEnquiry(input: { companyName: string; contactName: string; mobileNumber: string; email: string }) {
+    return this.request<{ id: string; status: string }>('/customer/enterprise-enquiries', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
   }
 
   updateCustomerProfile(input: { name: string; email?: string; city: string }) {

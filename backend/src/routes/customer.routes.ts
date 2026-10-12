@@ -6,6 +6,7 @@ import { ApiError, asyncRoute } from '../middleware/error';
 import { User } from '../models/User';
 import { Vehicle, type VehicleDocument } from '../models/Vehicle';
 import { Order } from '../models/Order';
+import { EnterpriseEnquiry } from '../models/EnterpriseEnquiry';
 import { Counter } from '../models/Counter';
 import { WalletLedger, type WalletLedgerDocument } from '../models/WalletLedger';
 import { estimateFare } from '../services/fare.service';
@@ -26,6 +27,26 @@ import { calculateCancellationPayment, calculateCustomerCancellation } from '../
 export const customerRouter = Router();
 
 customerRouter.use(requireAuth(['customer']));
+
+customerRouter.post(
+  '/enterprise-enquiries',
+  asyncRoute<AuthRequest>(async (req, res) => {
+    const body = z.object({
+      companyName: z.string().trim().min(2).max(160),
+      contactName: z.string().trim().min(2).max(100),
+      mobileNumber: z.string().trim().regex(/^\+?[1-9]\d{9,14}$/),
+      email: z.string().trim().email().max(254)
+    }).parse(req.body);
+    const enquiry = await EnterpriseEnquiry.create({
+      customer: req.auth!.userId,
+      companyName: body.companyName,
+      contactName: body.contactName,
+      mobileNumber: body.mobileNumber,
+      email: body.email.toLowerCase()
+    });
+    res.status(201).json({ id: String(enquiry._id), status: enquiry.status });
+  })
+);
 
 const customerVehicleCodes = ['bike', 'loader90', 'mini500', 'mini750'];
 const customerVehicleMaxWeight: Record<string, number> = {

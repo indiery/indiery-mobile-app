@@ -2,12 +2,15 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
+  Easing,
   Image,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -30,7 +33,10 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
+import indierySplashMark from './assets/app-icon.png';
 import customerLoginBackgroundImage from './assets/bg1.png';
+import customerHomeHeaderSkyline from './assets/home-header-skyline.png';
+import customerHomeHeaderTruck from './assets/home-header-truck.png';
 import bikeVehicleImage from './assets/bike.png';
 import loaderVehicleImage from './assets/loader.png';
 import mini500VehicleImage from './assets/mini500.png';
@@ -52,6 +58,7 @@ import {
   money,
   Order,
   PaymentMode,
+  PartnerRoutePath,
   SavedAddress,
   TripOtp,
   UserProfile,
@@ -61,6 +68,10 @@ import {
 
 type LockedTextProps = React.ComponentProps<typeof NativeText>;
 type LockedTextInputProps = React.ComponentProps<typeof NativeTextInput>;
+type PickedContact = { name?: string; phone?: string };
+type ContactPickerNativeModule = {
+  pickContact: () => Promise<PickedContact | null>;
+};
 
 function Text(props: LockedTextProps) {
   return <NativeText {...props} allowFontScaling={false} />;
@@ -93,7 +104,9 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 const appSafeAreaEdges: Edge[] = ['top', 'right', 'bottom', 'left'];
-const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'bottom');
+const loginSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'top');
+const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'top' && edge !== 'bottom');
+type PageScrollHandler = NonNullable<React.ComponentProps<typeof ScrollView>['onScroll']>;
 const expoProjectId =
   (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
   (Constants.easConfig as { projectId?: string } | null)?.projectId;
@@ -357,6 +370,9 @@ const enCopy = {
   direct: 'Direct',
   payment: 'Payment',
   bookingSummary: 'Booking summary',
+  bookingDetails: 'Booking details',
+  viewBookingSummaryDetails: 'View full booking details',
+  closeBookingSummary: 'Close booking summary',
   route: 'Route',
   goods: 'Goods',
   eta: 'ETA',
@@ -500,6 +516,14 @@ const enCopy = {
   prioritySupportText: 'Dedicated help for active shipments and regular customers.',
   talkEnterprises: 'Talk to Indiery Enterprises',
   shareBusinessRoutes: 'Share your business routes, monthly volume, and billing needs.',
+  getInTouch: 'Get in touch',
+  companyName: 'Company name',
+  contactName: 'Your name',
+  enterpriseSent: 'Thanks! Our enterprise team will contact you soon.',
+  enterpriseRequired: 'Please enter all four details.',
+  enterpriseInvalidPhone: 'Enter a valid mobile number.',
+  enterpriseInvalidEmail: 'Enter a valid email address.',
+  enterpriseSubmitFailed: 'Could not send your request. Please try again.',
   emailButton: 'Email',
   callButton: 'Call',
   retailStores: 'Retail stores',
@@ -799,6 +823,9 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
   direct: 'डायरेक्ट',
   payment: 'पेमेंट',
   bookingSummary: 'बुकिंग सारांश',
+  bookingDetails: 'बुकिंग की जानकारी',
+  viewBookingSummaryDetails: 'बुकिंग की पूरी जानकारी देखें',
+  closeBookingSummary: 'बुकिंग सारांश बंद करें',
   route: 'रूट',
   goods: 'सामान',
   eta: 'ETA',
@@ -928,6 +955,14 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
   prioritySupportText: 'एक्टिव शिपमेंट और रेगुलर ग्राहकों के लिए डेडिकेटेड मदद.',
   talkEnterprises: 'Indiery Enterprises से बात करें',
   shareBusinessRoutes: 'अपने बिजनेस रूट, मासिक वॉल्यूम और बिलिंग जरूरतें शेयर करें.',
+  getInTouch: 'संपर्क करें',
+  companyName: 'कंपनी का नाम',
+  contactName: 'आपका नाम',
+  enterpriseSent: 'धन्यवाद! हमारी एंटरप्राइज़ टीम जल्द संपर्क करेगी।',
+  enterpriseRequired: 'कृपया सभी चार विवरण भरें।',
+  enterpriseInvalidPhone: 'सही मोबाइल नंबर दर्ज करें।',
+  enterpriseInvalidEmail: 'सही ईमेल पता दर्ज करें।',
+  enterpriseSubmitFailed: 'अनुरोध भेजा नहीं जा सका। कृपया फिर प्रयास करें।',
   emailButton: 'ईमेल',
   callButton: 'कॉल',
   retailStores: 'रिटेल स्टोर',
@@ -1446,6 +1481,12 @@ function hasValidContactPhone(phoneInput: string) {
   return phoneInput.replace(/\D/g, '').length >= 10;
 }
 
+function normalizePickedContactPhone(phoneInput: string) {
+  const digits = phoneInput.replace(/\D/g, '');
+  if (digits.length > 10 && digits.startsWith('91')) return digits.slice(-10);
+  return digits;
+}
+
 function hasConfirmedPickupDetails(booking: typeof initialBooking) {
   return (
     booking.pickupContactConfirmed &&
@@ -1616,6 +1657,26 @@ function formatReverseAddress(place?: Location.LocationGeocodedAddress) {
     .join(', ');
 }
 
+async function resolvePinnedLocation(api: IndieryApi, lat: number, lng: number): Promise<LocationDetails> {
+  let nearbyAddress = '';
+  try {
+    const result = await withLocationTimeout(api.reverseGeocodeLocation(lat, lng), 2500, 'Address lookup timed out');
+    nearbyAddress = result.location.address;
+  } catch {
+    const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }).catch(() => []);
+    nearbyAddress = formatReverseAddress(places[0]);
+  }
+
+  const address = nearbyAddress ? `Pin near ${nearbyAddress}` : 'Pinned map location';
+  return {
+    placeId: `map-${lat.toFixed(6)}-${lng.toFixed(6)}`,
+    label: address,
+    address,
+    lat,
+    lng
+  };
+}
+
 function withLocationTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<T>((_, reject) => {
@@ -1626,13 +1687,20 @@ function withLocationTimeout<T>(promise: Promise<T>, timeoutMs: number, message:
   });
 }
 
-function showAndroidPermissionDisclosure(input: {
+type AndroidPermissionDisclosureInput = {
   title: string;
   message: string;
   allowLabel: string;
   cancelLabel: string;
-}) {
+};
+
+let presentAndroidPermissionDisclosure:
+  | ((input: AndroidPermissionDisclosureInput) => Promise<boolean>)
+  | null = null;
+
+function showAndroidPermissionDisclosure(input: AndroidPermissionDisclosureInput) {
   if (Platform.OS !== 'android') return Promise.resolve(true);
+  if (presentAndroidPermissionDisclosure) return presentAndroidPermissionDisclosure(input);
 
   return new Promise<boolean>((resolve) => {
     let settled = false;
@@ -1699,12 +1767,12 @@ async function readDeviceLocation(language: AppLanguage = 'en') {
 
   try {
     return await withLocationTimeout(
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
       8000,
       copyFor(language, 'gpsTakingTooLong')
     );
   } catch (err) {
-    const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
+    const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 30000, requiredAccuracy: 50 }).catch(() => null);
     if (lastKnown) return lastKnown;
     throw err;
   }
@@ -1821,13 +1889,44 @@ function isCustomerCancellableOrder(order: Order) {
   return Boolean(orderTimelineTime(order, 'picked_up'));
 }
 
-function AppStatusBar({ variant }: { variant: 'brand' | 'light' }) {
+function AppStatusBar({ variant }: { variant: 'brand' | 'light' | 'overlay' }) {
+  const overlaysHeader = variant === 'brand' || variant === 'overlay';
   return (
     <StatusBar
-      barStyle="dark-content"
-      backgroundColor={colors.white}
-      translucent={false}
+      barStyle={variant === 'brand' ? 'light-content' : 'dark-content'}
+      backgroundColor={overlaysHeader ? 'transparent' : colors.white}
+      translucent={overlaysHeader}
     />
+  );
+}
+
+function StartupFadeOverlay({ language, onFinish }: { language: AppLanguage; onFinish: () => void }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
+
+  useEffect(() => {
+    const animation = Animated.timing(opacity, {
+      toValue: 0,
+      duration: 420,
+      delay: 80,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true
+    });
+    animation.start(({ finished }) => {
+      if (finished) onFinishRef.current();
+    });
+    return () => animation.stop();
+  }, [opacity]);
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.startupFadeOverlay, { opacity }]}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={styles.startupLoadingFooter}>
+        <ActivityIndicator color={colors.white} size="small" />
+        <Text style={styles.startupLoadingText}>{copyFor(language, 'loading')}</Text>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -1884,7 +1983,18 @@ async function requestCustomerAppPermissions(
 
 export default function App() {
   const responsive = useResponsiveLayout();
-  const { bottom: rootBottomInset } = useSafeAreaInsets();
+  const { top: rootTopInset, bottom: rootBottomInset } = useSafeAreaInsets();
+  const pageScrollY = useRef(new Animated.Value(0)).current;
+  const statusBarCoverOpacity = pageScrollY.interpolate({
+    inputRange: [0, 8],
+    outputRange: [0, 1],
+    extrapolate: 'clamp'
+  });
+  const handlePageScroll: PageScrollHandler = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: pageScrollY } } }], { useNativeDriver: true }),
+    [pageScrollY]
+  );
+  const resetPageScroll = () => pageScrollY.setValue(0);
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const socketRef = useRef<Socket | null>(null);
   const estimateRequestSeqRef = useRef(0);
@@ -1893,8 +2003,12 @@ export default function App() {
   const exitBackPressedAtRef = useRef(0);
   const refreshInFlightRef = useRef(false);
   const [tab, setTab] = useState<Tab>('home');
+  useEffect(() => {
+    resetPageScroll();
+  }, [tab]);
   const [data, setData] = useState<CustomerBootstrap | null>(null);
   const [loading, setLoading] = useState(true);
+  const [startupTransitionComplete, setStartupTransitionComplete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -1912,6 +2026,30 @@ export default function App() {
   const [notificationIntent, setNotificationIntent] = useState<{ responseId: string; orderId: string } | null>(null);
   const [pickupSearchOpen, setPickupSearchOpen] = useState(false);
   const [pickupDetailsMode, setPickupDetailsMode] = useState<'home' | 'book' | null>(null);
+  const [permissionDisclosure, setPermissionDisclosure] = useState<
+    (AndroidPermissionDisclosureInput & { resolve: (accepted: boolean) => void }) | null
+  >(null);
+  const [cancelOrderConfirmation, setCancelOrderConfirmation] = useState<{
+    order: Order;
+    message: string;
+  } | null>(null);
+  const [accountDeletionConfirmationOpen, setAccountDeletionConfirmationOpen] = useState(false);
+
+  useEffect(() => {
+    presentAndroidPermissionDisclosure = (input) => new Promise<boolean>((resolve) => {
+      setPermissionDisclosure({ ...input, resolve });
+    });
+    return () => {
+      presentAndroidPermissionDisclosure = null;
+    };
+  }, []);
+
+  function finishPermissionDisclosure(accepted: boolean) {
+    const currentDisclosure = permissionDisclosure;
+    if (!currentDisclosure) return;
+    setPermissionDisclosure(null);
+    currentDisclosure.resolve(accepted);
+  }
 
   useEffect(() => {
     boot();
@@ -2397,28 +2535,21 @@ export default function App() {
   }
 
   function requestAccountDeletion() {
-    Alert.alert(
-      copyFor(language, 'requestAccountDeletion'),
-      copyFor(language, 'accountDeletionBody'),
-      [
-        { text: copyFor(language, 'cancel'), style: 'cancel' },
-        {
-          text: copyFor(language, 'submitRequest'),
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              await api.requestAccountDeletion('Requested from customer profile');
-              showToast(copyFor(language, 'deletionRequestSubmitted'));
-            } catch (err) {
-              showToast(err instanceof Error ? err.message : copyFor(language, 'requestFailed'));
-            } finally {
-              setBusy(false);
-            }
-          }
-        }
-      ]
-    );
+    setAccountDeletionConfirmationOpen(true);
+  }
+
+  async function confirmAccountDeletionRequest() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.requestAccountDeletion('Requested from customer profile');
+      setAccountDeletionConfirmationOpen(false);
+      showToast(copyFor(language, 'deletionRequestSubmitted'));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : copyFor(language, 'requestFailed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function cancelActiveOrder(order: Order) {
@@ -2433,54 +2564,52 @@ export default function App() {
       : afterPickup
         ? fillCopy(copyFor(language, 'cancelWithinFiveMessage'), { order: order.orderNo })
         : fillCopy(copyFor(language, 'cancelBeforePickupMessage'), { order: order.orderNo });
-    Alert.alert(
-      copyFor(language, 'cancelBookingTitle'),
-      cancellationMessage,
-      [
-        { text: copyFor(language, 'keepBooking'), style: 'cancel' },
-        {
-          text: copyFor(language, 'cancelBookingAction'),
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              const result = await api.cancelOrder(order.id, 'Cancelled by customer');
-              setData((current) => {
-                if (!current || !result.order) return current;
-                const activeOrders = current.activeOrders.filter((item) => item.id !== result.order?.id);
-                return {
-                  ...current,
-                  user: result.user ?? current.user,
-                  wallet: result.wallet,
-                  activeOrder: activeOrders[0],
-                  activeOrders,
-                  orders: [result.order, ...current.orders.filter((item) => item.id !== result.order?.id)]
-                };
-              });
-              showToast(
-                result.cancellationCharge > 0
-                  ? fillCopy(copyFor(language, 'bookingCancelledCharged'), { charge: money(result.cancellationCharge) })
-                  : copyFor(language, 'bookingCancelledNoCharge')
-              );
-              setTab('orders');
-            } catch (err) {
-              showToast(err instanceof Error ? err.message : copyFor(language, 'cancelFailed'));
-            } finally {
-              setBusy(false);
-            }
-          }
-        }
-      ]
-    );
+    setCancelOrderConfirmation({ order, message: cancellationMessage });
+  }
+
+  async function confirmCancelActiveOrder() {
+    const confirmation = cancelOrderConfirmation;
+    if (!confirmation || busy) return;
+
+    setBusy(true);
+    try {
+      const result = await api.cancelOrder(confirmation.order.id, 'Cancelled by customer');
+      setData((current) => {
+        if (!current || !result.order) return current;
+        const activeOrders = current.activeOrders.filter((item) => item.id !== result.order?.id);
+        return {
+          ...current,
+          user: result.user ?? current.user,
+          wallet: result.wallet,
+          activeOrder: activeOrders[0],
+          activeOrders,
+          orders: [result.order, ...current.orders.filter((item) => item.id !== result.order?.id)]
+        };
+      });
+      setCancelOrderConfirmation(null);
+      showToast(
+        result.cancellationCharge > 0
+          ? fillCopy(copyFor(language, 'bookingCancelledCharged'), { charge: money(result.cancellationCharge) })
+          : copyFor(language, 'bookingCancelledNoCharge')
+      );
+      setTab('orders');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : copyFor(language, 'cancelFailed'));
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (loading) {
     return (
       <LanguageContext.Provider value={language}>
-        <SafeAreaView edges={appSafeAreaEdges} style={styles.center}>
-          <AppStatusBar variant="light" />
-          <ActivityIndicator color={colors.customer} size="large" />
-          <Text style={styles.muted}>{copyFor(language, 'loading')}</Text>
+        <SafeAreaView edges={['left', 'right']} style={styles.startupLoadingScreen}>
+          <AppStatusBar variant="brand" />
+          <Image source={indierySplashMark} style={styles.startupLoadingMark} resizeMode="contain" />
+          <View style={styles.startupLoadingFooter}>
+            <ActivityIndicator color={colors.white} size="small" />
+            <Text style={styles.startupLoadingText}>{copyFor(language, 'loading')}</Text>
+          </View>
         </SafeAreaView>
       </LanguageContext.Provider>
     );
@@ -2489,11 +2618,13 @@ export default function App() {
   if (!data) {
     return (
       <LanguageContext.Provider value={language}>
-        <LoginScreen
-          initialError={error}
-          onCheckCustomer={(phone) => api.customerOnboardingStatus(phone)}
-          onVerified={completeFirebaseLogin}
-        />
+        <View style={styles.startupTransitionRoot}>
+          <LoginScreen
+            initialError={error}
+            onVerified={completeFirebaseLogin}
+          />
+          {!startupTransitionComplete && <StartupFadeOverlay language={language} onFinish={() => setStartupTransitionComplete(true)} />}
+        </View>
       </LanguageContext.Provider>
     );
   }
@@ -2501,12 +2632,15 @@ export default function App() {
   if (needsCustomerProfile(data.user)) {
     return (
       <LanguageContext.Provider value={language}>
-        <ProfileSetupScreen
-          user={data.user}
-          busy={busy}
-          error={error}
-          onSave={saveProfile}
-        />
+        <View style={styles.startupTransitionRoot}>
+          <ProfileSetupScreen
+            user={data.user}
+            busy={busy}
+            error={error}
+            onSave={saveProfile}
+          />
+          {!startupTransitionComplete && <StartupFadeOverlay language={language} onFinish={() => setStartupTransitionComplete(true)} />}
+        </View>
       </LanguageContext.Provider>
     );
   }
@@ -2561,21 +2695,49 @@ export default function App() {
     openBook(1);
   };
 
-  return (
-    <LanguageContext.Provider value={language}>
-      <SafeAreaView edges={tabScreenSafeAreaEdges} style={styles.shell}>
-        <AppStatusBar variant="brand" />
-        <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
+  const pageHeader = tab === 'home' ? (
+        <View style={[
+          styles.appHeader,
+          styles.homeAppHeader,
+          responsive.isCompact && styles.appHeaderCompact,
+          responsive.isCompact && styles.homeAppHeaderCompact,
+          responsive.isSmall && styles.appHeaderSmall,
+          responsive.isSmall && styles.homeAppHeaderSmall,
+          {
+            paddingTop: rootTopInset + (responsive.isSmall ? 11 : responsive.isCompact ? 13 : 18)
+          }
+        ]}>
+          <Image
+            source={customerHomeHeaderSkyline}
+            resizeMode="cover"
+            style={styles.homeHeaderArtwork}
+          />
+          <Image
+            source={customerHomeHeaderTruck}
+            resizeMode="contain"
+            style={[
+              styles.homeHeaderTruck,
+              responsive.isCompact && styles.homeHeaderTruckCompact,
+              responsive.isSmall && styles.homeHeaderTruckSmall
+            ]}
+          />
+          <View pointerEvents="none" style={styles.homeHeaderBottomBlend} />
           <View style={[
             styles.appHeaderInner,
             responsive.isCompact && styles.appHeaderInnerCompact,
+            styles.homeAppHeaderInner,
             { maxWidth: responsive.contentMaxWidth }
           ]}>
             <View style={styles.appHeaderCopy}>
-              <Text style={[styles.eyebrow, responsive.isCompact && styles.eyebrowCompact]}>INDIERY</Text>
+              <Text style={[
+                styles.eyebrow,
+                styles.homeHeaderEyebrow,
+                responsive.isCompact && styles.eyebrowCompact
+              ]}>INDIERY</Text>
               <Text
                 style={[
                   styles.headerTitle,
+                  styles.homeHeaderTitle,
                   responsive.isCompact && styles.headerTitleCompact,
                   responsive.isSmall && styles.headerTitleSmall
                 ]}
@@ -2584,18 +2746,27 @@ export default function App() {
               >
                 {copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}
               </Text>
+              <Text style={[styles.homeHeaderSubtitle, responsive.isCompact && styles.homeHeaderSubtitleCompact]}>
+                {language === 'hi' ? 'आपका डिलीवरी पार्टनर यहाँ है' : 'Your delivery partner is here'}
+              </Text>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={copyFor(language, 'account')}
-              style={[styles.avatar, responsive.isCompact && styles.avatarCompact]}
-              onPress={() => setTab('account')}
-            >
-              <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact]}>{data.user.initials}</Text>
-            </Pressable>
           </View>
         </View>
 
+        ) : (
+          <View style={[styles.dashboardPageHeader, { paddingTop: rootTopInset + 14 }]}>
+            <View style={[styles.dashboardPageHeaderInner, { maxWidth: responsive.contentMaxWidth }]}>
+              <Text style={styles.dashboardPageTitle}>
+                {copyFor(language, tab === 'book' ? 'bookDelivery' : tab === 'wallet' ? 'indieryCoins' : tab)}
+              </Text>
+            </View>
+          </View>
+        );
+
+  return (
+    <LanguageContext.Provider value={language}>
+      <SafeAreaView edges={tabScreenSafeAreaEdges} style={styles.shell}>
+        <AppStatusBar variant="overlay" />
         <View style={[
           styles.content,
           tab === 'home' && styles.homeContent,
@@ -2605,6 +2776,8 @@ export default function App() {
           {tab !== 'home' ? <View pointerEvents="none" style={styles.otherPageCurveSurface} /> : null}
           {tab === 'home' && (
             <HomeScreen
+              header={pageHeader}
+              onPageScroll={handlePageScroll}
               api={api}
               data={data}
               booking={booking}
@@ -2616,6 +2789,8 @@ export default function App() {
           )}
           {tab === 'book' && (
             <BookScreen
+              header={pageHeader}
+              onPageScroll={handlePageScroll}
               api={api}
               user={data.user}
               savedAddresses={data.user.customerProfile?.savedAddresses ?? []}
@@ -2635,6 +2810,9 @@ export default function App() {
           )}
           {tab === 'orders' && (
             <OrdersScreen
+              header={pageHeader}
+              onPageScroll={handlePageScroll}
+              api={api}
               orders={data.orders}
               activeOrders={activeOrders}
               activeOrder={activeOrder}
@@ -2653,6 +2831,8 @@ export default function App() {
           )}
           {tab === 'wallet' && (
             <WalletScreen
+              header={pageHeader}
+              onPageScroll={handlePageScroll}
               wallet={
                 data.wallet ?? {
                   balance: data.user.customerProfile?.walletBalance ?? 0,
@@ -2684,6 +2864,10 @@ export default function App() {
           )}
           {tab === 'account' && (
             <AccountScreen
+              api={api}
+              header={pageHeader}
+              onPageScroll={handlePageScroll}
+              onPageChange={resetPageScroll}
               data={data}
               busy={busy}
               language={language}
@@ -2700,6 +2884,10 @@ export default function App() {
           )}
         </View>
 
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.scrolledStatusBarCover, { height: rootTopInset, opacity: statusBarCoverOpacity }]}
+        />
         <BottomTabs active={tab} onChange={setTab} activeOrder={activeOrders.length > 0} />
         {pickupSearchOpen ? (
           <PickupSearchModal
@@ -2733,6 +2921,118 @@ export default function App() {
             }}
           />
         ) : null}
+        <Modal
+          visible={Boolean(permissionDisclosure)}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => finishPermissionDisclosure(false)}
+        >
+          <View style={styles.permissionDisclosureOverlay}>
+            <View style={styles.permissionDisclosureCard}>
+              <View style={styles.permissionDisclosureIcon}>
+                <Ionicons name="location" size={25} color={colors.customer} />
+              </View>
+              <Text style={styles.permissionDisclosureTitle}>{permissionDisclosure?.title}</Text>
+              <Text style={styles.permissionDisclosureMessage}>{permissionDisclosure?.message}</Text>
+              <View style={styles.permissionDisclosureActions}>
+                <Pressable
+                  style={styles.permissionDisclosureSecondaryButton}
+                  onPress={() => finishPermissionDisclosure(false)}
+                >
+                  <Text style={styles.permissionDisclosureSecondaryText}>{permissionDisclosure?.cancelLabel}</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.permissionDisclosurePrimaryButton}
+                  onPress={() => finishPermissionDisclosure(true)}
+                >
+                  <Ionicons name="navigate" size={17} color={colors.white} />
+                  <Text style={styles.permissionDisclosurePrimaryText}>{permissionDisclosure?.allowLabel}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={Boolean(cancelOrderConfirmation)}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            if (!busy) setCancelOrderConfirmation(null);
+          }}
+        >
+          <View style={styles.permissionDisclosureOverlay}>
+            <View style={styles.cancelBookingCard}>
+              <View style={styles.cancelBookingIcon}>
+                <Ionicons name="close-circle-outline" size={28} color="#DC2626" />
+              </View>
+              <Text style={styles.permissionDisclosureTitle}>{copyFor(language, 'cancelBookingTitle')}</Text>
+              <Text style={styles.permissionDisclosureMessage}>{cancelOrderConfirmation?.message}</Text>
+              <View style={styles.cancelBookingActions}>
+                <Pressable
+                  disabled={busy}
+                  style={[styles.cancelBookingKeepButton, busy && styles.modalActionDisabled]}
+                  onPress={() => setCancelOrderConfirmation(null)}
+                >
+                  <Text style={styles.cancelBookingKeepText}>{copyFor(language, 'keepBooking')}</Text>
+                </Pressable>
+                <Pressable
+                  disabled={busy}
+                  style={[styles.cancelBookingConfirmButton, busy && styles.modalActionDisabled]}
+                  onPress={confirmCancelActiveOrder}
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Ionicons name="trash-outline" size={17} color={colors.white} />
+                  )}
+                  <Text style={styles.cancelBookingConfirmText}>{copyFor(language, 'cancelBookingAction')}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+        <Modal
+          visible={accountDeletionConfirmationOpen}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            if (!busy) setAccountDeletionConfirmationOpen(false);
+          }}
+        >
+          <View style={styles.permissionDisclosureOverlay}>
+            <View style={styles.cancelBookingCard}>
+              <View style={styles.cancelBookingIcon}>
+                <Ionicons name="trash-outline" size={27} color="#DC2626" />
+              </View>
+              <Text style={styles.permissionDisclosureTitle}>{copyFor(language, 'requestAccountDeletion')}</Text>
+              <Text style={styles.permissionDisclosureMessage}>{copyFor(language, 'accountDeletionBody')}</Text>
+              <View style={styles.cancelBookingActions}>
+                <Pressable
+                  disabled={busy}
+                  style={[styles.cancelBookingKeepButton, busy && styles.modalActionDisabled]}
+                  onPress={() => setAccountDeletionConfirmationOpen(false)}
+                >
+                  <Text style={styles.cancelBookingKeepText}>{copyFor(language, 'cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  disabled={busy}
+                  style={[styles.cancelBookingConfirmButton, busy && styles.modalActionDisabled]}
+                  onPress={confirmAccountDeletionRequest}
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Ionicons name="send-outline" size={17} color={colors.white} />
+                  )}
+                  <Text style={styles.cancelBookingConfirmText}>{copyFor(language, 'submitRequest')}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
         {toast ? (
           <View
             style={[
@@ -2750,6 +3050,7 @@ export default function App() {
             <Text style={styles.toastText}>{toast}</Text>
           </View>
         ) : null}
+        {!startupTransitionComplete && <StartupFadeOverlay language={language} onFinish={() => setStartupTransitionComplete(true)} />}
       </SafeAreaView>
     </LanguageContext.Provider>
   );
@@ -2757,17 +3058,16 @@ export default function App() {
 
 function LoginScreen({
   initialError,
-  onCheckCustomer,
   onVerified
 }: {
   initialError: string;
-  onCheckCustomer: (phone: string) => Promise<{ needsProfile: boolean }>;
   onVerified: (firebaseIdToken: string, customerProfile?: CustomerOnboardingProfile) => Promise<void>;
 }) {
   const copy = useCopy();
   const language = useLanguage();
   const responsive = useResponsiveLayout();
   const [loginStep, setLoginStep] = useState<LoginStep>('phone');
+  const { top: loginTopInset } = useSafeAreaInsets();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [profileRequired, setProfileRequired] = useState(false);
@@ -2783,6 +3083,7 @@ function LoginScreen({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const loginScrollRef = useRef<ScrollView | null>(null);
   const verificationInFlightRef = useRef<Promise<void> | null>(null);
+  const lastAutoVerifiedCodeRef = useRef('');
   const fullLoginViewportRef = useRef({ width: responsive.width, height: responsive.height });
   if (Math.abs(fullLoginViewportRef.current.width - responsive.width) > 1) {
     fullLoginViewportRef.current = { width: responsive.width, height: responsive.height };
@@ -2826,6 +3127,17 @@ function LoginScreen({
     const timer = setTimeout(() => setResendSeconds((seconds) => Math.max(0, seconds - 1)), 1000);
     return () => clearTimeout(timer);
   }, [confirmation, resendSeconds]);
+
+  useEffect(() => {
+    const submittedCode = code.trim();
+    if (submittedCode.length < 6) {
+      lastAutoVerifiedCodeRef.current = '';
+      return;
+    }
+    if (!confirmation || busy || lastAutoVerifiedCodeRef.current === submittedCode) return;
+    lastAutoVerifiedCodeRef.current = submittedCode;
+    void verifyOtp();
+  }, [code, confirmation, busy]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -2876,6 +3188,7 @@ function LoginScreen({
     const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(phone, language));
     setConfirmation(result);
     setCode('');
+    lastAutoVerifiedCodeRef.current = '';
     setResendSeconds(30);
     setLoginStep('otp');
     setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
@@ -2909,18 +3222,10 @@ function LoginScreen({
     setBusy(true);
     setError('');
     try {
-      const formattedPhone = formatPhoneForFirebase(phone, language);
-      const status = await onCheckCustomer(formattedPhone);
-      setProfileRequired(status.needsProfile);
-      if (status.needsProfile) {
-        Keyboard.dismiss();
-        setLoginStep('profile');
-        setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
-      } else {
-        await requestOtp();
-      }
+      setProfileRequired(false);
+      await requestOtp();
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.unableToContinue);
+      setError(err instanceof Error ? err.message : copy.unableToSendOtp);
     } finally {
       setBusy(false);
     }
@@ -3018,6 +3323,7 @@ function LoginScreen({
     Keyboard.dismiss();
     setConfirmation(null);
     setCode('');
+    lastAutoVerifiedCodeRef.current = '';
     setLoginStep('phone');
     setProfileRequired(false);
     setProfileName('');
@@ -3042,10 +3348,10 @@ function LoginScreen({
   return (
     <>
       <SafeAreaView
-        edges={appSafeAreaEdges}
+        edges={loginSafeAreaEdges}
         style={styles.loginShell}
       >
-        <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+        <AppStatusBar variant="overlay" />
         <KeyboardAvoidingView
           style={[styles.authKeyboard, androidKeyboardPadding > 0 && { paddingBottom: androidKeyboardPadding }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -3098,7 +3404,7 @@ function LoginScreen({
                   { maxWidth: Math.min(640, responsive.contentMaxWidth) }
                 ]}
               >
-                <View style={[styles.authForm, styles.authFormOtp]}>
+                <View style={[styles.authForm, styles.authFormOtp, { paddingTop: loginTopInset + 18 }]}>
                   <>
                     <Pressable
                       style={styles.loginOtpBackButton}
@@ -3200,6 +3506,7 @@ function LoginPhoneStep({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
+  const { top: loginTopInset } = useSafeAreaInsets();
   const maxWidth = Math.min(640, responsive.contentMaxWidth);
   const heroWidth = Math.min(responsive.width, maxWidth);
   // bg1 is 4:3. Matching its natural ratio prevents a white/empty strip and
@@ -3243,6 +3550,7 @@ function LoginPhoneStep({
             caption={copy.deliveringTrust}
             height={heroHeight}
             visibleHeight={heroVisibleHeight}
+            topInset={loginTopInset}
           />
           <View style={[styles.loginPhoneFormContent, keyboardVisible && styles.loginPhoneFormContentKeyboard]}>
             {!keyboardVisible ? <Text style={styles.authKicker}>{copy.fastSecureReliable}</Text> : null}
@@ -3264,7 +3572,7 @@ function LoginPhoneStep({
             {!keyboardVisible ? (
               <>
                 <AuthActionButton
-                  title={busy ? copy.checking : copy.continue}
+                  title={busy ? copy.sendingOtp : copy.continue}
                   onPress={onContinue}
                   disabled={!phoneReady || busy}
                 />
@@ -3286,7 +3594,7 @@ function LoginPhoneStep({
         >
           <View style={[styles.loginPhoneKeyboardFooterInner, { maxWidth }]}>
             <AuthActionButton
-              title={busy ? copy.checking : copy.continue}
+              title={busy ? copy.sendingOtp : copy.continue}
               onPress={onContinue}
               disabled={!phoneReady || busy}
             />
@@ -3582,12 +3890,14 @@ function LoginHero({
   title,
   caption,
   height,
-  visibleHeight
+  visibleHeight,
+  topInset
 }: {
   title: string;
   caption: string;
   height: number;
   visibleHeight: number;
+  topInset: number;
 }) {
   return (
     <View style={[styles.loginHero, { height: visibleHeight, minHeight: visibleHeight, maxHeight: visibleHeight }]}>
@@ -3597,7 +3907,7 @@ function LoginHero({
         resizeMode="contain"
       />
       <View style={styles.loginHeroWash} />
-      <View style={styles.loginBrandPanel}>
+      <View style={[styles.loginBrandPanel, { paddingTop: topInset + 14 }]}>
         <Image
           source={indieryLogoImage}
           style={styles.loginBrandLogo}
@@ -3982,7 +4292,28 @@ function AuthField({
   );
 }
 
+function ScrollingPageHeader({
+  header,
+  horizontalInset,
+  topInset,
+  bottomOverlap = 0
+}: {
+  header: React.ReactNode;
+  horizontalInset: number;
+  topInset: number;
+  bottomOverlap?: number;
+}) {
+  if (!header) return null;
+  return (
+    <View style={{ marginHorizontal: -horizontalInset, marginTop: -topInset, marginBottom: -bottomOverlap }}>
+      {header}
+    </View>
+  );
+}
+
 function HomeScreen({
+  header,
+  onPageScroll,
   api,
   data,
   booking,
@@ -3991,6 +4322,8 @@ function HomeScreen({
   onVehicleSelect,
   onBook
 }: {
+  header: React.ReactNode;
+  onPageScroll: PageScrollHandler;
   api: IndieryApi;
   data: CustomerBootstrap;
   booking: typeof initialBooking;
@@ -4110,14 +4443,10 @@ function HomeScreen({
 
   return (
     <View style={styles.homeShell}>
-      <View pointerEvents="none" style={styles.homeCurveSurface}>
-        <View style={styles.homeMapPattern}>
-          <View style={[styles.homePatternRoad, styles.homePatternRoadOne]} />
-          <View style={[styles.homePatternRoad, styles.homePatternRoadTwo]} />
-          <View style={[styles.homePatternRoad, styles.homePatternRoadThree]} />
-        </View>
-      </View>
-      <ScrollView
+      <View pointerEvents="none" style={styles.homeCurveSurface} />
+      <Animated.ScrollView
+        onScroll={onPageScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.homeScroll,
           compact && styles.homeScrollCompact,
@@ -4125,6 +4454,12 @@ function HomeScreen({
         ]}
         showsVerticalScrollIndicator={false}
       >
+        <ScrollingPageHeader
+          header={header}
+          horizontalInset={responsive.horizontalPadding}
+          topInset={compact ? 9 : 12}
+          bottomOverlap={20}
+        />
         <Pressable style={[styles.homeLocationCard, compact && styles.homeLocationCardCompact]} onPress={onPickupPress}>
           <View style={[
             styles.homeLocationIcon,
@@ -4225,7 +4560,7 @@ function HomeScreen({
           ))}
         </View>
 
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 }
@@ -4552,6 +4887,8 @@ function LocationPickerField({
         <Ionicons name={isPickup ? 'radio-button-on' : 'location'} size={responsive.isCompact ? 16 : 18} color={colors.customer} />
         <TextInput
           value={value}
+          selection={focused ? undefined : { start: 0, end: 0 }}
+          textAlign="left"
           onFocus={() => {
             if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
             setFocused(true);
@@ -4574,6 +4911,20 @@ function LocationPickerField({
           style={[styles.locationInput, responsive.isCompact && styles.locationInputCompact]}
         />
         {loading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
+        {onOpenMap && variant === 'route' ? (
+          <Pressable
+            style={styles.routeLocationMapButton}
+            onPress={() => {
+              Keyboard.dismiss();
+              setFocused(false);
+              onOpenMap();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${label}: ${copy.selectOnMap}`}
+          >
+            <Ionicons name="map-outline" size={20} color={colors.customer} />
+          </Pressable>
+        ) : null}
       </View>
       {localError ? <Text style={styles.locationError}>{localError}</Text> : null}
       {onOpenMap && variant === 'default' ? (
@@ -4830,6 +5181,8 @@ const VehicleMiniArt = React.memo(function VehicleMiniArt({
 });
 
 function BookScreen({
+  header,
+  onPageScroll,
   api,
   user,
   savedAddresses,
@@ -4846,6 +5199,8 @@ function BookScreen({
   placeOrder,
   onBackToHome
 }: {
+  header: React.ReactNode;
+  onPageScroll: PageScrollHandler;
   api: IndieryApi;
   user: UserProfile;
   savedAddresses: SavedAddress[];
@@ -4878,11 +5233,10 @@ function BookScreen({
   const [goodsTypePickerOpen, setGoodsTypePickerOpen] = useState(false);
   const [draftGoodsType, setDraftGoodsType] = useState(booking.goodsType);
   const [goodsRulesOpen, setGoodsRulesOpen] = useState(false);
+  const [bookingSummaryOpen, setBookingSummaryOpen] = useState(false);
   const [contactError, setContactError] = useState('');
-  const [autoPickupLoading, setAutoPickupLoading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible());
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const autoPickupAttemptedRef = useRef(false);
   const fullBookingViewportRef = useRef({ width: responsive.width, height: responsive.height });
   if (Math.abs(fullBookingViewportRef.current.width - responsive.width) > 1) {
     fullBookingViewportRef.current = { width: responsive.width, height: responsive.height };
@@ -4911,6 +5265,10 @@ function BookScreen({
   const currentStepMeta = stepMeta[step] ?? stepMeta[1];
 
   useEffect(() => {
+    if (step !== 4) setBookingSummaryOpen(false);
+  }, [step]);
+
+  useEffect(() => {
     if (!vehicleChoices.length) {
       if (booking.vehicleId) setBooking((current) => ({ ...current, vehicleId: '' }));
       return;
@@ -4926,41 +5284,6 @@ function BookScreen({
       setBooking((current) => ({ ...current, vehicleId: '' }));
     }
   }, [booking.serviceCategory, booking.vehicleId, bookingWeightKg, setBooking, suggestedVehicle?.id, vehicleChoiceIds]);
-
-  useEffect(() => {
-    if (autoPickupAttemptedRef.current || hasPickupLocation) return undefined;
-    autoPickupAttemptedRef.current = true;
-    let cancelled = false;
-
-    async function setCurrentPickup() {
-      setAutoPickupLoading(true);
-      try {
-        const location = await readCurrentLocationDetails(language);
-        if (cancelled) return;
-        setBooking((currentBooking) => (
-          currentBooking.pickup
-            ? currentBooking
-            : {
-              ...currentBooking,
-              pickup: location.address || location.label,
-              pickupPlaceId: location.placeId,
-              pickupLat: location.lat,
-              pickupLng: location.lng,
-              pickupContactConfirmed: false
-            }
-        ));
-      } catch {
-        // The pickup field remains editable if current location cannot be read.
-      } finally {
-        if (!cancelled) setAutoPickupLoading(false);
-      }
-    }
-
-    setCurrentPickup();
-    return () => {
-      cancelled = true;
-    };
-  }, [hasPickupLocation, setBooking]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -4997,13 +5320,17 @@ function BookScreen({
       setGoodsRulesOpen(false);
       return true;
     }
+    if (bookingSummaryOpen) {
+      setBookingSummaryOpen(false);
+      return true;
+    }
     if (step > 1) {
       setStep(step - 1);
       return true;
     }
     onBackToHome();
     return true;
-  }, [mapPickerTarget, contactSheetTarget, goodsTypePickerOpen, goodsRulesOpen, step, onBackToHome]);
+  }, [mapPickerTarget, contactSheetTarget, goodsTypePickerOpen, goodsRulesOpen, bookingSummaryOpen, step, onBackToHome]);
 
   function updateBookingWeight(weightKg: string) {
     const nextWeight = parseBookingWeight(weightKg);
@@ -5240,6 +5567,19 @@ function BookScreen({
     openRouteDetails('drop', value);
   }
 
+  function openRouteMapPicker(target: 'pickup' | 'drop') {
+    Keyboard.dismiss();
+    setContactError('');
+    setMapPickerTarget({
+      kind: target,
+      title: target === 'pickup' ? copy.pickup : copy.drop,
+      value: target === 'pickup' ? booking.pickup : booking.drop,
+      lat: target === 'pickup' ? booking.pickupLat : booking.dropLat,
+      lng: target === 'pickup' ? booking.pickupLng : booking.dropLng,
+      openContact: false
+    });
+  }
+
   return (
     <>
       <KeyboardAvoidingView
@@ -5249,7 +5589,9 @@ function BookScreen({
         ]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView
+        <Animated.ScrollView
+          onScroll={onPageScroll}
+          scrollEventThrottle={16}
           style={styles.bookingScreenScroll}
           contentContainerStyle={[
             styles.scroll,
@@ -5261,6 +5603,7 @@ function BookScreen({
           keyboardShouldPersistTaps="always"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         >
+          <ScrollingPageHeader header={header} horizontalInset={0} topInset={responsive.isCompact ? 12 : 16} />
           <View style={[styles.bookingStepHeader, responsive.isCompact && styles.bookingStepHeaderCompact]}>
             <Pressable
               style={[styles.bookingStepBack, responsive.isCompact && styles.bookingStepBackCompact]}
@@ -5289,13 +5632,6 @@ function BookScreen({
 
           {step === 1 && (
             <View>
-              {autoPickupLoading ? (
-                <View style={[styles.noticeInfo, responsive.isCompact && styles.noticeInfoCompact]}>
-                  <ActivityIndicator size="small" color={colors.blue} />
-                  <Text style={[styles.noticeInfoText, responsive.isCompact && styles.noticeInfoTextCompact]}>{copy.settingPickupLocation}</Text>
-                </View>
-              ) : null}
-
               <View style={[styles.routeEntryCard, responsive.isCompact && styles.routeEntryCardCompact]}>
                 <View style={[styles.routeEntryPickupRow, responsive.isCompact && styles.routeEntryPickupRowCompact]}>
                   <View style={[styles.routeEntryDot, styles.routeEntryDotPickup]} />
@@ -5319,6 +5655,7 @@ function BookScreen({
                       }
                       onSelect={(location) => applyRouteLocation('pickup', location)}
                       onDoneTyping={openPickupMap}
+                      onOpenMap={() => openRouteMapPicker('pickup')}
                     />
                   </View>
                 </View>
@@ -5347,6 +5684,7 @@ function BookScreen({
                       }
                       onSelect={(location) => applyRouteLocation('drop', location)}
                       onDoneTyping={openDropMap}
+                      onOpenMap={() => openRouteMapPicker('drop')}
                     />
                   </View>
                 </View>
@@ -5545,16 +5883,21 @@ function BookScreen({
                 <Ionicons name="chevron-up" size={16} color={colors.amber} />
               </Pressable>
 
-              <View style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}>
-                <Text style={[styles.summaryTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.bookingSummary}</Text>
-                <SummaryRow
-                  label={copy.route}
-                  value={`${composeBookingAddress(booking.pickup, booking.pickupAddressLine)} ${copy.to} ${composeBookingAddress(booking.drop, booking.dropAddressLine)}`}
-                />
+              <Pressable
+                style={[styles.bookingSummaryCard, responsive.isCompact && styles.bookingSummaryCardCompact]}
+                onPress={() => setBookingSummaryOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel={copy.bookingSummary}
+                accessibilityHint={copy.viewBookingSummaryDetails}
+              >
+                <View style={styles.bookingSummaryRouteToggle}>
+                  <Text style={[styles.summaryTitle, styles.bookingSummaryToggleTitle, responsive.isCompact && styles.summaryTitleCompact]}>{copy.bookingSummary}</Text>
+                  <Ionicons name="chevron-up" size={17} color={colors.customer} />
+                </View>
                 <SummaryRow label={copy.vehicle} value={selectedVehicle?.shortName || copy.vehicle} />
                 <SummaryRow label={copy.goods} value={`${bookingGoodsLabel(language, booking.goodsType)}, ${booking.weightKg || 0} ${copy.kgUnit}`} />
                 <SummaryRow label={copy.eta} value={`${selectedFare?.etaMinutes || selectedVehicle?.etaMinutes || 0} ${copy.min}`} />
-              </View>
+              </Pressable>
               {selectedFare ? <FareCard fare={selectedFare} /> : null}
               {(['upi', 'cash'] as PaymentMode[]).map((mode) => {
                 const subtitle = mode === 'cash' ? copy.payPartnerAfterDelivery : copy.secureOnlinePayment;
@@ -5588,7 +5931,7 @@ function BookScreen({
               </View>
             </View>
           )}
-        </ScrollView>
+        </Animated.ScrollView>
         {showGoodsKeyboardFooter ? (
           <View style={[styles.bookingKeyboardFooter, responsive.isCompact && styles.bookingKeyboardFooterCompact]}>
             <View style={[styles.bookingKeyboardFooterInner, { maxWidth: Math.min(680, responsive.contentMaxWidth) }]}>
@@ -5634,6 +5977,80 @@ function BookScreen({
           }}
         />
       ) : null}
+      <Modal
+        visible={bookingSummaryOpen && step === 4}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBookingSummaryOpen(false)}
+      >
+        <View style={styles.contactSheetOverlay}>
+          <Pressable style={styles.contactSheetBackdrop} onPress={() => setBookingSummaryOpen(false)} />
+          <View
+            style={[
+              styles.contactSheet,
+              styles.bookingDetailsSheet,
+              {
+                paddingBottom: Math.max(24, bottomInset + 12),
+                paddingLeft: Math.max(16, leftInset + 12),
+                paddingRight: Math.max(16, rightInset + 12)
+              }
+            ]}
+          >
+            <View style={styles.contactSheetHandle} />
+            <View style={styles.contactSheetHeader}>
+              <Text style={styles.contactSheetTitle}>{copy.bookingSummary}</Text>
+              <Pressable
+                style={styles.mapPickerClose}
+                onPress={() => setBookingSummaryOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel={copy.closeBookingSummary}
+              >
+                <Ionicons name="close" size={20} color={colors.ink} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.bookingDetailsScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.bookingDetailsContent}>
+              <Text style={styles.bookingDetailsSectionTitle}>{copy.routeAndContacts}</Text>
+              <BookingDetailsLocation
+                title={copy.pickupLocation}
+                address={composeBookingAddress(booking.pickup, booking.pickupAddressLine)}
+                contactLabel={copy.sender}
+                contactName={booking.pickupContactName}
+                contactPhone={booking.pickupContactPhone}
+                color={colors.green}
+              />
+              {booking.extraStops.filter((stop) => stop.label.trim()).map((stop, index) => (
+                <BookingDetailsLocation
+                  key={stop.id}
+                  title={`${copy.stop} ${index + 1}`}
+                  address={stop.label}
+                  color={colors.amber}
+                />
+              ))}
+              <BookingDetailsLocation
+                title={copy.whereTo}
+                address={composeBookingAddress(booking.drop, booking.dropAddressLine)}
+                contactLabel={copy.receiver}
+                contactName={booking.dropContactName}
+                contactPhone={booking.dropContactPhone}
+                color={colors.red}
+              />
+              <Text style={styles.bookingDetailsSectionTitle}>{copy.bookingDetails}</Text>
+              <SummaryRow label={copy.service} value={serviceTitle(language, booking.serviceCategory)} />
+              <SummaryRow label={copy.vehicle} value={selectedVehicle?.shortName || copy.selectVehicleValue} />
+              <SummaryRow label={copy.goodsType} value={bookingGoodsLabel(language, booking.goodsType)} />
+              <SummaryRow label={copy.weightKg} value={`${booking.weightKg || 0} ${copy.kgUnit}`} />
+              <SummaryRow label={copy.eta} value={`${selectedFare?.etaMinutes || selectedVehicle?.etaMinutes || 0} ${copy.min}`} />
+              <SummaryRow label={copy.payment} value={paymentModeLabel(language, booking.paymentMode)} />
+              {selectedFare ? (
+                <>
+                  <Text style={styles.bookingDetailsSectionTitle}>{copy.fareEstimate}</Text>
+                  <FareCard fare={selectedFare} />
+                </>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={goodsTypePickerOpen}
         transparent
@@ -5892,6 +6309,7 @@ function InlineExactLocationPicker({
   const sessionTokenRef = useRef(`inline-map-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const userAdjustedMapRef = useRef(false);
   const programmaticMoveRef = useRef(false);
+  const mapSelectionSeqRef = useRef(0);
   const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
   const pinColor = target === 'pickup' ? colors.green : colors.red;
   const hasExactPin = pinSelected && hasValidCoordinates(region.latitude, region.longitude);
@@ -5941,6 +6359,7 @@ function InlineExactLocationPicker({
   }, [api, pinLabel, query]);
 
   function handleQueryChange(nextQuery: string) {
+    mapSelectionSeqRef.current += 1;
     setQuery(nextQuery);
     setPinLabel('');
     setPinSelected(false);
@@ -5949,6 +6368,7 @@ function InlineExactLocationPicker({
   }
 
   function moveMapToRegion(nextRegion: Region) {
+    mapSelectionSeqRef.current += 1;
     programmaticMoveRef.current = true;
     setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
     if (canRenderNativeMap) mapRef.current?.animateToRegion(nextRegion, 240);
@@ -5999,18 +6419,18 @@ function InlineExactLocationPicker({
       const current = await readDeviceLocation(language);
       const nextLat = current.coords.latitude;
       const nextLng = current.coords.longitude;
-      const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
-      const address = formatReverseAddress(reverse[0]) || 'Current location';
+      const location = await resolvePinnedLocation(api, nextLat, nextLng);
       const nextRegion = {
         ...region,
         latitude: nextLat,
         longitude: nextLng
       };
       moveMapToRegion(nextRegion);
-      setPinLabel(address);
-      setQuery(address);
+      setPinLabel(location.address);
+      setQuery(location.address);
       setSuggestions([]);
-      commitLocation(nextRegion, address);
+      setPinSelected(true);
+      onLocationChange(location);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Could not read current location');
     } finally {
@@ -6018,39 +6438,24 @@ function InlineExactLocationPicker({
     }
   }
 
-  async function updatePinFromMap(nextRegion: Region) {
+  async function updatePinFromMap(nextRegion: Region, isGesture = false) {
     setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
     setSuggestions([]);
-    if (programmaticMoveRef.current) {
+    if (programmaticMoveRef.current && !isGesture) {
       programmaticMoveRef.current = false;
       return;
     }
-    if (userAdjustedMapRef.current) {
-      const reverse = await Location.reverseGeocodeAsync({
-        latitude: nextRegion.latitude,
-        longitude: nextRegion.longitude
-      }).catch(() => []);
-      const address = formatReverseAddress(reverse[0]) || displayLabel || 'Pinned location';
-      setPinLabel(address);
-      setQuery(address);
-      commitLocation(nextRegion, address);
-    }
-  }
-
-  async function updatePinFromMarker(latitude: number, longitude: number) {
-    userAdjustedMapRef.current = true;
-    const nextRegion = {
-      ...region,
-      latitude,
-      longitude
-    };
-    setRegion(nextRegion);
-    const reverse = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
-    const address = formatReverseAddress(reverse[0]) || displayLabel || 'Pinned location';
-    setPinLabel(address);
-    setQuery(address);
-    setSuggestions([]);
-    commitLocation(nextRegion, address);
+    programmaticMoveRef.current = false;
+    if (!userAdjustedMapRef.current && !isGesture) return;
+    const requestId = ++mapSelectionSeqRef.current;
+    commitLocation(nextRegion, 'Pinned map location');
+    setPinLabel('Finding nearby address...');
+    setQuery('');
+    const location = await resolvePinnedLocation(api, nextRegion.latitude, nextRegion.longitude);
+    if (requestId !== mapSelectionSeqRef.current) return;
+    setPinLabel(location.address);
+    setQuery(location.address);
+    onLocationChange(location);
   }
 
   return (
@@ -6067,24 +6472,18 @@ function InlineExactLocationPicker({
             <MapView
               ref={mapRef}
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+              userInterfaceStyle="light"
               style={styles.contactMapRealMap}
               initialRegion={initialRegion}
               onPanDrag={() => {
                 userAdjustedMapRef.current = true;
               }}
-              onRegionChangeComplete={updatePinFromMap}
+              onRegionChangeComplete={(nextRegion, details) => updatePinFromMap(nextRegion, details?.isGesture)}
               scrollEnabled
               zoomEnabled
               rotateEnabled={false}
               pitchEnabled={false}
-            >
-              <Marker
-                draggable
-                coordinate={{ latitude: region.latitude, longitude: region.longitude }}
-                pinColor={pinColor}
-                onDragEnd={(event) => updatePinFromMarker(event.nativeEvent.coordinate.latitude, event.nativeEvent.coordinate.longitude)}
-              />
-            </MapView>
+            />
             <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
               <Ionicons name="location" size={42} color={pinColor} />
             </View>
@@ -6289,11 +6688,11 @@ function ContactDetailsModal({
     updateContact(isPickup
       ? {
         pickupContactName: user.name,
-        pickupContactPhone: user.phone
+        pickupContactPhone: normalizePickedContactPhone(user.phone)
       }
       : {
         dropContactName: user.name,
-        dropContactPhone: user.phone
+        dropContactPhone: normalizePickedContactPhone(user.phone)
       });
   }
 
@@ -6307,6 +6706,41 @@ function ContactDetailsModal({
         dropContactName: '',
         dropContactPhone: ''
       });
+  }
+
+  async function chooseContact() {
+    Keyboard.dismiss();
+    setLocalError('');
+
+    const contactPicker = NativeModules.ContactPicker as ContactPickerNativeModule | undefined;
+    if (Platform.OS !== 'android' || !contactPicker?.pickContact) {
+      setLocalError('Contact picker is unavailable. Install the latest app build and try again.');
+      return;
+    }
+
+    try {
+      const selectedContact = await contactPicker.pickContact();
+      if (!selectedContact) return;
+
+      const selectedName = selectedContact.name?.trim() ?? '';
+      const selectedPhone = normalizePickedContactPhone(selectedContact.phone ?? '');
+      if (!selectedName && !selectedPhone) {
+        setLocalError('The selected contact does not contain a name or mobile number.');
+        return;
+      }
+
+      updateContact(isPickup
+        ? {
+          pickupContactName: selectedName || booking.pickupContactName,
+          pickupContactPhone: selectedPhone || booking.pickupContactPhone
+        }
+        : {
+          dropContactName: selectedName || booking.dropContactName,
+          dropContactPhone: selectedPhone || booking.dropContactPhone
+        });
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : copy.unableToContinue);
+    }
   }
 
   function maximizeMap() {
@@ -6485,12 +6919,20 @@ function ContactDetailsModal({
                   value={name}
                   onChangeText={(value) => updateContact(isPickup ? { pickupContactName: value } : { dropContactName: value })}
                   icon="id-card-outline"
+                  onIconPress={chooseContact}
+                  iconAccessibilityLabel={isPickup ? 'Choose sender from contacts' : 'Choose receiver from contacts'}
                 />
                 <ContactFormField
                   label={isPickup ? copy.senderMobile : copy.receiverMobile}
                   keyboardType="phone-pad"
                   value={phone}
-                  onChangeText={(value) => updateContact(isPickup ? { pickupContactPhone: value } : { dropContactPhone: value })}
+                  onChangeText={(value) => {
+                    const normalizedValue = normalizePickedContactPhone(value);
+                    updateContact(isPickup
+                      ? { pickupContactPhone: normalizedValue }
+                      : { dropContactPhone: normalizedValue });
+                  }}
+                  icon={hasValidContactPhone(phone) ? 'checkmark-circle' : undefined}
                 />
                 <Pressable
                   style={[styles.contactMobileCheckRow, responsive.isCompact && styles.contactMobileCheckRowCompact]}
@@ -6552,13 +6994,17 @@ function ContactFormField({
   value,
   onChangeText,
   keyboardType,
-  icon
+  icon,
+  onIconPress,
+  iconAccessibilityLabel
 }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
   keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
   icon?: keyof typeof Ionicons.glyphMap;
+  onIconPress?: () => void;
+  iconAccessibilityLabel?: string;
 }) {
   const responsive = useResponsiveLayout();
   return (
@@ -6571,7 +7017,21 @@ function ContactFormField({
           keyboardType={keyboardType}
           style={[styles.contactFormInput, responsive.isCompact && styles.contactFormInputCompact]}
         />
-        {icon ? <Ionicons name={icon} size={17} color={colors.customer} /> : null}
+        {icon ? (
+          onIconPress ? (
+            <Pressable
+              onPress={onIconPress}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={iconAccessibilityLabel || label}
+              style={styles.contactFormIconButton}
+            >
+              <Ionicons name={icon} size={19} color={colors.customer} />
+            </Pressable>
+          ) : (
+            <Ionicons name={icon} size={17} color={colors.customer} />
+          )
+        ) : null}
       </View>
     </View>
   );
@@ -6611,6 +7071,13 @@ function MapLocationPicker({
   const [locating, setLocating] = useState(false);
   const [localError, setLocalError] = useState('');
   const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const regionRef = useRef(initialRegion);
+  const pinLabelRef = useRef(initialValue || 'Pinned location');
+  const resolvedPinRef = useRef<LocationDetails | null>(null);
+  const confirmingRef = useRef(false);
+  const [confirming, setConfirming] = useState(false);
+  const reverseGeocodeSeqRef = useRef(0);
+  const programmaticRegionRef = useRef<Region | null>(null);
   const requestSeqRef = useRef(0);
   const sessionTokenRef = useRef(`map-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const lat = region.latitude;
@@ -6654,12 +7121,14 @@ function MapLocationPicker({
       const result = await api.locationDetails(suggestion.placeId, sessionTokenRef.current);
       assertLocationHasCoordinates(result.location);
       const nextRegion = {
-        ...region,
+        ...regionRef.current,
         latitude: result.location.lat,
         longitude: result.location.lng
       };
       moveMapToRegion(nextRegion);
-      setPinLabel(result.location.address || result.location.label);
+      pinLabelRef.current = result.location.address || result.location.label;
+      resolvedPinRef.current = result.location;
+      setPinLabel(pinLabelRef.current);
       setQuery(result.location.address || result.location.label);
       setSuggestions([]);
       sessionTokenRef.current = `map-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -6677,16 +7146,17 @@ function MapLocationPicker({
       const current = await readDeviceLocation(language);
       const nextLat = current.coords.latitude;
       const nextLng = current.coords.longitude;
-      const reverse = await Location.reverseGeocodeAsync({ latitude: nextLat, longitude: nextLng }).catch(() => []);
-      const address = formatReverseAddress(reverse[0]) || 'Current location';
+      const location = await resolvePinnedLocation(api, nextLat, nextLng);
       const nextRegion = {
-        ...region,
+        ...regionRef.current,
         latitude: nextLat,
         longitude: nextLng
       };
       moveMapToRegion(nextRegion);
-      setPinLabel(address);
-      setQuery(address);
+      pinLabelRef.current = location.address;
+      resolvedPinRef.current = location;
+      setPinLabel(location.address);
+      setQuery(location.address);
       setSuggestions([]);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Could not read current location');
@@ -6696,40 +7166,73 @@ function MapLocationPicker({
   }
 
   function moveMapToRegion(nextRegion: Region) {
+    reverseGeocodeSeqRef.current += 1;
+    programmaticRegionRef.current = nextRegion;
+    regionRef.current = nextRegion;
     setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
-    if (canRenderNativeMap) mapRef.current?.animateToRegion(nextRegion, 240);
+    if (canRenderNativeMap) mapRef.current?.animateToRegion(nextRegion, 340);
+  }
+
+  function resolvePin(nextRegion: Region): Promise<LocationDetails> {
+    return resolvePinnedLocation(api, nextRegion.latitude, nextRegion.longitude);
   }
 
   function updatePinFromMap(nextRegion: Region) {
+    const previousRegion = regionRef.current;
+    regionRef.current = nextRegion;
     setRegion((current) => (regionsAreClose(current, nextRegion) ? current : nextRegion));
     setSuggestions([]);
+    if (regionsAreClose(previousRegion, nextRegion)) return;
+    if (programmaticRegionRef.current && regionsAreClose(programmaticRegionRef.current, nextRegion)) {
+      programmaticRegionRef.current = null;
+      return;
+    }
+    programmaticRegionRef.current = null;
+    const requestId = ++reverseGeocodeSeqRef.current;
+    resolvedPinRef.current = null;
+    pinLabelRef.current = '';
+    setPinLabel('Finding address…');
+    setQuery('');
+    void resolvePin(nextRegion)
+      .then((location) => {
+        if (requestId !== reverseGeocodeSeqRef.current) return;
+        if (!location) {
+          setPinLabel('Address unavailable — move pin or search');
+          return;
+        }
+        resolvedPinRef.current = location;
+        pinLabelRef.current = location.address;
+        setPinLabel(location.address);
+      })
+      .catch(() => {});
   }
 
-  async function updatePinFromMarker(latitude: number, longitude: number) {
-    setRegion((current) => ({
-      ...current,
-      latitude,
-      longitude
-    }));
-    const reverse = await Location.reverseGeocodeAsync({ latitude, longitude }).catch(() => []);
-    const address = formatReverseAddress(reverse[0]) || 'Pinned location';
-    setPinLabel(address);
-    setQuery(address);
-    setSuggestions([]);
-  }
-
-  function confirmPin() {
+  async function confirmPin() {
+    if (confirmingRef.current) return;
+    const { latitude: lat, longitude: lng } = regionRef.current;
     if (!hasValidCoordinates(lat, lng)) {
       setLocalError(copy.selectValidLocationFirst);
       return;
     }
-    onConfirm({
-      placeId: `map-${lat.toFixed(6)}-${lng.toFixed(6)}`,
-      label: pinLabel || 'Pinned location',
-      address: pinLabel || 'Pinned location',
-      lat,
-      lng
-    });
+    confirmingRef.current = true;
+    setConfirming(true);
+    setLocalError('');
+    const selectedRegion = regionRef.current;
+    try {
+      const cached = resolvedPinRef.current;
+      const location = cached && cached.lat === lat && cached.lng === lng
+        ? cached
+        : await resolvePin(selectedRegion);
+      if (!location) {
+        setLocalError('Could not find an address here. Move the pin or search for a place.');
+        return;
+      }
+      if (regionRef.current.latitude !== lat || regionRef.current.longitude !== lng) return;
+      onConfirm(location);
+    } finally {
+      confirmingRef.current = false;
+      setConfirming(false);
+    }
   }
 
   return (
@@ -6796,16 +7299,12 @@ function MapLocationPicker({
                 <MapView
                   ref={mapRef}
                   provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                  userInterfaceStyle="light"
+                  mapType="standard"
                   style={styles.mapPickerRealMap}
                   initialRegion={initialRegion}
                   onRegionChangeComplete={updatePinFromMap}
-                >
-                  <Marker
-                    draggable
-                    coordinate={{ latitude: region.latitude, longitude: region.longitude }}
-                    onDragEnd={(event) => updatePinFromMarker(event.nativeEvent.coordinate.latitude, event.nativeEvent.coordinate.longitude)}
-                  />
-                </MapView>
+                />
                 <View pointerEvents="none" style={styles.mapPickerPinOverlay}>
                   <Ionicons name="location" size={34} color={colors.customer} />
                 </View>
@@ -6837,7 +7336,7 @@ function MapLocationPicker({
 
             <View style={styles.mapPickerActions}>
               <SecondaryButton title={copy.cancel} icon="close" onPress={onClose} />
-              <PrimaryButton title={copy.confirmLocation} icon="checkmark" onPress={confirmPin} />
+              <PrimaryButton title={copy.confirmLocation} icon="checkmark" onPress={confirmPin} loading={confirming} disabled={confirming} />
             </View>
           </View>
         </ScrollView>
@@ -6847,6 +7346,9 @@ function MapLocationPicker({
 }
 
 function OrdersScreen({
+  header,
+  onPageScroll,
+  api,
   orders,
   activeOrders,
   activeOrder,
@@ -6862,6 +7364,9 @@ function OrdersScreen({
   onCancel,
   onBackToHome
 }: {
+  header: React.ReactNode;
+  onPageScroll: PageScrollHandler;
+  api: IndieryApi;
   orders: Order[];
   activeOrders: Order[];
   activeOrder?: Order;
@@ -6986,8 +7491,10 @@ function OrdersScreen({
   }
 
   return (
-    <ScrollView
+    <Animated.ScrollView
       ref={ordersScrollRef}
+      onScroll={onPageScroll}
+      scrollEventThrottle={16}
       style={styles.ordersScrollViewport}
       contentContainerStyle={[
         styles.scroll,
@@ -6998,8 +7505,10 @@ function OrdersScreen({
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
     >
+      <ScrollingPageHeader header={header} horizontalInset={responsive.isCompact ? 12 : 16} topInset={responsive.isCompact ? 12 : 16} />
       {detailOrder ? (
         <OrderDetailsPanel
+          api={api}
           order={detailOrder}
           tripOtp={detailTripOtp}
           busy={busy}
@@ -7226,11 +7735,12 @@ function OrdersScreen({
           </Modal>
         </>
       )}
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
 function OrderDetailsPanel({
+  api,
   order,
   tripOtp,
   busy,
@@ -7240,6 +7750,7 @@ function OrderDetailsPanel({
   onCancel,
   onClose
 }: {
+  api?: IndieryApi;
   order: Order;
   tripOtp?: TripOtp;
   busy: boolean;
@@ -7284,6 +7795,8 @@ function OrderDetailsPanel({
         </View>
 
         <MapPreview
+          api={api}
+          orderId={order.id}
           pickup={order.pickup}
           drop={order.drop}
           extraStops={order.extraStops}
@@ -7472,11 +7985,15 @@ function TrackScreen({
 }
 
 function WalletScreen({
+  header,
+  onPageScroll,
   wallet,
   busy,
   onTopup,
   onCoupon
 }: {
+  header: React.ReactNode;
+  onPageScroll: PageScrollHandler;
   wallet: CustomerWallet;
   busy: boolean;
   onTopup: (amount: number) => Promise<boolean>;
@@ -7523,10 +8040,13 @@ function WalletScreen({
   }
 
   return (
-    <ScrollView
+    <Animated.ScrollView
+      onScroll={onPageScroll}
+      scrollEventThrottle={16}
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
+      <ScrollingPageHeader header={header} horizontalInset={responsive.isCompact ? 12 : 16} topInset={responsive.isCompact ? 12 : 16} />
       <View style={[styles.walletCoinsCard, responsive.isCompact && styles.walletCoinsCardCompact]}>
         <View style={[styles.walletCoinsHeader, responsive.isCompact && styles.walletCoinsHeaderCompact]}>
           <View style={[styles.walletCoinsIcon, responsive.isCompact && styles.walletCoinsIconCompact]}>
@@ -7619,7 +8139,7 @@ function WalletScreen({
           <Text style={styles.cardTitle}>{copy.noCoinActivity}</Text>
         </View>
       )}
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
@@ -7659,6 +8179,10 @@ function CoinActivityRow({ item, showDivider = false }: { item: LedgerItem; show
 }
 
 function AccountScreen({
+  api,
+  header,
+  onPageScroll,
+  onPageChange,
   data,
   busy,
   language,
@@ -7669,6 +8193,10 @@ function AccountScreen({
   onRequestAccountDeletion,
   onBackToHome
 }: {
+  api: IndieryApi;
+  header: React.ReactNode;
+  onPageScroll: PageScrollHandler;
+  onPageChange: () => void;
   data: CustomerBootstrap;
   busy: boolean;
   language: AppLanguage;
@@ -7705,6 +8233,7 @@ function AccountScreen({
 
   function openPage(nextPage: CustomerAccountPage) {
     setLocalError('');
+    onPageChange();
     setPage(nextPage);
   }
 
@@ -7713,6 +8242,7 @@ function AccountScreen({
     setEmail(data.user.email || '');
     setCity(data.user.city);
     setLocalError('');
+    onPageChange();
     setPage('overview');
   }
 
@@ -7751,11 +8281,11 @@ function AccountScreen({
   }
 
   if (page === 'enterprise') {
-    return <EnterpriseInfoScreen onBack={() => openPage('overview')} />;
+    return <EnterpriseInfoScreen api={api} user={data.user} header={header} onBack={() => openPage('overview')} />;
   }
 
   if (openPolicy) {
-    return <AccountPolicyDetail policy={openPolicy} onBack={() => openPage('legal')} />;
+    return <AccountPolicyDetail header={header} policy={openPolicy} onBack={() => openPage('legal')} />;
   }
 
   if (page !== 'overview') {
@@ -7776,12 +8306,15 @@ function AccountScreen({
 
     return (
       <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
+        <Animated.ScrollView
           style={styles.accountCurveScroll}
+          onScroll={onPageScroll}
+          scrollEventThrottle={16}
           contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          <ScrollingPageHeader header={header} horizontalInset={responsive.isCompact ? 12 : 16} topInset={responsive.isCompact ? 12 : 16} />
           <AccountDetailHeader title={title} subtitle={subtitle} onBack={() => openPage('overview')} />
 
           {page === 'personal' ? (
@@ -7861,22 +8394,20 @@ function AccountScreen({
           {page === 'support' ? <SupportPanel /> : null}
 
           {page === 'legal' ? <PolicyList onOpenPolicy={(policyId) => openPage(policyId)} /> : null}
-        </ScrollView>
+        </Animated.ScrollView>
       </KeyboardAvoidingView>
     );
   }
 
   return (
-    <ScrollView
+    <Animated.ScrollView
+      onScroll={onPageScroll}
+      scrollEventThrottle={16}
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
+      <ScrollingPageHeader header={header} horizontalInset={responsive.isCompact ? 12 : 16} topInset={responsive.isCompact ? 12 : 16} />
       <View style={[styles.accountHero, responsive.isCompact && styles.accountHeroCompact]}>
-        <View style={[styles.accountHeroTop, responsive.isCompact && styles.accountHeroTopCompact]}>
-          <View>
-            <Text style={[styles.accountEyebrow, responsive.isCompact && styles.accountEyebrowCompact]}>{copy.account}</Text>
-          </View>
-        </View>
         <View style={[styles.accountIdentityCard, responsive.isCompact && styles.accountIdentityCardCompact]}>
           <View style={[styles.accountAvatar, responsive.isCompact && styles.accountAvatarCompact]}>
             <Text style={[styles.accountAvatarText, responsive.isCompact && styles.accountAvatarTextCompact]}>{data.user.initials}</Text>
@@ -7896,20 +8427,19 @@ function AccountScreen({
             <Ionicons name="create-outline" size={responsive.isCompact ? 16 : 18} color={colors.customer} />
           </Pressable>
         </View>
-      </View>
-
-      <View style={[styles.accountStatsRow, responsive.isCompact && styles.accountStatsRowCompact]}>
-        <View style={[styles.accountStatBox, responsive.isCompact && styles.accountStatBoxCompact]}>
-          <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{data.orders.length}</Text>
-          <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.orders}</Text>
-        </View>
-        <View style={[styles.accountStatBox, responsive.isCompact && styles.accountStatBoxCompact]}>
-          <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{activeOrders}</Text>
-          <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.active}</Text>
-        </View>
-        <View style={[styles.accountStatBox, responsive.isCompact && styles.accountStatBoxCompact]}>
-          <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{completedOrders}</Text>
-          <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.done}</Text>
+        <View style={[styles.accountStatsRow, responsive.isCompact && styles.accountStatsRowCompact]}>
+          <View style={[styles.accountStatBox, styles.accountStatDivider, responsive.isCompact && styles.accountStatBoxCompact]}>
+            <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{data.orders.length}</Text>
+            <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.orders}</Text>
+          </View>
+          <View style={[styles.accountStatBox, styles.accountStatDivider, responsive.isCompact && styles.accountStatBoxCompact]}>
+            <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{activeOrders}</Text>
+            <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.active}</Text>
+          </View>
+          <View style={[styles.accountStatBox, responsive.isCompact && styles.accountStatBoxCompact]}>
+            <Text style={[styles.accountStatValue, responsive.isCompact && styles.accountStatValueCompact]}>{completedOrders}</Text>
+            <Text style={[styles.accountStatLabel, responsive.isCompact && styles.accountStatLabelCompact]}>{copy.done}</Text>
+          </View>
         </View>
       </View>
 
@@ -7963,7 +8493,7 @@ function AccountScreen({
           <Text style={styles.logoutButtonText}>{copy.logout}</Text>
         </Pressable>
       </View>
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
@@ -7989,9 +8519,51 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
   );
 }
 
-function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
+function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; user: UserProfile; header: React.ReactNode; onBack: () => void }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
+  const { bottom: bottomInset } = useSafeAreaInsets();
+  const [formOpen, setFormOpen] = useState(false);
+  const [companyName, setCompanyName] = useState('');
+  const [contactName, setContactName] = useState(user.name || '');
+  const [mobileNumber, setMobileNumber] = useState(user.phone || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  async function submitEnquiry() {
+    if (submitting) return;
+    const input = {
+      companyName: companyName.trim(),
+      contactName: contactName.trim(),
+      mobileNumber: mobileNumber.trim().replace(/[\s()-]/g, ''),
+      email: email.trim().toLowerCase()
+    };
+    if (!input.companyName || !input.contactName || !input.mobileNumber || !input.email) {
+      setFormError(copy.enterpriseRequired);
+      return;
+    }
+    if (!/^\+?[1-9]\d{9,14}$/.test(input.mobileNumber)) {
+      setFormError(copy.enterpriseInvalidPhone);
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) {
+      setFormError(copy.enterpriseInvalidEmail);
+      return;
+    }
+    setFormError('');
+    setSubmitting(true);
+    try {
+      await api.submitEnterpriseEnquiry(input);
+      setFormOpen(false);
+      setSent(true);
+    } catch {
+      setFormError(copy.enterpriseSubmitFailed);
+    } finally {
+      setSubmitting(false);
+    }
+  }
   const businessFeatures: Array<{
     icon: keyof typeof Ionicons.glyphMap;
     title: string;
@@ -8021,10 +8593,12 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
   const businessTypes = [copy.retailStores, copy.wholesalers, copy.restaurants, copy.manufacturers, copy.offices, copy.ecommerceSellers];
 
   return (
+    <>
     <ScrollView
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
+      <ScrollingPageHeader header={header} horizontalInset={responsive.isCompact ? 12 : 16} topInset={responsive.isCompact ? 12 : 16} />
       <View style={[styles.enterprisePageHeader, responsive.isCompact && styles.enterprisePageHeaderCompact]}>
         <Pressable
           style={[styles.mapPickerClose, responsive.isCompact && styles.mapPickerCloseCompact]}
@@ -8076,12 +8650,44 @@ function EnterpriseInfoScreen({ onBack }: { onBack: () => void }) {
       <View style={[styles.enterpriseContactCard, responsive.isCompact && styles.enterpriseContactCardCompact]}>
         <Text style={[styles.enterpriseFeatureTitle, responsive.isCompact && styles.enterpriseFeatureTitleCompact]}>{copy.talkEnterprises}</Text>
         <Text style={[styles.enterpriseFeatureText, responsive.isCompact && styles.enterpriseFeatureTextCompact]}>{copy.shareBusinessRoutes}</Text>
+        {sent ? <Text style={styles.enterpriseSuccess}>{copy.enterpriseSent}</Text> : (
+          <Pressable style={styles.enterpriseGetInTouch} onPress={() => setFormOpen(true)} accessibilityRole="button">
+            <Text style={styles.enterpriseGetInTouchText}>{copy.getInTouch}</Text>
+            <Ionicons name="arrow-forward" size={18} color={colors.white} />
+          </Pressable>
+        )}
         <View style={styles.row}>
           <SecondaryButton title={copy.emailButton} icon="mail-outline" onPress={() => Linking.openURL('mailto:support@indiery.com?subject=Indiery%20Enterprises')} />
           <PrimaryButton title={copy.callButton} icon="call-outline" onPress={() => Linking.openURL('tel:+919264926552')} />
         </View>
       </View>
     </ScrollView>
+    <Modal visible={formOpen} transparent animationType="slide" onRequestClose={() => !submitting && setFormOpen(false)}>
+      <KeyboardAvoidingView style={styles.contactSheetOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable style={styles.contactSheetBackdrop} onPress={() => !submitting && setFormOpen(false)} />
+        <View style={[styles.contactSheet, { paddingBottom: Math.max(20, bottomInset + 12) }]}>
+          <View style={styles.contactSheetHandle} />
+          <View style={styles.contactSheetHeader}>
+            <Text style={styles.contactSheetTitle}>{copy.getInTouch}</Text>
+            <Pressable style={styles.mapPickerClose} onPress={() => !submitting && setFormOpen(false)} accessibilityRole="button" accessibilityLabel={copy.goBack}>
+              <Ionicons name="close" size={20} color={colors.ink} />
+            </Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Field label={copy.companyName} value={companyName} onChangeText={setCompanyName} editable={!submitting} />
+            <Field label={copy.contactName} value={contactName} onChangeText={setContactName} editable={!submitting} />
+            <Field label={copy.mobileNumber} value={mobileNumber} onChangeText={setMobileNumber} keyboardType="phone-pad" editable={!submitting} />
+            <Field label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" editable={!submitting} />
+            {formError ? <Text style={styles.accountEditError}>{formError}</Text> : null}
+            <Pressable style={styles.enterpriseGetInTouch} onPress={submitEnquiry} disabled={submitting} accessibilityRole="button">
+              {submitting ? <ActivityIndicator color={colors.white} /> : <Text style={styles.enterpriseGetInTouchText}>{copy.getInTouch}</Text>}
+              {!submitting && <Ionicons name="arrow-forward" size={18} color={colors.white} />}
+            </Pressable>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+    </>
   );
 }
 
@@ -8312,7 +8918,7 @@ function PolicyCard({
   );
 }
 
-function AccountPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: () => void }) {
+function AccountPolicyDetail({ header, policy, onBack }: { header?: React.ReactNode; policy: LegalPolicy; onBack: () => void }) {
   const copy = useCopy();
   const language = useLanguage();
   const responsive = useResponsiveLayout();
@@ -8323,6 +8929,7 @@ function AccountPolicyDetail({ policy, onBack }: { policy: LegalPolicy; onBack: 
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
     >
+      <ScrollingPageHeader header={header} horizontalInset={responsive.isCompact ? 12 : 16} topInset={responsive.isCompact ? 12 : 16} />
       <AccountDetailHeader title={displayedPolicy.title} subtitle={`${copy.updated} ${displayedPolicy.updatedAt}`} onBack={onBack} />
       <View style={[styles.policyDetailHero, responsive.isCompact && styles.policyDetailHeroCompact]}>
         <Ionicons name={policy.id === 'privacy' ? 'lock-closed' : policy.id === 'terms' ? 'document-text' : 'cash'} size={responsive.isCompact ? 21 : 24} color={colors.customer} />
@@ -8675,6 +9282,8 @@ function OrderActionButton({
 }
 
 function MapPreview({
+  api,
+  orderId,
   pickup,
   drop,
   extraStops = [],
@@ -8682,6 +9291,8 @@ function MapPreview({
   liveTracking = true,
   partnerLocation
 }: {
+  api?: IndieryApi;
+  orderId?: string;
   pickup: LocationPoint;
   drop: LocationPoint;
   extraStops?: LocationPoint[];
@@ -8691,6 +9302,9 @@ function MapPreview({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
+  const [fullMapOpen, setFullMapOpen] = useState(false);
+  const [routePath, setRoutePath] = useState<PartnerRoutePath | null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
   const mapHeight = responsive.isSmall ? 158 : responsive.isCompact ? 172 : 218;
   const hasLiveLocation = liveTracking && typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
@@ -8706,7 +9320,13 @@ function MapPreview({
   const partnerCoordinate = liveTracking && hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng)
     ? { latitude: partnerLocation?.lat as number, longitude: partnerLocation?.lng as number }
     : undefined;
-  const fitCoordinates = partnerCoordinate ? [...routePoints.map((item) => item.coordinate), partnerCoordinate] : routePoints.map((item) => item.coordinate);
+  const roadRouteCoordinates = routePath?.source === 'google_directions'
+    ? routePath.coordinates.filter((coordinate) => hasValidCoordinates(coordinate.latitude, coordinate.longitude))
+    : [];
+  const baseFitCoordinates = roadRouteCoordinates.length > 1
+    ? roadRouteCoordinates
+    : routePoints.map((item) => item.coordinate);
+  const fitCoordinates = partnerCoordinate ? [...baseFitCoordinates, partnerCoordinate] : baseFitCoordinates;
   const firstCoordinate = fitCoordinates[0];
   const canRenderNativeMap = (Platform.OS !== 'android' || Boolean(googleMapsApiKey)) && Boolean(firstCoordinate);
   const initialRegion: Region = {
@@ -8719,6 +9339,28 @@ function MapPreview({
   const mapReadyRef = useRef(false);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const fitKey = fitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|');
+
+  useEffect(() => {
+    if (!api || !orderId) {
+      setRoutePath(null);
+      return undefined;
+    }
+    let active = true;
+    setRouteLoading(true);
+    void api.customerOrderRoute(orderId)
+      .then((route) => {
+        if (active) setRoutePath(route);
+      })
+      .catch(() => {
+        if (active) setRoutePath(null);
+      })
+      .finally(() => {
+        if (active) setRouteLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, orderId]);
 
   function fitMapToRoute() {
     if (!canRenderNativeMap || !mapReadyRef.current || !mapRef.current || !fitCoordinates.length) return;
@@ -8754,19 +9396,21 @@ function MapPreview({
         <MapView
           ref={mapRef}
           provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+          userInterfaceStyle="light"
           style={styles.mapNativeView}
           initialRegion={initialRegion}
           rotateEnabled={false}
           pitchEnabled={false}
           toolbarEnabled={false}
+          onPress={() => setFullMapOpen(true)}
           onMapReady={() => {
             mapReadyRef.current = true;
             requestAnimationFrame(fitMapToRoute);
           }}
         >
-          {routePoints.length > 1 ? (
+          {roadRouteCoordinates.length > 1 ? (
             <Polyline
-              coordinates={routePoints.map((item) => item.coordinate)}
+              coordinates={roadRouteCoordinates}
               strokeColor={colors.customer}
               strokeWidth={4}
             />
@@ -8829,8 +9473,135 @@ function MapPreview({
           </View>
         </>
       ) : null}
+      <Pressable
+        style={[styles.mapExpandButton, responsive.isCompact && styles.mapExpandButtonCompact]}
+        onPress={() => setFullMapOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={copy.maximizeMap}
+      >
+        {routeLoading ? (
+          <ActivityIndicator size="small" color={colors.customer} />
+        ) : (
+          <Ionicons name="expand-outline" size={17} color={colors.customer} />
+        )}
+      </Pressable>
       <Text style={[styles.mapText, responsive.isCompact && styles.mapTextCompact]} numberOfLines={1}>{pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}</Text>
+      <OrderRouteFullScreenMap
+        visible={fullMapOpen}
+        pickup={pickup}
+        drop={drop}
+        extraStops={extraStops}
+        partnerCoordinate={partnerCoordinate}
+        routeCoordinates={roadRouteCoordinates}
+        routeLoading={routeLoading}
+        onClose={() => setFullMapOpen(false)}
+      />
     </View>
+  );
+}
+
+function OrderRouteFullScreenMap({
+  visible,
+  pickup,
+  drop,
+  extraStops,
+  partnerCoordinate,
+  routeCoordinates,
+  routeLoading,
+  onClose
+}: {
+  visible: boolean;
+  pickup: LocationPoint;
+  drop: LocationPoint;
+  extraStops: LocationPoint[];
+  partnerCoordinate?: { latitude: number; longitude: number };
+  routeCoordinates: Array<{ latitude: number; longitude: number }>;
+  routeLoading: boolean;
+  onClose: () => void;
+}) {
+  const copy = useCopy();
+  const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const points = [pickup, ...extraStops, drop]
+    .map((point, index) => ({
+      point,
+      index,
+      coordinate: hasValidCoordinates(point.lat, point.lng)
+        ? { latitude: point.lat as number, longitude: point.lng as number }
+        : undefined
+    }))
+    .filter((item): item is { point: LocationPoint; index: number; coordinate: { latitude: number; longitude: number } } => Boolean(item.coordinate));
+  const fitCoordinates = routeCoordinates.length > 1
+    ? [...routeCoordinates, ...(partnerCoordinate ? [partnerCoordinate] : [])]
+    : [...points.map((item) => item.coordinate), ...(partnerCoordinate ? [partnerCoordinate] : [])];
+  const firstCoordinate = fitCoordinates[0] ?? { latitude: defaultMapCenter.lat, longitude: defaultMapCenter.lng };
+
+  function fitFullMap() {
+    if (!mapRef.current || !fitCoordinates.length) return;
+    if (fitCoordinates.length === 1) {
+      mapRef.current.animateToRegion({ ...firstCoordinate, latitudeDelta: 0.025, longitudeDelta: 0.025 }, 250);
+      return;
+    }
+    mapRef.current.fitToCoordinates(fitCoordinates, {
+      edgePadding: { top: 90, right: 45, bottom: 120, left: 45 },
+      animated: true
+    });
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView edges={appSafeAreaEdges} style={styles.fullOrderMapShell}>
+        <AppStatusBar variant="light" />
+        <View style={styles.fullOrderMapHeader}>
+          <Pressable style={styles.fullOrderMapClose} onPress={onClose} accessibilityRole="button" accessibilityLabel={copy.closeExpandedMap}>
+            <Ionicons name="arrow-back" size={21} color={colors.ink} />
+          </Pressable>
+          <View style={styles.flex}>
+            <Text style={styles.fullOrderMapTitle}>{copy.routeAndContacts}</Text>
+            <Text style={styles.fullOrderMapSubtitle} numberOfLines={1}>{pickup.label} {'->'} {drop.label}</Text>
+          </View>
+          {routeLoading ? <ActivityIndicator size="small" color={colors.customer} /> : null}
+        </View>
+        <MapView
+          ref={mapRef}
+          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+          userInterfaceStyle="light"
+          style={styles.fullOrderMap}
+          initialRegion={{ ...firstCoordinate, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
+          onMapReady={() => requestAnimationFrame(fitFullMap)}
+          toolbarEnabled={false}
+        >
+          {routeCoordinates.length > 1 ? (
+            <Polyline coordinates={routeCoordinates} strokeColor={colors.customer} strokeWidth={5} />
+          ) : null}
+          {points.map((item) => {
+            const isPickup = item.index === 0;
+            const isDrop = item.index === extraStops.length + 1;
+            return (
+              <Marker
+                key={`full-${item.index}-${item.coordinate.latitude}-${item.coordinate.longitude}`}
+                coordinate={item.coordinate}
+                title={isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`}
+                description={item.point.label}
+                pinColor={isPickup ? colors.green : isDrop ? colors.red : colors.amber}
+              />
+            );
+          })}
+          {partnerCoordinate ? (
+            <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
+              <View style={styles.mapPartnerMarker}>
+                <Ionicons name="bicycle" size={15} color={colors.white} />
+              </View>
+            </Marker>
+          ) : null}
+        </MapView>
+        {!routeLoading && routeCoordinates.length < 2 ? (
+          <View style={styles.fullOrderMapRouteNotice}>
+            <Ionicons name="information-circle-outline" size={17} color={colors.muted} />
+            <Text style={styles.fullOrderMapRouteNoticeText}>Road route is temporarily unavailable.</Text>
+          </View>
+        ) : null}
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -8935,8 +9706,42 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function BookingDetailsLocation({
+  title,
+  address,
+  contactLabel,
+  contactName,
+  contactPhone,
+  color
+}: {
+  title: string;
+  address: string;
+  contactLabel?: string;
+  contactName?: string;
+  contactPhone?: string;
+  color: string;
+}) {
+  return (
+    <View style={styles.bookingDetailsLocation}>
+      <View style={[styles.bookingDetailsLocationDot, { backgroundColor: color }]} />
+      <View style={styles.flex}>
+        <Text style={styles.bookingDetailsLocationLabel}>{title}</Text>
+        <Text style={styles.bookingDetailsAddress}>{address}</Text>
+        {contactLabel && (contactName || contactPhone) ? (
+          <View style={styles.bookingDetailsContact}>
+            <Text style={styles.bookingDetailsContactLabel}>{contactLabel}</Text>
+            {contactName ? <Text style={styles.bookingDetailsContactValue}>{contactName}</Text> : null}
+            {contactPhone ? <Text style={styles.bookingDetailsContactValue}>{contactPhone}</Text> : null}
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.white },
+  scrolledStatusBarCover: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20, backgroundColor: '#F8FAFC' },
   loginShell: { flex: 1, backgroundColor: colors.white },
   authKeyboard: { flex: 1 },
   authKeyboardFooter: {
@@ -9258,14 +10063,55 @@ const styles = StyleSheet.create({
   tagline: { flexShrink: 1, color: colors.muted, fontSize: 9, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
   loginSubtitle: { color: colors.muted, fontSize: 14, fontWeight: '500', marginBottom: 22 },
   loginError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 12 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
+  startupTransitionRoot: { flex: 1 },
+  startupLoadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#002B49' },
+  startupFadeOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: '#002B49' },
+  startupLoadingMark: { width: 176, height: 176 },
+  startupLoadingFooter: { position: 'absolute', bottom: 72, alignItems: 'center', gap: 10 },
+  startupLoadingText: { color: colors.white, fontSize: 12, fontWeight: '600' },
   appHeader: {
     backgroundColor: colors.customer,
     paddingTop: 15,
     paddingBottom: 28
   },
+  homeAppHeader: {
+    minHeight: 154,
+    paddingTop: 18,
+    paddingBottom: 48,
+    backgroundColor: '#F8FAFC',
+    overflow: 'hidden'
+  },
   appHeaderCompact: { paddingTop: 10, paddingBottom: 22 },
+  homeAppHeaderCompact: { minHeight: 138, paddingTop: 13, paddingBottom: 42 },
   appHeaderSmall: { paddingTop: 8, paddingBottom: 20 },
+  homeAppHeaderSmall: { minHeight: 132, paddingTop: 11, paddingBottom: 40 },
+  homeHeaderArtwork: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 0.82
+  },
+  homeHeaderTruck: {
+    position: 'absolute',
+    right: 16,
+    bottom: 38,
+    width: 120,
+    height: 80
+  },
+  homeHeaderTruckCompact: { right: 16, bottom: 34, width: 104, height: 70 },
+  homeHeaderTruckSmall: { right: 16, bottom: 32, width: 96, height: 64 },
+  homeHeaderBottomBlend: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 14,
+    backgroundColor: '#F8FAFC',
+    opacity: 0.88
+  },
   appHeaderInner: {
     width: '100%',
     alignSelf: 'center',
@@ -9274,105 +10120,86 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between'
   },
+  homeAppHeaderInner: { alignItems: 'flex-start', zIndex: 1, paddingRight: 140 },
   appHeaderInnerCompact: { paddingHorizontal: 16 },
   appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
   eyebrow: { color: '#E9D5FF', fontSize: 11, fontWeight: '700', letterSpacing: 0.35 },
+  homeHeaderEyebrow: { color: '#6D28D9', fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
   eyebrowCompact: { fontSize: 9, letterSpacing: 0.25 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1, textAlign: 'center' },
   headerTitle: { color: colors.white, fontSize: 23, fontWeight: '800', marginTop: 2 },
+  homeHeaderTitle: { color: '#111827', fontSize: 28, lineHeight: 34, fontWeight: '800', marginTop: 3 },
   headerTitleCompact: { fontSize: 20, marginTop: 1 },
   headerTitleSmall: { fontSize: 18 },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.34)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#4C1D95',
-    shadowOpacity: 0.18,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2
-  },
-  avatarCompact: { width: 38, height: 38, borderRadius: 12 },
-  avatarText: { color: colors.white, fontWeight: '700' },
-  avatarTextCompact: { fontSize: 13 },
+  homeHeaderSubtitle: { color: '#374151', fontSize: 13, lineHeight: 18, fontWeight: '500', marginTop: 1 },
+  homeHeaderSubtitleCompact: { fontSize: 11, lineHeight: 15 },
   content: { flex: 1, width: '100%', alignSelf: 'center', marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
   homeContent: {
     width: '100%',
     alignSelf: 'center',
-    marginTop: -20,
+    marginTop: 0,
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
     backgroundColor: 'transparent',
     overflow: 'visible'
   },
   otherPageContent: {
-    marginTop: -20,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
+    marginTop: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     backgroundColor: 'transparent',
     overflow: 'hidden'
   },
+  dashboardPageHeader: { backgroundColor: '#F8FAFC', paddingBottom: 14 },
+  dashboardPageHeaderInner: { width: '100%', alignSelf: 'center', paddingHorizontal: 16 },
+  dashboardPageTitle: { color: colors.ink, fontSize: 22, lineHeight: 28, fontWeight: '700' },
   otherPageCurveSurface: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: 0,
+    right: 0,
     top: 0,
     bottom: 0,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    backgroundColor: colors.white,
+    backgroundColor: '#F8FAFC',
     overflow: 'hidden'
   },
   homeShell: { flex: 1, backgroundColor: 'transparent', overflow: 'hidden' },
   homeCurveSurface: {
     position: 'absolute',
-    left: 14,
-    right: 14,
+    left: 0,
+    right: 0,
     top: 0,
     bottom: 0,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
     backgroundColor: '#F8FAFC',
     overflow: 'hidden'
   },
-  homeMapPattern: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, opacity: 0.55 },
-  homePatternRoad: { position: 'absolute', height: 18, borderRadius: 18, backgroundColor: '#E4EAF2' },
-  homePatternRoadOne: { left: -56, right: 16, top: 118, transform: [{ rotate: '-31deg' }] },
-  homePatternRoadTwo: { left: 98, right: -84, top: 220, transform: [{ rotate: '34deg' }] },
-  homePatternRoadThree: { left: -76, right: -24, top: 384, transform: [{ rotate: '18deg' }] },
   homeScroll: { width: '100%', alignSelf: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 },
   homeScrollCompact: { paddingTop: 9, paddingBottom: 18 },
   homeLocationCard: {
-    minHeight: 72,
-    borderRadius: 16,
+    minHeight: 60,
+    borderRadius: 30,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: '#EEF2F7',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     paddingHorizontal: 14,
-    marginHorizontal: 8,
+    marginHorizontal: 0,
     marginBottom: 18,
     shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2
   },
-  homeLocationCardCompact: { minHeight: 58, borderRadius: 14, gap: 10, paddingHorizontal: 12, marginBottom: 10 },
-  homeLocationIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
-  homeLocationIconCompact: { width: 28, height: 28, borderRadius: 14 },
+  homeLocationCardCompact: { minHeight: 56, borderRadius: 28, gap: 9, paddingHorizontal: 12, marginBottom: 12 },
+  homeLocationIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  homeLocationIconCompact: { width: 30, height: 30, borderRadius: 15 },
   homeLocationIconSelected: { backgroundColor: colors.green },
-  homeLocationLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  homeLocationLabelCompact: { fontSize: 9 },
-  homeLocationTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
-  homeLocationTitleCompact: { fontSize: 12, marginTop: 1 },
+  homeLocationLabel: { color: '#6B7280', fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
+  homeLocationLabelCompact: { fontSize: 8 },
+  homeLocationTitle: { color: '#111827', fontSize: 13, fontWeight: '700', marginTop: 1 },
+  homeLocationTitleCompact: { fontSize: 11, marginTop: 1 },
   homeLocationSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   pickupSearchShell: { flex: 1, backgroundColor: '#F8FAFC' },
   pickupSearchKeyboard: { flex: 1 },
@@ -9494,13 +10321,13 @@ const styles = StyleSheet.create({
   scrollCompact: { padding: 12, paddingBottom: 18 },
   ordersScrollViewport: {
     flex: 1,
-    marginHorizontal: 14,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
+    marginHorizontal: 10,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     overflow: 'hidden'
   },
   ordersScrollContent: {
-    paddingHorizontal: 0
+    paddingHorizontal: 6
   },
   customerHero: { backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.line, gap: 14 },
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
@@ -9678,8 +10505,8 @@ const styles = StyleSheet.create({
   orderCardHeaderCompact: { gap: 7, marginBottom: 7 },
   orderCardDate: { color: colors.ink, fontSize: 14, fontWeight: '600', marginTop: 2 },
   orderCardDateCompact: { fontSize: 12, marginTop: 1 },
-  orderCardRouteBox: { borderRadius: 14, backgroundColor: '#F8FAFC', padding: 10, marginBottom: 10 },
-  orderCardRouteBoxCompact: { borderRadius: 12, padding: 8, marginBottom: 8 },
+  orderCardRouteBox: { borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 12, marginBottom: 8 },
+  orderCardRouteBoxCompact: { paddingVertical: 10, marginBottom: 8 },
   orderCardFareRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
   orderCardFareRowCompact: { gap: 8, marginBottom: 5 },
   orderCardVehicleArt: { width: 58, height: 50, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
@@ -9709,9 +10536,9 @@ const styles = StyleSheet.create({
   bookingScreenKeyboard: { flex: 1, backgroundColor: 'transparent' },
   bookingScreenScroll: {
     flex: 1,
-    marginHorizontal: 14,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
+    marginHorizontal: 10,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
     overflow: 'hidden'
   },
   bookingCurveScrollContent: { paddingHorizontal: 0 },
@@ -9739,7 +10566,7 @@ const styles = StyleSheet.create({
   bookingStepTitle: { color: colors.ink, fontSize: 20, fontWeight: '700' },
   bookingStepTitleCompact: { fontSize: 16 },
   bookingStepSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
-  bookingStepSubtitleCompact: { fontSize: 9, marginTop: 1 },
+  bookingStepSubtitleCompact: { fontSize: 11, marginTop: 3 },
   bookingStepCount: { color: colors.customer, fontSize: 12, fontWeight: '600', backgroundColor: colors.customerLight, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 9 },
   bookingStepCountCompact: { fontSize: 10, paddingVertical: 4, paddingHorizontal: 7 },
   bookingProgressTrack: { height: 4, borderRadius: 4, backgroundColor: colors.faint, marginBottom: 16, overflow: 'hidden' },
@@ -9775,7 +10602,7 @@ const styles = StyleSheet.create({
   fieldGroup: { marginBottom: 12 },
   fieldGroupCompact: { marginBottom: 9 },
   fieldLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', marginBottom: 6 },
-  fieldLabelCompact: { fontSize: 9, marginBottom: 4 },
+  fieldLabelCompact: { fontSize: 11, marginBottom: 6 },
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.ink },
   inputCompact: { borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, fontSize: 13 },
   inputReadonly: { backgroundColor: colors.faint },
@@ -9954,10 +10781,29 @@ const styles = StyleSheet.create({
   contactFormField: { marginBottom: 8 },
   contactFormFieldCompact: { marginBottom: 6 },
   contactFormLabel: { color: colors.muted, fontSize: 10, fontWeight: '600', marginBottom: 3 },
-  contactFormLabelCompact: { fontSize: 9, marginBottom: 2 },
+  contactFormLabelCompact: { fontSize: 11, marginBottom: 4 },
   contactFormInputShell: { minHeight: 39, borderWidth: 1, borderColor: '#DDE3EC', borderRadius: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10 },
   contactFormInputShellCompact: { minHeight: 35, gap: 6, paddingHorizontal: 9 },
   contactFormInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '500', paddingVertical: 8 },
+  contactFormIconButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  permissionDisclosureOverlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(15,23,42,0.48)' },
+  permissionDisclosureCard: { width: '100%', maxWidth: 460, alignSelf: 'center', borderRadius: 24, backgroundColor: colors.white, padding: 22, shadowColor: '#111827', shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 12 },
+  permissionDisclosureIcon: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.customerLight, marginBottom: 16 },
+  permissionDisclosureTitle: { color: colors.ink, fontSize: 21, lineHeight: 27, fontWeight: '800', marginBottom: 9 },
+  permissionDisclosureMessage: { color: colors.muted, fontSize: 14, lineHeight: 21, fontWeight: '500' },
+  permissionDisclosureActions: { flexDirection: 'row', gap: 10, marginTop: 22 },
+  permissionDisclosureSecondaryButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: colors.faint, paddingHorizontal: 12 },
+  permissionDisclosureSecondaryText: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  permissionDisclosurePrimaryButton: { flex: 1.35, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 15, backgroundColor: colors.customer, paddingHorizontal: 12 },
+  permissionDisclosurePrimaryText: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  cancelBookingCard: { width: '100%', maxWidth: 460, alignSelf: 'center', borderRadius: 24, backgroundColor: colors.white, padding: 22, shadowColor: '#111827', shadowOpacity: 0.2, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 12 },
+  cancelBookingIcon: { width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEE2E2', marginBottom: 16 },
+  cancelBookingActions: { flexDirection: 'row', gap: 10, marginTop: 22 },
+  cancelBookingKeepButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: colors.faint, paddingHorizontal: 12 },
+  cancelBookingKeepText: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  cancelBookingConfirmButton: { flex: 1.35, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 15, backgroundColor: '#DC2626', paddingHorizontal: 12 },
+  cancelBookingConfirmText: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  modalActionDisabled: { opacity: 0.62 },
   contactFormInputCompact: { fontSize: 11, paddingVertical: 6 },
   contactMobileCheckRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1, marginBottom: 11 },
   contactMobileCheckRowCompact: { minHeight: 29, gap: 7, marginBottom: 8 },
@@ -10103,7 +10949,20 @@ const styles = StyleSheet.create({
   vehicleMiniImageLoader: { width: 46, height: 34, borderRadius: 8 },
   vehicleMiniImageMuted: { opacity: 0.5 },
   bookingSummaryCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 14, marginBottom: 14 },
-  bookingSummaryCardCompact: { borderRadius: 12, padding: 10, marginBottom: 10 },
+  bookingSummaryCardCompact: { borderRadius: 14, padding: 14, marginBottom: 14 },
+  bookingSummaryRouteToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  bookingSummaryToggleTitle: { flex: 1 },
+  bookingDetailsSheet: { maxHeight: '86%' },
+  bookingDetailsScroll: { flexShrink: 1 },
+  bookingDetailsContent: { paddingBottom: 12 },
+  bookingDetailsSectionTitle: { color: colors.ink, fontSize: 14, fontWeight: '700', marginTop: 12, marginBottom: 10 },
+  bookingDetailsLocation: { flexDirection: 'row', gap: 11, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 13, marginBottom: 9 },
+  bookingDetailsLocationDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  bookingDetailsLocationLabel: { color: colors.muted, fontSize: 11, fontWeight: '700', marginBottom: 5 },
+  bookingDetailsAddress: { color: colors.ink, fontSize: 13, fontWeight: '600', lineHeight: 19 },
+  bookingDetailsContact: { borderTopWidth: 1, borderTopColor: colors.line, marginTop: 10, paddingTop: 9, gap: 3 },
+  bookingDetailsContactLabel: { color: colors.muted, fontSize: 11, fontWeight: '600' },
+  bookingDetailsContactValue: { color: colors.ink, fontSize: 12, fontWeight: '600' },
   summaryTitle: { color: colors.ink, fontSize: 14, fontWeight: '600', marginBottom: 8 },
   summaryTitleCompact: { fontSize: 12, marginBottom: 6 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 },
@@ -10148,8 +11007,18 @@ const styles = StyleSheet.create({
   liveText: { flexShrink: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
   liveTextCompact: { fontSize: 9 },
   mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  mapExpandButton: { position: 'absolute', right: 12, bottom: 50, width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
+  mapExpandButtonCompact: { right: 8, bottom: 42, width: 32, height: 32, borderRadius: 10 },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '600', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },
   mapTextCompact: { left: 8, right: 8, bottom: 8, fontSize: 10, borderRadius: 8, paddingVertical: 5, paddingHorizontal: 8 },
+  fullOrderMapShell: { flex: 1, backgroundColor: colors.white },
+  fullOrderMapHeader: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line, backgroundColor: colors.white },
+  fullOrderMapClose: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.faint },
+  fullOrderMapTitle: { color: colors.ink, fontSize: 16, fontWeight: '800' },
+  fullOrderMapSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
+  fullOrderMap: { flex: 1 },
+  fullOrderMapRouteNotice: { position: 'absolute', left: 18, right: 18, bottom: 22, minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.96)', paddingHorizontal: 14, shadowColor: '#0F172A', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  fullOrderMapRouteNoticeText: { flexShrink: 1, color: colors.muted, fontSize: 12, fontWeight: '600' },
   card: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },
   cardCompact: { borderRadius: 13, padding: 10, marginBottom: 8 },
   cardTitle: { color: colors.ink, fontWeight: '600', fontSize: 15 },
@@ -10178,9 +11047,9 @@ const styles = StyleSheet.create({
   farePolicyText: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2, marginBottom: 8 },
   farePolicyTextCompact: { fontSize: 9, marginBottom: 6 },
   orderCardActionButton: { minHeight: 32, borderRadius: 8, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 5, paddingHorizontal: 12, paddingVertical: 6 },
-  orderCardActionButtonCompact: { minHeight: 30, marginTop: 3, paddingVertical: 5 },
+  orderCardActionButtonCompact: { minHeight: 44, marginTop: 6, paddingVertical: 10 },
   orderCardActionText: { color: colors.white, fontSize: 11, fontWeight: '600' },
-  orderCardActionTextCompact: { fontSize: 10 },
+  orderCardActionTextCompact: { fontSize: 12 },
   bold: { fontWeight: '600', fontSize: 15 },
   boldCompact: { fontSize: 12 },
   divider: { height: 1, backgroundColor: '#C4B5FD', marginVertical: 8 },
@@ -10206,7 +11075,7 @@ const styles = StyleSheet.create({
   walletMethodText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   walletCoinsRow: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   walletCoinsCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 14 },
-  walletCoinsCardCompact: { borderRadius: 14, padding: 10 },
+  walletCoinsCardCompact: { borderRadius: 14, padding: 14 },
   walletCoinsHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   walletCoinsHeaderCompact: { gap: 8, paddingBottom: 10 },
   walletCoinsIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
@@ -10223,7 +11092,7 @@ const styles = StyleSheet.create({
   walletCoinsValueCompact: { fontSize: 29, lineHeight: 32 },
   walletCoinsAvailable: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   walletCoinsAvailableCompact: { fontSize: 10 },
-  walletCoinsDiscountBox: { flex: 1, minWidth: 0, minHeight: 58, borderRadius: 14, backgroundColor: colors.partnerLight, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
+  walletCoinsDiscountBox: { flexGrow: 1, flexShrink: 1, flexBasis: 140, minWidth: 140, minHeight: 58, borderRadius: 10, backgroundColor: colors.faint, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 11, paddingVertical: 9 },
   walletCoinsDiscountBoxCompact: { minHeight: 48, borderRadius: 12, gap: 6, paddingHorizontal: 9, paddingVertical: 7 },
   walletCoinsDiscountValue: { color: colors.green, fontSize: 14, fontWeight: '600' },
   walletCoinsDiscountValueCompact: { fontSize: 12 },
@@ -10309,31 +11178,28 @@ const styles = StyleSheet.create({
   coinValue: { color: colors.customer, fontSize: 48, fontWeight: '700' },
   listRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
   listText: { color: colors.ink, fontWeight: '500' },
-  accountHero: { position: 'relative', borderRadius: 18, backgroundColor: colors.customer, padding: 16, overflow: 'hidden' },
-  accountHeroCompact: { borderRadius: 15, padding: 11 },
-  accountHeroTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 },
-  accountHeroTopCompact: { gap: 8, marginBottom: 9 },
-  accountEyebrow: { color: '#EDE9FE', fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
-  accountEyebrowCompact: { fontSize: 9 },
-  accountIdentityCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.94)', padding: 12 },
-  accountIdentityCardCompact: { gap: 9, borderRadius: 14, padding: 9 },
-  accountAvatar: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
+  accountHero: { borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, padding: 16 },
+  accountHeroCompact: { borderRadius: 14, padding: 13 },
+  accountIdentityCard: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  accountIdentityCardCompact: { gap: 10 },
+  accountAvatar: { width: 58, height: 58, borderRadius: 17, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarCompact: { width: 46, height: 46, borderRadius: 14 },
   accountAvatarSmall: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
   accountAvatarText: { color: colors.white, fontSize: 20, fontWeight: '600' },
   accountAvatarTextCompact: { fontSize: 16 },
-  accountName: { color: colors.ink, fontSize: 18, fontWeight: '600' },
+  accountName: { color: colors.ink, fontSize: 18, fontWeight: '700' },
   accountNameCompact: { fontSize: 15 },
   accountSubtext: { color: colors.muted, fontSize: 12, fontWeight: '500', marginTop: 2 },
   accountSubtextCompact: { fontSize: 10, marginTop: 1 },
   accountVerifiedBadge: { maxWidth: '100%', flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.partnerLight, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
   accountVerifiedText: { flexShrink: 1, color: colors.green, fontSize: 10, fontWeight: '600' },
-  accountEditButton: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  accountEditButton: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   accountEditButtonCompact: { width: 32, height: 32, borderRadius: 11 },
-  accountStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  accountStatsRowCompact: { gap: 8, marginTop: 10 },
-  accountStatBox: { flexGrow: 1, flexShrink: 1, flexBasis: '29%', minWidth: 0, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12, alignItems: 'center' },
-  accountStatBoxCompact: { borderRadius: 12, padding: 9 },
+  accountStatsRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.line, marginTop: 17, paddingTop: 14 },
+  accountStatsRowCompact: { marginTop: 13, paddingTop: 11 },
+  accountStatBox: { flex: 1, minWidth: 0, paddingVertical: 2, paddingHorizontal: 6, alignItems: 'center' },
+  accountStatBoxCompact: { paddingVertical: 2, paddingHorizontal: 4 },
+  accountStatDivider: { borderRightWidth: 1, borderRightColor: colors.line },
   accountStatValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
   accountStatValueCompact: { fontSize: 17 },
   accountStatLabel: { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
@@ -10376,6 +11242,9 @@ const styles = StyleSheet.create({
   enterpriseChipTextCompact: { fontSize: 10 },
   enterpriseContactCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, padding: 15, gap: 10, marginTop: 18 },
   enterpriseContactCardCompact: { borderRadius: 13, padding: 11, gap: 8, marginTop: 13 },
+  enterpriseGetInTouch: { minHeight: 48, borderRadius: 12, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 16, marginTop: 4 },
+  enterpriseGetInTouchText: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  enterpriseSuccess: { color: colors.green, fontSize: 13, fontWeight: '600', lineHeight: 19, paddingVertical: 8 },
   savedAddressList: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, overflow: 'hidden' },
   savedAddressListCompact: { borderRadius: 13 },
   savedAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
@@ -10395,7 +11264,7 @@ const styles = StyleSheet.create({
   savedAddressEmptyCompact: { borderRadius: 13, padding: 12, gap: 4 },
   savedAddressEmptyTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   savedAddressEmptyTitleCompact: { fontSize: 12 },
-  accountCurveScroll: { flex: 1, marginHorizontal: 14, borderTopLeftRadius: 25, borderTopRightRadius: 25, overflow: 'hidden' },
+  accountCurveScroll: { flex: 1, marginHorizontal: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, overflow: 'hidden' },
   accountDetailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   accountDetailHeaderCompact: { gap: 9, marginBottom: 10 },
   accountDetailTitle: { color: colors.ink, fontSize: 21, fontWeight: '700', marginTop: 2 },
@@ -10423,7 +11292,7 @@ const styles = StyleSheet.create({
   accountMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
   accountMenuRowCompact: { gap: 9, padding: 10 },
   accountMenuRowLast: { borderBottomWidth: 0 },
-  accountMenuIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
+  accountMenuIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   accountMenuIconCompact: { width: 31, height: 31, borderRadius: 10 },
   accountMenuTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   accountMenuTitleCompact: { fontSize: 12 },

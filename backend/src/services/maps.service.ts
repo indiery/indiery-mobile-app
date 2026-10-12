@@ -287,6 +287,31 @@ export async function resolveLocationDetails(placeId: string, sessionToken?: str
   }
 }
 
+export async function reverseGeocodeLocation(lat: number, lng: number): Promise<LocationDetailsResult | undefined> {
+  if (!env.GOOGLE_MAPS_API_KEY || !Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+
+  try {
+    const response = await fetch(googleMapsUrl('geocode/json', { latlng: `${lat},${lng}`, language: 'en', region: 'in' }));
+    if (!response.ok) return undefined;
+    const payload = (await response.json()) as {
+      status?: string;
+      results?: Array<{ place_id?: string; formatted_address?: string }>;
+    };
+    const result = payload.results?.[0];
+    const address = result?.formatted_address?.trim();
+    if (payload.status !== 'OK' || !address) return undefined;
+    return {
+      placeId: `map-${lat.toFixed(6)}-${lng.toFixed(6)}`,
+      label: address,
+      address,
+      lat,
+      lng
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolveDirectionsMetrics(input: DistanceInput, mapsKey: string): Promise<RouteMetrics | undefined> {
   const routePoints = routePointsFor(input);
   const origin = routePoints[0];

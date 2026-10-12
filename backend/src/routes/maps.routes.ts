@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
 import { ApiError, asyncRoute } from '../middleware/error';
-import { autocompleteLocations, resolveLocationDetails } from '../services/maps.service';
+import { autocompleteLocations, resolveLocationDetails, reverseGeocodeLocation } from '../services/maps.service';
 
 export const mapsRouter = Router();
 
@@ -29,6 +29,19 @@ mapsRouter.get(
     }).parse(req.query);
     const location = await resolveLocationDetails(query.placeId, query.sessionToken);
     if (!location) throw new ApiError(404, 'Location details not found');
+    res.json({ location });
+  })
+);
+
+mapsRouter.get(
+  '/reverse-geocode',
+  asyncRoute(async (req, res) => {
+    const query = z.object({
+      lat: z.coerce.number().min(-90).max(90),
+      lng: z.coerce.number().min(-180).max(180)
+    }).parse(req.query);
+    const location = await reverseGeocodeLocation(query.lat, query.lng);
+    if (!location) throw new ApiError(404, 'Address not found for this point');
     res.json({ location });
   })
 );

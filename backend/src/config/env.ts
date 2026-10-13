@@ -9,6 +9,8 @@ const EnvSchema = z.object({
   MONGODB_URI: z.string().default('mongodb://127.0.0.1:27017/indiery'),
   JWT_SECRET: z.string().min(16).default('dev-only-change-before-production'),
   CORS_ORIGIN: z.string().default('*'),
+  ADMIN_EMAIL: z.string().email().optional(),
+  ADMIN_PASSWORD_HASH: z.string().min(50).optional(),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
@@ -48,6 +50,11 @@ if (razorpayParts.length > 0 && razorpayParts.length < 3) {
   throw new Error('Razorpay configuration is incomplete. Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and RAZORPAY_WEBHOOK_SECRET together.');
 }
 
+const adminCredentialParts = [env.ADMIN_EMAIL, env.ADMIN_PASSWORD_HASH].filter(Boolean);
+if (adminCredentialParts.length === 1) {
+  throw new Error('Admin login configuration is incomplete. Set ADMIN_EMAIL and ADMIN_PASSWORD_HASH together.');
+}
+
 function hasFirebaseAdminCredentials() {
   return Boolean(
     env.FIREBASE_SERVICE_ACCOUNT_BASE64 ||
@@ -80,5 +87,8 @@ if (env.NODE_ENV === 'production') {
   }
   if (!env.EXPO_ACCESS_TOKEN) {
     throw new Error('Production EXPO_ACCESS_TOKEN is required for push notifications');
+  }
+  if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD_HASH) {
+    throw new Error('Production ADMIN_EMAIL and ADMIN_PASSWORD_HASH are required');
   }
 }

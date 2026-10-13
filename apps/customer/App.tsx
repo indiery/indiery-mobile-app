@@ -8531,6 +8531,11 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const formScrollRef = useRef<ScrollView>(null);
+
+  function keepLastFieldsVisible() {
+    setTimeout(() => formScrollRef.current?.scrollToEnd({ animated: true }), 220);
+  }
 
   async function submitEnquiry() {
     if (submitting) return;
@@ -8663,7 +8668,7 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
       </View>
     </ScrollView>
     <Modal visible={formOpen} transparent animationType="slide" onRequestClose={() => !submitting && setFormOpen(false)}>
-      <KeyboardAvoidingView style={styles.contactSheetOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.contactSheetOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <Pressable style={styles.contactSheetBackdrop} onPress={() => !submitting && setFormOpen(false)} />
         <View style={[styles.contactSheet, { paddingBottom: Math.max(20, bottomInset + 12) }]}>
           <View style={styles.contactSheetHandle} />
@@ -8673,11 +8678,11 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
               <Ionicons name="close" size={20} color={colors.ink} />
             </Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView ref={formScrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Field label={copy.companyName} value={companyName} onChangeText={setCompanyName} editable={!submitting} />
             <Field label={copy.contactName} value={contactName} onChangeText={setContactName} editable={!submitting} />
-            <Field label={copy.mobileNumber} value={mobileNumber} onChangeText={setMobileNumber} keyboardType="phone-pad" editable={!submitting} />
-            <Field label={copy.email} value={email} onChangeText={setEmail} keyboardType="email-address" editable={!submitting} />
+            <Field label={copy.mobileNumber} value={mobileNumber} onChangeText={setMobileNumber} onFocus={keepLastFieldsVisible} keyboardType="phone-pad" editable={!submitting} />
+            <Field label={copy.email} value={email} onChangeText={setEmail} onFocus={keepLastFieldsVisible} keyboardType="email-address" editable={!submitting} />
             {formError ? <Text style={styles.accountEditError}>{formError}</Text> : null}
             <Pressable style={styles.enterpriseGetInTouch} onPress={submitEnquiry} disabled={submitting} accessibilityRole="button">
               {submitting ? <ActivityIndicator color={colors.white} /> : <Text style={styles.enterpriseGetInTouchText}>{copy.getInTouch}</Text>}
@@ -9042,12 +9047,14 @@ function Field({
   label,
   value,
   onChangeText,
+  onFocus,
   keyboardType,
   editable = true
 }: {
   label: string;
   value: string;
   onChangeText?: (value: string) => void;
+  onFocus?: () => void;
   keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'email-address';
   editable?: boolean;
 }) {
@@ -9059,6 +9066,7 @@ function Field({
         value={value}
         editable={editable}
         onChangeText={onChangeText}
+        onFocus={onFocus}
         keyboardType={keyboardType}
         style={[
           styles.input,

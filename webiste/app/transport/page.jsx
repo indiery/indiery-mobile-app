@@ -1,7 +1,7 @@
 import LegacyPage, { getLegacyMetadata } from "../../components/LegacyPage";
 
-export const metadata = getLegacyMetadata("tanspot_index.html");
+export const metadata = getLegacyMetadata("services.html");
 
 export default function TransportPage() {
-  return <LegacyPage source="tanspot_index.html" />;
+  return <LegacyPage source="services.html" />;
 }

@@ -745,7 +745,7 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 8px 25px rgba(112, 39, 232, 0.4) !important;
 }
 
-/* ========================================================================== 
+/* ===========================================================================
    LEGACY ELEMENTOR RED CLEANUP
    Some downloaded Elementor page styles contain literal #D70006 values, so
    changing the theme variable alone does not reach these sections.
@@ -1172,4 +1172,184 @@ button.nav-link:hover {
    Indiery bookings are handled through the site's own contact flow. */
 .elementor-element-52a381e {
   display: none !important;
+}
+
+/* ===========================================================================
+   HOMEPAGE SERVICE CARDS — LOCAL VEHICLES, COMPACT SPACING, NO BLACK BLOCKS
+   ========================================================================== */
+.elementor-element-8653ea3 {
+  background: #F4F8FA !important;
+  padding: 88px 0 96px !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-804b99d .elementor-heading-title {
+  color: #1F78A8 !important;
+  letter-spacing: 0.14em !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-a8736f0 .elementor-heading-title {
+  color: #073653 !important;
+  font-size: clamp(38px, 4vw, 58px) !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.035em !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-6401b15 .btn {
+  color: #1F78A8 !important;
+  background: #FFFFFF !important;
+  border-color: #BBD5DF !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 22px rgba(7, 54, 83, 0.06) !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-6401b15 .btn:hover {
+  color: #FFFFFF !important;
+  background: #073653 !important;
+  border-color: #073653 !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-3a8d468 {
+  margin-top: 42px !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-3a8d468 .row {
+  align-items: stretch !important;
+  row-gap: 24px !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-3a8d468 [class*="col-"] {
+  display: flex !important;
+}
+
+.elementor-element-8653ea3 .services__item {
+  width: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  border: 1px solid #D9E6EB !important;
+  border-radius: 22px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 14px 36px rgba(7, 54, 83, 0.07) !important;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease !important;
+}
+
+.elementor-element-8653ea3 .services__item:hover {
+  border-color: #AFCFD9 !important;
+  transform: translateY(-5px) !important;
+  box-shadow: 0 20px 44px rgba(7, 54, 83, 0.12) !important;
+}
+
+.elementor-element-8653ea3 .services__thumb-wrap {
+  margin: 0 !important;
+  padding: 18px 18px 0 !important;
+}
+
+.elementor-element-8653ea3 .services__thumb {
+  width: 100% !important;
+  height: 190px !important;
+  min-height: 190px !important;
+  border-radius: 16px !important;
+  display: grid !important;
+  place-items: center !important;
+  overflow: hidden !important;
+  background: radial-gradient(circle at 50% 52%, #FFFFFF 0%, #EAF5F7 76%) !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  -webkit-mask: none !important;
+  mask: none !important;
+}
+
+.elementor-element-8653ea3 .services__thumb::before {
+  display: none !important;
+  content: none !important;
+}
+
+.elementor-element-8653ea3 .services__thumb img {
+  position: static !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  padding: 8px !important;
+  object-fit: contain !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  filter: drop-shadow(0 12px 12px rgba(7, 54, 83, 0.14)) !important;
+}
+
+.elementor-element-8653ea3 .services__thumb .border-btn,
+.elementor-element-8653ea3 .services__icon {
+  display: none !important;
+}
+
+.elementor-element-8653ea3 .services__content {
+  min-height: 190px !important;
+  padding: 18px 24px 26px !important;
+  display: flex !important;
+  flex: 1 !important;
+  flex-direction: column !important;
+}
+
+.elementor-element-8653ea3 .services__content .title {
+  margin: 0 0 10px !important;
+  color: #073653 !important;
+  font-size: 22px !important;
+  line-height: 1.25 !important;
+}
+
+.elementor-element-8653ea3 .services__content .title a {
+  color: #073653 !important;
+}
+
+.elementor-element-8653ea3 .services__content .title a:hover {
+  color: #1F78A8 !important;
+}
+
+.elementor-element-8653ea3 .services__content p {
+  margin: 0 !important;
+  color: #526B77 !important;
+  font-size: 15px !important;
+  line-height: 1.65 !important;
+}
+
+.elementor-element-8653ea3 .elementor-element-5e9ae00,
+.elementor-element-8653ea3 .elementor-element-0ceb473 {
+  display: none !important;
+}
+
+@media (max-width: 991px) {
+  .elementor-element-8653ea3 {
+    padding: 72px 0 78px !important;
+  }
+
+  .elementor-element-8653ea3 .services__thumb {
+    height: 210px !important;
+    min-height: 210px !important;
+  }
+}
+
+@media (max-width: 575px) {
+  .elementor-element-8653ea3 {
+    padding: 60px 0 66px !important;
+  }
+
+  .elementor-element-8653ea3 .elementor-element-a8736f0 .elementor-heading-title {
+    font-size: 36px !important;
+  }
+
+  .elementor-element-8653ea3 .elementor-element-3a8d468 {
+    margin-top: 30px !important;
+  }
+
+  .elementor-element-8653ea3 .services__thumb {
+    height: 205px !important;
+    min-height: 205px !important;
+  }
+
+  .elementor-element-8653ea3 .services__content {
+    min-height: 0 !important;
+    padding: 17px 21px 23px !important;
+  }
 }

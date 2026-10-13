@@ -15,6 +15,8 @@ const PartnerProfileSchema = new Schema(
       enum: ['not_started', 'pending', 'verified', 'rejected'],
       default: 'not_started'
     },
+    kycRejectionReason: { type: String },
+    kycReviewedAt: { type: Date },
     docs: {
       selfie: { type: Boolean, default: false },
       pan: { type: Boolean, default: false },
@@ -65,7 +67,7 @@ const UserSchema = new Schema(
     role: { type: String, enum: ['customer', 'partner', 'admin'], required: true, index: true },
     name: { type: String, required: true },
     initials: { type: String, required: true },
-    phone: { type: String, required: true, index: true },
+    phone: { type: String, required: true },
     email: { type: String },
     city: { type: String, default: 'Lucknow' },
     status: { type: String, enum: ['active', 'blocked'], default: 'active' },

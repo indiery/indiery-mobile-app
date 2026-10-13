@@ -70,6 +70,7 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
   app.use('/api/partner', partnerRouter);
   app.use('/api/uploads', uploadRouter);
+  app.use('/api/admin', adminRouter);
 
   app.use(notFound);
   app.use(errorHandler);

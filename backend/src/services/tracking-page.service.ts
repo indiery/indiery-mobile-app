@@ -16,6 +16,9 @@ export interface PublicTrackingState {
   pickup: PublicTrackingPoint;
   extraStops: PublicTrackingPoint[];
   drop: PublicTrackingPoint;
+  senderName?: string;
+  receiverName?: string;
+  deliveryOtp?: string;
   routePath?: Array<{ lat: number; lng: number }>;
   vehicle: {
     name: string;
@@ -35,6 +38,10 @@ export interface PublicTrackingState {
     heading?: number;
     updatedAt?: string;
   } | null;
+}
+
+export function visibleSharedDeliveryOtp(status: string, verified: boolean | null | undefined, code: string | null | undefined) {
+  return ['picked_up', 'in_transit'].includes(status) && !verified ? code || undefined : undefined;
 }
 
 function escapeHtml(value: string) {
@@ -102,6 +109,8 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
   const initialState = safeJson(state);
   const partnerName = state.partner?.name || 'Driver assignment pending';
   const vehicleNumber = state.partner?.vehicleNumber || 'Vehicle number will appear after assignment';
+  const senderName = state.senderName || 'Sender name unavailable';
+  const receiverName = state.receiverName || 'Receiver name unavailable';
   const routeMeta = `${state.goods.distanceKm.toFixed(1)} km · ${state.goods.type} · ${state.goods.weightKg} kg`;
 
   return `<!doctype html>
@@ -109,6 +118,7 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="referrer" content="no-referrer" />
   <meta name="theme-color" content="#6d28d9" />
   <meta name="robots" content="noindex,nofollow,noarchive" />
   <title>Live tracking ${escapeHtml(state.orderNo)}</title>
@@ -297,7 +307,7 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
       cursor:pointer;
     }
     .recenter:hover{background:var(--brand-soft)}
-    .recenter:focus-visible,.route-link:focus-visible{outline:3px solid rgba(124,58,237,.34);outline-offset:2px}
+    .recenter:focus-visible{outline:3px solid rgba(124,58,237,.34);outline-offset:2px}
     .recenter svg{width:22px;height:22px;fill:currentColor}
     .route-pin{
       display:flex;
@@ -368,6 +378,10 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
     .route-copy strong{display:block;overflow-wrap:anywhere;font-size:13px;line-height:1.4}
     .route-copy small{display:block;margin-top:2px;color:var(--muted);font-size:10px;font-weight:700}
     .route-meta{margin:15px 0 0;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700;line-height:1.5}
+    .people-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:15px}
+    .person-box{min-width:0;padding:12px;border:1px solid var(--line);border-radius:13px;background:#f8fafc}
+    .person-box small{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+    .person-box strong{display:block;margin-top:5px;font-size:13px;overflow-wrap:anywhere}
     .driver-card{display:flex;flex-direction:column}
     .driver-status{
       display:flex;
@@ -409,23 +423,9 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
     .eta-label{display:block;color:var(--muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
     .eta-value{display:block;margin-top:4px;color:var(--brand-dark);font-size:18px;font-weight:900}
     .driver-coordinates{margin:10px 0 0;color:var(--muted);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
-    .route-link{
-      display:none;
-      align-items:center;
-      justify-content:center;
-      gap:7px;
-      min-height:48px;
-      margin-top:12px;
-      padding:10px 14px;
-      border-radius:14px;
-      background:var(--brand);
-      color:#fff;
-      font-size:12px;
-      font-weight:900;
-      text-decoration:none;
-    }
-    .route-link.is-visible{display:flex}
-    .route-link svg{width:16px;height:16px;fill:currentColor}
+    .otp-card{padding:18px}
+    .otp-value{display:block;margin-top:10px;color:var(--brand-dark);font-size:30px;font-weight:900;letter-spacing:.16em;font-variant-numeric:tabular-nums}
+    .otp-help{margin:8px 0 0;color:var(--muted);font-size:11px;font-weight:700;line-height:1.5}
     .privacy-note{
       display:flex;
       align-items:flex-start;
@@ -459,6 +459,7 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
       .live-chip{max-width:48%;white-space:normal}
       .map-legend{max-width:calc(100% - 72px)}
       .privacy-note{padding:14px}
+      .people-row{grid-template-columns:1fr}
     }
     @media (max-height:620px) and (orientation:landscape){
       #map{height:max(280px,calc(100vh - 160px))}
@@ -479,7 +480,7 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         <div class="brand">INDIERY LIVE TRACKING</div>
         <div class="secure-chip">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a5 5 0 0 0-5 5v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 7V7a3 3 0 1 1 6 0v2H9Zm3 4a2 2 0 0 1 1 3.73V19h-2v-2.27A2 2 0 0 1 12 13Z"/></svg>
-          Secure shared link
+          Shared tracking link
         </div>
       </div>
       <div class="order-row">
@@ -525,6 +526,10 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
           <h2 class="section-heading">Pickup to drop</h2>
           <ol class="route-list">${routeRows(state)}</ol>
           <p class="route-meta">${escapeHtml(routeMeta)}</p>
+          <div class="people-row" aria-label="Sender and receiver">
+            <div class="person-box"><small>Sent by</small><strong id="senderName">${escapeHtml(senderName)}</strong></div>
+            <div class="person-box"><small>Deliver to</small><strong id="receiverName">${escapeHtml(receiverName)}</strong></div>
+          </div>
         </article>
 
         <article class="card driver-card">
@@ -549,17 +554,20 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
               <strong class="eta-value" id="etaValue">Calculating…</strong>
             </div>
             <p class="driver-coordinates" id="driverCoordinates"></p>
-            <a class="route-link" id="routeLink" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5Z"/></svg>
-              Open route in Google Maps
-            </a>
           </div>
         </article>
       </section>
 
+      <section class="card otp-card" aria-labelledby="deliveryOtpTitle">
+        <p class="card-kicker">For the receiver</p>
+        <h2 class="section-heading" id="deliveryOtpTitle">Delivery OTP</h2>
+        <strong class="otp-value" id="deliveryOtpValue">${state.deliveryOtp ? escapeHtml(state.deliveryOtp) : '—'}</strong>
+        <p class="otp-help" id="deliveryOtpHelp">${state.deliveryOtp ? 'Give this code to the driver only at drop-off.' : 'The code appears here after pickup, until delivery is verified.'}</p>
+      </section>
+
       <section class="card privacy-note">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5.55 3.84 10.74 8 12 4.16-1.26 8-6.45 8-12V5l-8-3Zm0 4a3 3 0 0 1 3 3v1h1v6H8v-6h1V9a3 3 0 0 1 3-3Zm0 2a1 1 0 0 0-1 1v1h2V9a1 1 0 0 0-1-1Z"/></svg>
-        <span>This private link was shared by the sender. It shows only delivery tracking details—OTP, contact and payment information stay hidden. Driver location is removed when the trip ends.</span>
+        <span>Anyone with this link can see the sender and receiver names, driver and vehicle details, and the delivery OTP after pickup. Share it only with people involved in this delivery. Phone numbers and payment information stay hidden. Driver location is removed when the trip ends.</span>
       </section>
     </main>
     <footer>Map data © OpenStreetMap contributors · Indiery shared tracking</footer>
@@ -958,37 +966,15 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         }
       }
 
-      function updateGoogleMapsLink() {
-        var pickup = pickupCoordinate();
-        var drop = dropCoordinate();
-        var link = byId("routeLink");
-        if (!pickup || !drop) {
-          link.classList.remove("is-visible");
-          link.removeAttribute("href");
-          return;
-        }
-        var params = new URLSearchParams({
-          api: "1",
-          origin: String(pickup.lat) + "," + String(pickup.lng),
-          destination: String(drop.lat) + "," + String(drop.lng),
-          travelmode: "driving"
-        });
-        var stopCoordinates = (state.extraStops || []).filter(isCoordinate);
-        if (stopCoordinates.length) {
-          params.set(
-            "waypoints",
-            stopCoordinates.map(function (stop) {
-              return String(stop.lat) + "," + String(stop.lng);
-            }).join("|")
-          );
-        }
-        link.href = "https://www.google.com/maps/dir/?" + params.toString();
-        link.classList.add("is-visible");
-      }
-
       function renderState() {
         setText("orderNo", state.orderNo);
         setText("statusBadge", state.statusLabel);
+        setText("senderName", state.senderName || "Sender name unavailable");
+        setText("receiverName", state.receiverName || "Receiver name unavailable");
+        setText("deliveryOtpValue", state.deliveryOtp || "—");
+        setText("deliveryOtpHelp", state.deliveryOtp
+          ? "Give this code to the driver only at drop-off."
+          : state.status === "delivered" ? "Delivery verified." : "The code appears here after pickup, until delivery is verified.");
         setText("partnerName", state.partner && state.partner.name ? state.partner.name : "Driver assignment pending");
         setText(
           "vehicleNumber",
@@ -1004,7 +990,6 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         );
         renderFreshness();
         renderEta();
-        updateGoogleMapsLink();
         if (!map && window.L && allVisibleCoordinates().length) {
           initializeMap();
         } else {

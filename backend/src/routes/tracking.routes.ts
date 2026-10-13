@@ -5,6 +5,7 @@ import { Order, type OrderDocument } from '../models/Order';
 import {
   renderLiveTrackingPage,
   trackingContentSecurityPolicy,
+  visibleSharedDeliveryOtp,
   type PublicTrackingState
 } from '../services/tracking-page.service';
 import { verifyTrackingToken } from '../services/tracking-link.service';
@@ -62,6 +63,7 @@ function publicTrackingState(order: OrderDocument, routePath?: PublicTrackingSta
   const driverLat = active ? validCoordinate(order.partnerLocation?.lat, -90, 90) : undefined;
   const driverLng = active ? validCoordinate(order.partnerLocation?.lng, -180, 180) : undefined;
   const heading = validCoordinate(order.partnerLocation?.heading, 0, 360);
+  const deliveryOtp = visibleSharedDeliveryOtp(order.status, order.pod?.dropOtpVerified, order.verification?.dropOtp);
 
   return {
     orderNo: order.orderNo,
@@ -75,6 +77,9 @@ function publicTrackingState(order: OrderDocument, routePath?: PublicTrackingSta
     pickup: publicPoint(order.pickup),
     extraStops: (order.extraStops ?? []).map(publicPoint),
     drop: publicPoint(order.drop),
+    senderName: order.pickup.contactName?.trim() || undefined,
+    receiverName: order.drop.contactName?.trim() || undefined,
+    deliveryOtp,
     routePath,
     vehicle: {
       name: vehicle?.shortName || vehicle?.name || 'Vehicle'
@@ -115,7 +120,7 @@ async function loadSharedTrackingOrder(token: string) {
         : { orderNo: claims.orderNo };
   const order = await Order.findOne(orderQuery)
     .select(
-      'orderNo status pickup extraStops drop vehicle partner partnerLocation etaMinutes timeline goodsType weightKg distanceKm updatedAt'
+      'orderNo status pickup extraStops drop vehicle partner partnerLocation etaMinutes timeline goodsType weightKg distanceKm updatedAt pod.dropOtpVerified verification.dropOtp'
     )
     .populate('vehicle', 'shortName name')
     .populate('partner', 'name partnerProfile.vehicleNumber');
@@ -137,6 +142,7 @@ trackingRouter.get(
   asyncRoute(async (req, res) => {
     const order = await loadSharedTrackingOrder(String(req.params.token));
     res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     if (!order) {
       return res.status(404).json({ message: 'Tracking link is invalid or has expired' });
     }
@@ -149,6 +155,7 @@ trackingRouter.get(
   asyncRoute(async (req, res) => {
     const order = await loadSharedTrackingOrder(String(req.params.token));
     res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     if (!order) {
       return res.status(404).send(
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tracking link unavailable</title></head><body><main style="max-width:520px;margin:64px auto;padding:24px;font-family:Arial,sans-serif"><h1>Tracking link unavailable</h1><p>This link is invalid or has expired. Ask the sender to share a new live-tracking link.</p></main></body></html>'

@@ -49,7 +49,7 @@ const privacyPolicy: LegalPolicy = {
       body: [
         'For an assigned delivery, customers may see the Driver Partner name, phone number, rating, vehicle information, order status, and current delivery location needed to coordinate and track the service.',
         'When a Driver Partner is online or has an active delivery and grants foreground location permission, location may be shown to the relevant customer and through the order private tracking link. The Partner app does not request background location.',
-        'Government identification records, bank details, authentication secrets, payment credentials, and delivery OTPs are not displayed to customers or on public tracking pages. Driver Partner data is governed in more detail by the separate Driver Partner Privacy Policy.'
+        'Government identification records, bank details, authentication secrets, payment credentials, and pickup OTPs are not displayed on shared tracking pages. A shared tracking link may show the delivery OTP after pickup until it is verified, so anyone with the link may see it. Driver Partner data is governed in more detail by the separate Driver Partner Privacy Policy.'
       ]
     },
     {
@@ -187,7 +187,7 @@ const partnerPrivacyPolicy: LegalPolicy = {
       heading: 'Information disclosed to customers',
       body: [
         'For an offered or assigned delivery, the relevant customer may receive the Driver Partner name, phone number, rating, vehicle category, vehicle registration number, order status, estimated arrival information, and active-trip location needed to coordinate and track the delivery.',
-        'A private tracking page may show limited Driver Partner and delivery information while tracking is active. Government identification documents, bank details, authentication secrets, payment credentials, and delivery OTPs are not displayed on that page.',
+        'A shared tracking page may show sender and receiver names, limited Driver Partner and delivery information, and the delivery OTP after pickup until verification. Anyone with the link may see that information; government identification documents, bank details, authentication secrets, payment credentials, and pickup OTPs are not displayed there.',
         'Driver Partners receive relevant customer, sender, recipient, address, goods, contact, payment-mode, and instruction information needed to consider or complete a delivery and must use it only for that purpose, safety, support, dispute resolution, or law.'
       ]
     },

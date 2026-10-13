@@ -267,7 +267,7 @@ We may also disclose information to banks, payment providers, insurers, professi
 
 16. PRIVATE TRACKING LINKS
 
-A customer may create or share a private tracking link. A person holding that link may see limited order information and partner location while tracking remains active. Customers must share tracking links only with trusted recipients. Indiery does not display payment credentials, government identification numbers, bank information, authentication secrets, or delivery OTPs on the public tracking page.
+A customer may create or share a private tracking link. Anyone holding that link may see the sender and receiver names, driver and vehicle details, and relevant partner location while tracking remains active. After pickup and until delivery verification, the link may also show the delivery OTP. Customers must share tracking links only with trusted recipients. Indiery does not display payment credentials, government identification numbers, bank information, authentication secrets, or pickup OTPs on the shared tracking page.
 
 
 17. COOKIES AND WEBSITE TECHNOLOGIES

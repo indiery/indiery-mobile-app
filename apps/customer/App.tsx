@@ -2492,7 +2492,7 @@ export default function App() {
       const trackingUrl = `${socketUrl}${trackingPath}`;
       await Share.share({
         title: `Track ${order.orderNo}`,
-        message: `Track your Indiery delivery ${order.orderNo}: ${trackingUrl}`,
+        message: `Track your Indiery delivery ${order.orderNo}: ${trackingUrl}\nAfter pickup, this link shows the delivery OTP. Share it only with the receiver.`,
         url: trackingUrl
       });
     } catch (err) {
@@ -7797,6 +7797,7 @@ function OrderDetailsPanel({
         <MapPreview
           api={api}
           orderId={order.id}
+          vehicle={order.vehicle}
           pickup={order.pickup}
           drop={order.drop}
           extraStops={order.extraStops}
@@ -9289,9 +9290,26 @@ function OrderActionButton({
   );
 }
 
+function TrackingVehicleMarker({ vehicle }: { vehicle: Vehicle }) {
+  const source = vehicleArtSources[vehicle.code];
+  return (
+    <View style={styles.mapPartnerMarker} collapsable={false}>
+      <View style={styles.mapPartnerMarkerTip} />
+      <View style={styles.mapPartnerMarkerCard}>
+        {source ? (
+          <Image source={source} style={styles.mapPartnerMarkerImage} resizeMode="contain" />
+        ) : (
+          <Ionicons name="car-sport" size={32} color={colors.customer} />
+        )}
+      </View>
+    </View>
+  );
+}
+
 function MapPreview({
   api,
   orderId,
+  vehicle,
   pickup,
   drop,
   extraStops = [],
@@ -9301,6 +9319,7 @@ function MapPreview({
 }: {
   api?: IndieryApi;
   orderId?: string;
+  vehicle: Vehicle;
   pickup: LocationPoint;
   drop: LocationPoint;
   extraStops?: LocationPoint[];
@@ -9440,10 +9459,8 @@ function MapPreview({
             );
           })}
           {liveTracking && partnerCoordinate ? (
-            <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
-              <View style={styles.mapPartnerMarker}>
-                <Ionicons name="bicycle" size={15} color={colors.white} />
-              </View>
+            <Marker coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} anchor={{ x: 0.5, y: 1 }}>
+              <TrackingVehicleMarker vehicle={vehicle} />
             </Marker>
           ) : null}
         </MapView>
@@ -9459,14 +9476,6 @@ function MapPreview({
             </View>
           ))}
           <View style={styles.mapPinB} />
-          {liveTracking ? (
-            <>
-              <View style={[styles.vehiclePulse, hasLiveLocation && styles.vehiclePulseLive]} />
-              <View style={[styles.vehicleMarker, hasLiveLocation && styles.vehicleMarkerLive]}>
-                <Ionicons name="bicycle" size={16} color={colors.white} />
-              </View>
-            </>
-          ) : null}
         </>
       )}
       {liveTracking ? (
@@ -9496,6 +9505,7 @@ function MapPreview({
       <Text style={[styles.mapText, responsive.isCompact && styles.mapTextCompact]} numberOfLines={1}>{pickup.label} {'->'} {stopLabel ? `${stopLabel} -> ` : ''}{drop.label}</Text>
       <OrderRouteFullScreenMap
         visible={fullMapOpen}
+        vehicle={vehicle}
         pickup={pickup}
         drop={drop}
         extraStops={extraStops}
@@ -9510,6 +9520,7 @@ function MapPreview({
 
 function OrderRouteFullScreenMap({
   visible,
+  vehicle,
   pickup,
   drop,
   extraStops,
@@ -9519,6 +9530,7 @@ function OrderRouteFullScreenMap({
   onClose
 }: {
   visible: boolean;
+  vehicle: Vehicle;
   pickup: LocationPoint;
   drop: LocationPoint;
   extraStops: LocationPoint[];
@@ -9595,10 +9607,8 @@ function OrderRouteFullScreenMap({
             );
           })}
           {partnerCoordinate ? (
-            <Marker coordinate={partnerCoordinate} title={copy.liveGps}>
-              <View style={styles.mapPartnerMarker}>
-                <Ionicons name="bicycle" size={15} color={colors.white} />
-              </View>
+            <Marker coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} anchor={{ x: 0.5, y: 1 }}>
+              <TrackingVehicleMarker vehicle={vehicle} />
             </Marker>
           ) : null}
         </MapView>
@@ -10998,10 +11008,6 @@ const styles = StyleSheet.create({
   mapStopPinTwo: { left: '52%', top: '49%' },
   mapStopPinThree: { left: '66%', top: '38%' },
   mapStopText: { color: colors.white, fontSize: 10, fontWeight: '600' },
-  vehiclePulse: { position: 'absolute', left: '50%', top: '40%', width: 42, height: 42, marginLeft: -21, borderRadius: 21, backgroundColor: 'rgba(124,58,237,0.14)' },
-  vehiclePulseLive: { backgroundColor: 'rgba(5,150,105,0.16)' },
-  vehicleMarker: { position: 'absolute', left: '50%', top: '45%', width: 24, height: 24, marginLeft: -12, borderRadius: 12, backgroundColor: colors.customer, alignItems: 'center', justifyContent: 'center' },
-  vehicleMarkerLive: { backgroundColor: colors.green },
   etaChip: { position: 'absolute', right: 12, top: 12, maxWidth: '42%', backgroundColor: colors.white, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', shadowColor: '#0F172A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   etaChipCompact: { right: 8, top: 8, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 9 },
   etaValue: { color: colors.customer, fontSize: 20, fontWeight: '700' },
@@ -11014,7 +11020,10 @@ const styles = StyleSheet.create({
   liveDotOn: { backgroundColor: colors.green },
   liveText: { flexShrink: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
   liveTextCompact: { fontSize: 9 },
-  mapPartnerMarker: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.green, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  mapPartnerMarker: { width: 68, height: 64, alignItems: 'center' },
+  mapPartnerMarkerTip: { position: 'absolute', top: 48, width: 13, height: 13, backgroundColor: colors.white, borderRightWidth: 2, borderBottomWidth: 2, borderColor: colors.customer, borderRadius: 2, transform: [{ rotate: '45deg' }] },
+  mapPartnerMarkerCard: { width: 66, height: 54, borderRadius: 15, backgroundColor: colors.white, borderWidth: 2, borderColor: colors.customer, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
+  mapPartnerMarkerImage: { width: 61, height: 49 },
   mapExpandButton: { position: 'absolute', right: 12, bottom: 50, width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   mapExpandButtonCompact: { right: 8, bottom: 42, width: 32, height: 32, borderRadius: 10 },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '600', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },

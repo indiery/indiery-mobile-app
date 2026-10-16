@@ -79,7 +79,6 @@ authRouter.post(
         initials: 'IA',
         phone: internalPhone,
         email: normalizedEmail,
-        city: 'Lucknow',
         status: 'active'
       });
     }
@@ -140,7 +139,6 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
       phone,
       name: 'Indiery Customer',
       initials: initialsFromName('Indiery Customer'),
-      city: 'Lucknow',
       customerProfile: {
         coins: 0,
         walletBalance: 0,
@@ -156,11 +154,9 @@ async function ensureUser(phone: string, role: 'customer' | 'partner') {
     phone,
     name: 'Indiery Partner',
     initials: initialsFromName('Indiery Partner'),
-    city: 'Lucknow',
     partnerProfile: {
       vehicleId: vehicle?._id,
       vehicleNumber: '',
-      rating: 5,
       online: false,
       walletBalance: 0,
       weeklyOrders: 0,

@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Indiery Admin Dashboard — Completed Features and User Guide</title>
+  <style>
+    @page { size: A4; margin: 17mm 15mm 18mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172033; font: 10.2pt/1.48 "Segoe UI", Arial, sans-serif; }
+    h1, h2, h3 { color: #30126f; margin: 0 0 8px; line-height: 1.2; }
+    h1 { font-size: 28pt; } h2 { font-size: 18pt; margin-top: 4px; } h3 { font-size: 12.5pt; margin-top: 13px; }
+    p { margin: 5px 0 9px; } ul, ol { margin: 5px 0 11px 20px; padding: 0; } li { margin: 3px 0; }
+    .cover { min-height: 255mm; display: flex; flex-direction: column; justify-content: center; padding: 15mm 8mm; page-break-after: always; background: linear-gradient(145deg,#f5efff,#fff 56%,#eefdf6); }
+    .brand { color: #7c3aed; font-size: 13pt; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .subtitle { font-size: 15pt; color: #526078; margin: 14px 0 28px; max-width: 145mm; }
+    .meta { border-left: 4px solid #7c3aed; padding: 8px 13px; color: #58647b; }
+    .page { page-break-before: always; }
+    .section { page-break-inside: avoid; margin: 12px 0 16px; }
+    .note, .success, .warning { padding: 10px 12px; border-radius: 8px; margin: 10px 0; }
+    .note { background: #f5f3ff; border: 1px solid #ddd6fe; }
+    .success { background: #ecfdf5; border: 1px solid #a7f3d0; }
+    .warning { background: #fff7ed; border: 1px solid #fed7aa; }
+    .pill { display: inline-block; padding: 2px 7px; border-radius: 99px; background: #dcfce7; color: #166534; font-size: 8.5pt; font-weight: 800; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 8.8pt; }
+    th { background: #4c1d95; color: white; text-align: left; padding: 7px; }
+    td { border: 1px solid #dfe3eb; padding: 7px; vertical-align: top; }
+    tr:nth-child(even) td { background: #faf9ff; }
+    .steps { counter-reset: step; list-style: none; margin-left: 0; }
+    .steps li { counter-increment: step; position: relative; padding-left: 31px; margin: 7px 0; }
+    .steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 21px; height: 21px; border-radius: 50%; color: white; background: #7c3aed; text-align: center; font-weight: 800; line-height: 21px; }
+    .nav { font-family: Consolas, monospace; color: #5b21b6; background: #f5f3ff; padding: 1px 4px; border-radius: 3px; }
+    .small { font-size: 8.5pt; color: #657187; }
+    .footer-note { margin-top: 18px; padding-top: 8px; border-top: 1px solid #ddd; color: #667085; font-size: 8pt; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="brand">Indiery Logistics</div>
+    <h1>Admin Dashboard<br>Completed Features &amp; User Guide</h1>
+    <p class="subtitle">A practical operating manual for the functionality completed from the “Detailed Admin Panel” specification.</p>
+    <div class="meta">
+      <strong>Dashboard:</strong> http://127.0.0.1:3000/admin/login<br>
+      <strong>Backend API:</strong> http://127.0.0.1:4000<br>
+      <strong>Prepared:</strong> 16 October 2026<br>
+      <strong>Data policy:</strong> live application/database records only; no demo metrics or invented business values.
+    </div>
+  </section>
+
+  <h2>Purpose and completion statement</h2>
+  <div class="success"><strong>Completed:</strong> the operational modules documented in this guide are implemented and connected to the Indiery backend. Counts, money, orders, customers, drivers, locations, KYC, payouts, coins, pricing, cancellations, notifications and B2B records are read from or written to application data.</div>
+  <p>This guide deliberately lists only working capabilities. Features from the original document that are still partial or not integrated are documented separately in <em>Indiery Admin Dashboard — App Integration Gaps</em>.</p>
+
+  <h3>Before using the dashboard</h3>
+  <ol class="steps">
+    <li>Start the backend on port <strong>4000</strong> and the website on port <strong>3000</strong>.</li>
+    <li>Open <span class="nav">/admin/login</span>.</li>
+    <li>Sign in with the administrator email and password configured in <span class="nav">backend/.env</span>. Credentials are not printed in this guide.</li>
+    <li>Use the left navigation. The dashboard refreshes backend data automatically and also provides a manual refresh action.</li>
+    <li>If a module has no application records, it displays an honest empty state rather than sample rows or made-up totals.</li>
+  </ol>
+
+  <h2>Completed feature summary</h2>
+  <table>
+    <thead><tr><th>Original specification area</th><th>Completed capabilities</th><th>Admin navigation</th></tr></thead>
+    <tbody>
+      <tr><td>1. Dashboard</td><td>Live order, driver, KYC, customer, B2B and financial aggregates; recent operational exceptions.</td><td>Dashboard</td></tr>
+      <tr><td>2–3. Drivers and profiles</td><td>Driver list, status, vehicle, current trip/location, wallet, booking history, document review and account controls.</td><td>Drivers; KYC Review</td></tr>
+      <tr><td>4. Customers</td><td>Customer list, status, booking aggregates, wallet/coin balance and suspend/reactivate action with reason.</td><td>Customers</td></tr>
+      <tr><td>5. Live tracking and dispatch</td><td>GPS map for drivers who submitted coordinates, stale-location indication, unassigned orders and manual driver assignment.</td><td>Dashboard; Orders</td></tr>
+      <tr><td>6. Vehicles</td><td>Vehicle catalog and registered driver vehicles, capacity, plate and submitted RC/insurance indicators.</td><td>Vehicles</td></tr>
+      <tr><td>7–8. Payments, payouts and coins</td><td>Order payment records, recorded refunds, driver wallet liability, payout recording/export and coin ledger adjustments.</td><td>Payments &amp; Refunds; Payouts; Coin Ledger</td></tr>
+      <tr><td>9. Pricing</td><td>Database-backed base fare, per-km rate, partner share, ETA and active state, plus distance preview and change record.</td><td>Pricing &amp; Charges</td></tr>
+      <tr><td>10. Cancellations</td><td>Customer/driver/admin-or-unknown classification, reasons, timestamps, recorded penalties/refunds and resolution notes.</td><td>Cancellations &amp; Disputes</td></tr>
+      <tr><td>11. Support</td><td>Create, search, assign through handling, wait and resolve support records.</td><td>Support Tickets</td></tr>
+      <tr><td>12. Notifications</td><td>Immediate push campaigns to real registered device tokens with provider acceptance/rejection results.</td><td>Notifications</td></tr>
+      <tr><td>13. Reports</td><td>Date/city filters, booking outcomes, GMV, commission, driver earnings, average order value, repeat rate and CSV export.</td><td>Reports &amp; Analytics</td></tr>
+      <tr><td>14–16. Administrative records</td><td>Service-area records, staff access records, configuration records and audit entries for implemented actions.</td><td>Service Areas; Admin Users; Settings &amp; Audit</td></tr>
+      <tr><td>17–21. B2B operations</td><td>Business client creation/list, B2B dispatch, driver assignment, order tracking, outstanding balances and printable account statement.</td><td>B2B Clients; B2B Orders; Business Billing</td></tr>
+    </tbody>
+  </table>
+
+  <section class="page">
+    <h2>1. Dashboard and live operations</h2>
+    <p>The dashboard is the control-room view. It combines data returned by the overview, order, driver, customer, finance, coin and B2B APIs.</p>
+    <h3>What is completed</h3>
+    <ul>
+      <li>Total and active bookings, searching/unassigned bookings and completed/cancelled outcomes.</li>
+      <li>Registered and online drivers, approved drivers and pending KYC count.</li>
+      <li>Registered customers and customers with loaded active bookings.</li>
+      <li>Recorded gross booking value, platform commission, driver earnings, driver-wallet liability and coins in circulation.</li>
+      <li>Recent driver registrations and attention items based on real KYC and assignment state.</li>
+      <li>GPS map markers only when drivers have submitted coordinates; no fallback driver location is invented.</li>
+    </ul>
+    <h3>How to use it</h3>
+    <ol class="steps">
+      <li>Select <strong>Dashboard</strong> in the sidebar.</li>
+      <li>Read the metric cards for the current backend state.</li>
+      <li>Use the fleet filters to focus on all, online, active-order or offline drivers.</li>
+      <li>Select a driver marker or fleet card to open that driver’s details.</li>
+      <li>Review the “Admin attention” list and open the linked driver or order.</li>
+      <li>Use refresh if immediate synchronization is required; otherwise the view refreshes periodically while visible.</li>
+    </ol>
+    <div class="note"><strong>Meaning of zero:</strong> a displayed zero means the current query returned zero. “Not available” means the backend does not currently store that value.</div>
+  </section>
+
+  <section class="page">
+    <h2>2. Orders, dispatch and live tracking</h2>
+    <h3>Completed order operations</h3>
+    <ul>
+      <li>List up to 500 current application orders with search, status and sorting controls.</li>
+      <li>Open complete order details, route, fare split, payment state, customer, driver and delivery timeline.</li>
+      <li>Create a retail/on-demand order using explicitly entered customer, route, vehicle, goods, weight and fare data.</li>
+      <li>Create a B2B order for an existing business client.</li>
+      <li>Assign an eligible online, active, verified and available driver.</li>
+      <li>Advance order status and cancel with a mandatory reason.</li>
+      <li>View actual location freshness and route information where coordinates exist.</li>
+    </ul>
+    <h3>Create an on-demand order</h3>
+    <ol class="steps">
+      <li>Open <strong>Orders</strong> and choose <strong>Create order</strong>.</li>
+      <li>Select <strong>Retail or customer order</strong>.</li>
+      <li>Enter customer name/phone, pickup/drop addresses, goods description, weight and total fare.</li>
+      <li>Select an active vehicle loaded from the backend catalog.</li>
+      <li>Optionally select an eligible driver; leaving the driver blank creates an unassigned/searching order.</li>
+      <li>Submit and confirm the new order in the order list.</li>
+    </ol>
+    <h3>Assign a driver</h3>
+    <ol class="steps">
+      <li>Open an unassigned order and select <strong>Assign</strong>.</li>
+      <li>Choose from the displayed eligible drivers.</li>
+      <li>Confirm assignment. The backend rechecks active status, KYC, online state and active-trip availability.</li>
+    </ol>
+  </section>
+
+  <section class="page">
+    <h2>3. Driver management, profile and KYC</h2>
+    <h3>Driver list and profile</h3>
+    <ul>
+      <li>Name, phone, city when supplied, vehicle, plate, online state, KYC state and account state.</li>
+      <li>Current location/speed when supplied, current active order, wallet balance, booking history and payout ledger.</li>
+      <li>Ratings are shown only when stored; new or unrated drivers display “Not rated.”</li>
+      <li>Suspend or reactivate a driver with a recorded reason.</li>
+    </ul>
+    <h3>KYC workflow</h3>
+    <ol class="steps">
+      <li>Open <strong>KYC Review</strong> and filter the review queue.</li>
+      <li>Select a driver to view submitted selfie, PAN, Aadhaar, driving licence, RC, insurance and bank documents.</li>
+      <li>Open an individual document and mark it accepted or rejected. A rejection requires a correction reason.</li>
+      <li>Approve or reject the complete KYC application.</li>
+      <li>Return to the Drivers page to confirm the updated eligibility state.</li>
+    </ol>
+    <div class="warning"><strong>Document truthfulness:</strong> missing URLs appear as missing documents. Generated/demo document URLs were removed from the database cleanup.</div>
+  </section>
+
+  <section class="page">
+    <h2>4. Customer and vehicle management</h2>
+    <h3>Customers</h3>
+    <ol class="steps">
+      <li>Open <strong>Customers</strong>.</li>
+      <li>Search by name, phone or email; filter active, suspended, negative-balance or repeat customers.</li>
+      <li>Open a profile to review registration date, booking totals, completed/cancelled counts, booking value, wallet and coins.</li>
+      <li>Select <strong>Suspend account</strong> or <strong>Reactivate account</strong>, then enter a reason.</li>
+      <li>Export the current customer list to CSV when needed.</li>
+    </ol>
+    <h3>Vehicles</h3>
+    <ol class="steps">
+      <li>Open <strong>Vehicles</strong> to review vehicles associated with registered drivers.</li>
+      <li>Search by driver, category or registration number.</li>
+      <li>Review category, capacity, RC/insurance submission state, KYC-derived verification and account restriction state.</li>
+      <li>Use <strong>Export registry</strong> to download the current filtered data.</li>
+    </ol>
+  </section>
+
+  <section class="page">
+    <h2>5. Payments, payouts, coins and pricing</h2>
+    <h3>Customer payments and recorded refunds</h3>
+    <ol class="steps">
+      <li>Open <strong>Payments &amp; Refunds</strong>.</li>
+      <li>Use <strong>Customer payments</strong> for booking amount, mode, gateway reference and actual payment state.</li>
+      <li>Use <strong>Recorded refunds</strong> for cancellations that contain a backend cancellation/refund record.</li>
+      <li>Export either view to CSV.</li>
+    </ol>
+    <h3>Driver payouts</h3>
+    <ol class="steps">
+      <li>Open <strong>Payouts</strong> and review eligible driver wallets and KYC/bank readiness.</li>
+      <li>Complete the real bank/UPI/cash transfer outside the dashboard.</li>
+      <li>Choose the driver, enter the exact amount, method and external transaction/receipt reference.</li>
+      <li>Record the payout. The backend deducts the wallet and creates a ledger entry.</li>
+      <li>Use the payout CSV export for supported banking workflows.</li>
+    </ol>
+    <h3>Coins</h3>
+    <ol class="steps">
+      <li>Open <strong>Coin Ledger</strong>, select a customer and choose credit or debit.</li>
+      <li>Enter a positive whole number and a mandatory audit reason.</li>
+      <li>Apply the adjustment and verify the updated balance and ledger entry.</li>
+    </ol>
+    <h3>Vehicle pricing</h3>
+    <ol class="steps">
+      <li>Open <strong>Pricing &amp; Charges</strong> and select a backend vehicle.</li>
+      <li>Edit base fare, per-kilometre rate, partner share, ETA or active state.</li>
+      <li>Enter a distance to preview the configured fare formula.</li>
+      <li>Select <strong>Save pricing</strong>. Values are written to the vehicle record and a change entry is added.</li>
+    </ol>
+  </section>
+
+  <section class="page">
+    <h2>6. Cancellations, support and notifications</h2>
+    <h3>Cancellations and disputes</h3>
+    <ul>
+      <li>Cancelled bookings come from actual order records.</li>
+      <li>The page shows the recorded party, reason, timestamp, penalty and refund.</li>
+      <li>An administrator can add a resolution note; the note is stored in the admin workspace.</li>
+    </ul>
+    <h3>Support tickets</h3>
+    <ol class="steps">
+      <li>Open <strong>Support Tickets</strong> and choose <strong>New ticket</strong>.</li>
+      <li>Enter party, person, related booking when applicable, priority, category and description.</li>
+      <li>Open the created ticket and move it to waiting or resolved.</li>
+    </ol>
+    <h3>Push campaigns</h3>
+    <ol class="steps">
+      <li>Open <strong>Notifications</strong>.</li>
+      <li>Enter the campaign title and message.</li>
+      <li>Select all customers, all drivers, pending-KYC drivers or customers with active deliveries.</li>
+      <li>Select <strong>Send push now</strong>.</li>
+      <li>Review attempted, accepted and rejected counts returned by the configured Expo push provider.</li>
+    </ol>
+  </section>
+
+  <section class="page">
+    <h2>7. Reports and analytics</h2>
+    <p>Reports are calculated in the dashboard from loaded application orders, customers and drivers. No demonstration revenue curve or synthetic growth value is used.</p>
+    <ol class="steps">
+      <li>Open <strong>Reports &amp; Analytics</strong>.</li>
+      <li>Select all dates, today, or a rolling 7/30/90-day period.</li>
+      <li>Filter by a city present in actual customer or driver records.</li>
+      <li>Review gross booking value, commission, average booking value, repeat-customer rate and booking outcomes.</li>
+      <li>Review registered/approved/online/pending-KYC drivers and the filtered financial position.</li>
+      <li>Select <strong>Export CSV</strong> to download the filtered order report.</li>
+    </ol>
+    <div class="note">Financial figures are computed from stored fare fields. The overview commission uses captured/paid orders; the report view clearly reflects its selected order filter.</div>
+  </section>
+
+  <section class="page">
+    <h2>8. B2B clients, orders and billing</h2>
+    <h3>Create a business client</h3>
+    <ol class="steps">
+      <li>Open <strong>B2B Clients</strong> and select the registration action.</li>
+      <li>Enter business name, contact, phone, email, address, contract type and GSTIN where applicable.</li>
+      <li>Submit and confirm the new database record.</li>
+    </ol>
+    <h3>Create and assign a B2B order</h3>
+    <ol class="steps">
+      <li>From B2B Clients, choose <strong>Dispatch Order</strong>, or create a B2B order from the order dialog.</li>
+      <li>Select the business account; enter pickup/drop, vehicle, goods, weight and fare.</li>
+      <li>Optionally assign an eligible driver, or leave the order searching for later assignment.</li>
+      <li>The new order starts with a pending payment state and increases the client’s outstanding balance.</li>
+      <li>Track it from both <strong>Orders</strong> and <strong>B2B Orders</strong>.</li>
+    </ol>
+    <h3>Business billing view</h3>
+    <ul>
+      <li>Business-wise order charges and outstanding balance.</li>
+      <li>Paid/unpaid/draft derived status based on stored payment/outstanding data.</li>
+      <li>Order-wise statement and printable invoice-style view.</li>
+      <li>CSV account-statement export.</li>
+    </ul>
+  </section>
+
+  <section class="page">
+    <h2>9. Administrative records</h2>
+    <p>These modules save real administrator-entered records in the backend workspace. They do not display seeded records.</p>
+    <h3>Service areas</h3>
+    <p>Create and edit city/zone, coverage text, operating hours, category count, manager and administrative active/paused state.</p>
+    <h3>Admin access records</h3>
+    <p>Record a staff member’s name, email, role and service scope. The interface explicitly states that this does not create a login or send an invitation.</p>
+    <h3>Settings and audit</h3>
+    <p>Store company-contact and proposed operational/security configuration. Values remain blank until entered. Controls that are not yet enforced by the runtime are labeled as configuration records. The audit view lists recorded implemented actions such as pricing changes.</p>
+  </section>
+
+  <section class="page">
+    <h2>Operational safeguards and troubleshooting</h2>
+    <table>
+      <thead><tr><th>Situation</th><th>Expected behavior</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>No rows or metrics</td><td>Honest empty state or zero.</td><td>Confirm the app has created records and refresh.</td></tr>
+        <tr><td>Admin API unavailable</td><td>A sync error is shown; stale values are not presented as newly synchronized.</td><td>Check backend at port 4000 and MongoDB connectivity.</td></tr>
+        <tr><td>Map has no markers</td><td>“No drivers … have sent GPS coordinates yet.”</td><td>Bring a partner online and allow location permission.</td></tr>
+        <tr><td>Push attempted count is zero</td><td>No registered device tokens matched the audience.</td><td>Ensure users have granted notification permission and registered a token.</td></tr>
+        <tr><td>Driver cannot be assigned</td><td>Backend rejects inactive, unverified, offline or already-busy drivers.</td><td>Resolve the specific eligibility state.</td></tr>
+        <tr><td>Payout cannot be recorded</td><td>Missing KYC/bank/reference or excessive amount is rejected.</td><td>Complete the external payment and enter its real reference.</td></tr>
+      </tbody>
+    </table>
+    <h3>Direct links</h3>
+    <p class="small">The dashboard supports links such as <span class="nav">/admin?tab=orders</span>, <span class="nav">/admin?tab=drivers</span>, <span class="nav">/admin?tab=kyc</span>, <span class="nav">/admin?tab=payouts</span>, <span class="nav">/admin?tab=pricing</span>, <span class="nav">/admin?tab=reports</span> and <span class="nav">/admin?tab=billing</span>. Authentication is still required.</p>
+    <p class="footer-note">End of completed-feature guide. Refer to the separate integration-gap PDF before treating any additional item from the original 21-section specification as production-complete.</p>
+  </section>
+</body>
+</html>

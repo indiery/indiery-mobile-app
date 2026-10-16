@@ -117,6 +117,7 @@ const OrderSchema = new Schema(
   {
     orderNo: { type: String, unique: true, index: true, required: true },
     customer: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    b2bClient: { type: Schema.Types.ObjectId, ref: 'B2bClient', index: true },
     partner: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     vehicle: { type: Schema.Types.ObjectId, ref: 'Vehicle', required: true },
     pickup: { type: PointSchema, required: true },

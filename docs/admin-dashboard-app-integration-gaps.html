@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Indiery Admin Dashboard — App Integration Gaps</title>
+  <style>
+    @page { size: A4; margin: 17mm 15mm 18mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172033; font: 10.1pt/1.46 "Segoe UI", Arial, sans-serif; }
+    h1, h2, h3 { color: #6b1726; margin: 0 0 8px; line-height: 1.2; }
+    h1 { font-size: 28pt; } h2 { font-size: 18pt; margin-top: 4px; } h3 { font-size: 12.5pt; margin-top: 13px; }
+    p { margin: 5px 0 9px; } ul, ol { margin: 5px 0 11px 20px; padding: 0; } li { margin: 3px 0; }
+    .cover { min-height: 255mm; display: flex; flex-direction: column; justify-content: center; padding: 15mm 8mm; page-break-after: always; background: linear-gradient(145deg,#fff1f2,#fff 56%,#fff7ed); }
+    .brand { color: #be123c; font-size: 13pt; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .subtitle { font-size: 15pt; color: #5d687c; margin: 14px 0 28px; max-width: 145mm; }
+    .meta { border-left: 4px solid #be123c; padding: 8px 13px; color: #58647b; }
+    .page { page-break-before: always; }
+    .critical, .partial, .note { padding: 10px 12px; border-radius: 8px; margin: 10px 0; }
+    .critical { background: #fff1f2; border: 1px solid #fecdd3; }
+    .partial { background: #fff7ed; border: 1px solid #fed7aa; }
+    .note { background: #f8fafc; border: 1px solid #dbe3ee; }
+    .status { display: inline-block; padding: 2px 7px; border-radius: 99px; font-size: 8pt; font-weight: 800; white-space: nowrap; }
+    .missing { background: #ffe4e6; color: #9f1239; } .part { background: #ffedd5; color: #9a3412; } .connected { background: #dcfce7; color: #166534; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 8.35pt; }
+    th { background: #881337; color: white; text-align: left; padding: 7px; }
+    td { border: 1px solid #dfe3eb; padding: 6px; vertical-align: top; }
+    tr:nth-child(even) td { background: #fffafb; }
+    .priority { font-weight: 800; color: #9f1239; }
+    .small { font-size: 8.4pt; color: #657187; }
+    .checklist { list-style: none; margin-left: 0; }
+    .checklist li::before { content: "☐"; color: #be123c; font-weight: 900; margin-right: 7px; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="brand">Indiery Logistics</div>
+    <h1>Admin Dashboard<br>App Integration Gaps</h1>
+    <p class="subtitle">An honest gap assessment against every section of the “Detailed Admin Panel” specification.</p>
+    <div class="meta">
+      <strong>Assessment date:</strong> 16 October 2026<br>
+      <strong>Scope:</strong> admin website, backend API/database, customer app and partner app<br>
+      <strong>Purpose:</strong> show what is partial, configuration-only or not yet integrated—without demo data or inflated completion claims.
+    </div>
+  </section>
+
+  <h2>Executive summary</h2>
+  <p>The core operational path is connected: real orders, drivers, customers, KYC, vehicle pricing, payouts, coins, cancellations, push delivery, reports and basic B2B operations. However, the full 21-section specification is <strong>not yet completely integrated</strong>.</p>
+  <div class="critical"><strong>Most important gaps:</strong> service-area enforcement, runtime settings enforcement, real multi-admin authorization, full support/in-app notification integration, advanced refund processing, complete audit coverage, document-expiry data, advanced analytics, and full B2B contract/invoice/payment workflows.</div>
+  <h3>Status definitions</h3>
+  <ul>
+    <li><span class="status connected">CONNECTED</span> works through app/backend/database and is covered in the completed-feature guide.</li>
+    <li><span class="status part">PARTIAL</span> some functionality exists, but important requirements or app-side effects remain.</li>
+    <li><span class="status missing">NOT INTEGRATED</span> visible configuration or requested workflow does not yet control the customer/partner apps or backend runtime.</li>
+  </ul>
+
+  <h2>High-priority integration work</h2>
+  <table>
+    <thead><tr><th>Priority</th><th>Gap</th><th>Why it matters</th><th>Required integration</th></tr></thead>
+    <tbody>
+      <tr><td class="priority">P0</td><td>Service areas are records only</td><td>Pausing a zone does not block customer quotes/bookings or driver offers.</td><td>Dedicated service-area model/API, geofence checks in quote/order creation, app availability messages.</td></tr>
+      <tr><td class="priority">P0</td><td>Settings are not runtime rules</td><td>Maintenance, auto-assign, wallet floor, pickup radius, re-KYC and 2FA toggles do not change app behavior.</td><td>Validated settings schema, backend rule consumption, mobile-app behavior and safe rollout.</td></tr>
+      <tr><td class="priority">P0</td><td>Admin users are access records only</td><td>Adding/deactivating a row does not provision or revoke a real administrator login.</td><td>Admin identity model, invitations/reset, role/city permissions, endpoint authorization and login history.</td></tr>
+      <tr><td class="priority">P1</td><td>Refund workflow is read-only</td><td>Recorded cancellation refunds can be viewed, but admin approval/processing is not a real gateway workflow.</td><td>Refund model/state machine, Razorpay/UPI/wallet integration, idempotency, receipts and failure handling.</td></tr>
+      <tr><td class="priority">P1</td><td>Support records are not app inboxes</td><td>Customer/driver apps cannot open, respond to or receive ticket updates.</td><td>Support-ticket model, attachments/media, threaded messages, app screens and push events.</td></tr>
+      <tr><td class="priority">P1</td><td>In-app announcements absent</td><td>Only push campaigns are implemented.</td><td>Announcement model, targeting/read-state APIs and customer/partner app surfaces.</td></tr>
+      <tr><td class="priority">P1</td><td>B2B billing is basic</td><td>No persistent invoices, payment receipts, credit notes, due-date workflow or reconciliation ledger.</td><td>Invoice/payment models, numbering, PDF invoices, allocations and payment reconciliation endpoints.</td></tr>
+    </tbody>
+  </table>
+
+  <section class="page">
+    <h2>Gap matrix — original sections 1 to 10</h2>
+    <table>
+      <thead><tr><th>#</th><th>Specification</th><th>Status</th><th>What remains</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Dashboard</td><td><span class="status part">PARTIAL</span></td><td>Exact “today” cards, document-expiry/re-KYC alerts and delayed pickup/delivery alerts need dedicated backend queries. Current live totals and financial aggregates are real.</td></tr>
+        <tr><td>2</td><td>Driver Management</td><td><span class="status part">PARTIAL</span></td><td>Missing document expiry, submission/review waiting duration, full rejection-history list, acceptance rate, per-driver completed-delivery aggregate and pagination.</td></tr>
+        <tr><td>3</td><td>Individual Driver Profile</td><td><span class="status part">PARTIAL</span></td><td>No profile-photo/address fields in the current view, complete login/activity history, complaint linkage, acceptance rate or delivery-time performance. Bank and booking data are available where stored.</td></tr>
+        <tr><td>4</td><td>Customer Management</td><td><span class="status part">PARTIAL</span></td><td>No verified-contact flag, complete wallet ledger inside the customer drawer, linked support/refund history, suspicious-activity engine, complaint filter or server pagination.</td></tr>
+        <tr><td>5</td><td>Live Tracking &amp; Dispatch</td><td><span class="status part">PARTIAL</span></td><td>Manual assignment works, but reassignment, driver contact action, distance-from-pickup ranking, delay detection and vehicle-type map filtering are incomplete.</td></tr>
+        <tr><td>6</td><td>Vehicle Management</td><td><span class="status part">PARTIAL</span></td><td>No separate vehicle-record CRUD, model/chassis details, document expiry dates, individual document review history or explicit inactive/restricted vehicle workflow independent of the driver.</td></tr>
+        <tr><td>7</td><td>Payments &amp; Transactions</td><td><span class="status part">PARTIAL</span></td><td>Payment/refund records are visible, but real admin refund initiation/approval/processing, failed payout retry and automatic bank payout are not implemented.</td></tr>
+        <tr><td>8</td><td>Wallet Management</td><td><span class="status part">PARTIAL</span></td><td>Coins are integrated; a separate customer cash-wallet ledger/top-up flow and configurable outstanding-balance booking block are not fully implemented.</td></tr>
+        <tr><td>9</td><td>Pricing &amp; Charges</td><td><span class="status part">PARTIAL</span></td><td>Base/per-km/share/ETA/active are connected. Minimum fare, taxes, promo codes, service-area pricing and admin-managed waiting/cancellation rules remain hardcoded or absent.</td></tr>
+        <tr><td>10</td><td>Cancellations &amp; Disputes</td><td><span class="status part">PARTIAL</span></td><td>Core cancellation data is real. Admin-initiated attribution, exception approval, dedicated dispute entities, driver daily count reporting and a full resolution audit trail need backend models.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page">
+    <h2>Gap matrix — original sections 11 to 21</h2>
+    <table>
+      <thead><tr><th>#</th><th>Specification</th><th>Status</th><th>What remains</th></tr></thead>
+      <tbody>
+        <tr><td>11</td><td>Complaints &amp; Support</td><td><span class="status part">PARTIAL</span></td><td>Admin-created records work, but app-created tickets, attachments, message thread, internal notes persistence, SLA/escalation automation and closure reason are not integrated.</td></tr>
+        <tr><td>12</td><td>Notifications</td><td><span class="status part">PARTIAL</span></td><td>Immediate push campaigns are connected. In-app announcements, scheduled campaigns, reusable templates, transactional log aggregation and receipt-status follow-up UI remain.</td></tr>
+        <tr><td>13</td><td>Reports &amp; Analytics</td><td><span class="status part">PARTIAL</span></td><td>Basic filtered metrics and CSV exist. Missing zone/vehicle trends, growth series, per-driver productivity, cancellation rates, rating distribution, detailed liabilities/refund/payout reports and Excel format.</td></tr>
+        <tr><td>14</td><td>Service Areas &amp; Cities</td><td><span class="status missing">NOT INTEGRATED</span></td><td>Records can be saved, but they do not enforce pickup/drop coverage, vehicle availability, hours, routing, area pricing, city manager permissions or app booking availability.</td></tr>
+        <tr><td>15</td><td>Admin Users &amp; Permissions</td><td><span class="status missing">NOT INTEGRATED</span></td><td>Rows are administrative records only. No account invitation, deactivation enforcement, RBAC, city scope, secure reset, login history or endpoint-level permission checks.</td></tr>
+        <tr><td>16</td><td>Settings &amp; Audit Logs</td><td><span class="status part">PARTIAL</span></td><td>Values and selected action records persist, but most settings do not affect runtime. Audit coverage is not centralized, immutable or complete across all specified actions.</td></tr>
+        <tr><td>17</td><td>B2B Business Partners</td><td><span class="status part">PARTIAL</span></td><td>Basic client create/list works. Missing logo, brand/legal split, industry, PAN/documents, billing contact/address, manager, contract reference, internal notes, verification and robust filtering/pagination.</td></tr>
+        <tr><td>18</td><td>Individual Business Profile</td><td><span class="status part">PARTIAL</span></td><td>No full tabbed profile, verification history, authorized contacts, complaints/activity log or editable negotiated pricing/contract workflow.</td></tr>
+        <tr><td>19</td><td>B2B Driver Assignment</td><td><span class="status part">PARTIAL</span></td><td>Assignment works. Reassignment/cancel assignment, distance ranking, recent performance, assignment-request response, contact-driver action and B2B-specific ETA workflow remain.</td></tr>
+        <tr><td>20</td><td>B2B Orders</td><td><span class="status part">PARTIAL</span></td><td>Dedicated list and main-order access work. Missing date-range/vehicle/business/payment compound filters, pagination and some full timeline/payment detail views.</td></tr>
+        <tr><td>21</td><td>Business Billing</td><td><span class="status part">PARTIAL</span></td><td>Outstanding/order statement is available. Persistent numbered invoices, due dates, receipts, credit notes, adjustments, payment allocation and reconciliation are not integrated.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="page">
+    <h2>Detailed app-side gaps</h2>
+    <h3>Customer app</h3>
+    <ul>
+      <li>No service-zone/operating-hours response that disables booking and explains why.</li>
+      <li>No maintenance-mode banner or booking lock controlled by admin settings.</li>
+      <li>No support-ticket inbox, ticket creation, attachments or threaded responses.</li>
+      <li>No in-app announcement feed/read-state.</li>
+      <li>No explicit admin-configured wallet-floor rule synchronized from settings.</li>
+      <li>No B2B-authorized contact experience; B2B dispatch remains admin-led.</li>
+    </ul>
+    <h3>Partner app</h3>
+    <ul>
+      <li>No re-KYC interval or document-expiry reminders driven by admin-configured dates.</li>
+      <li>No service-zone/vehicle availability policy driven by admin records.</li>
+      <li>No admin support-ticket conversation or escalation UI.</li>
+      <li>No in-app announcement feed.</li>
+      <li>No configurable pickup search radius or assignment policy consumed from the settings module.</li>
+    </ul>
+    <h3>Backend platform</h3>
+    <ul>
+      <li>No single validated runtime-settings service with versioning and cache invalidation.</li>
+      <li>No real RBAC matrix; current admin middleware authorizes the admin role broadly.</li>
+      <li>No centralized immutable audit-event model capturing actor, request, before/after and outcome.</li>
+      <li>No support, announcement, service-area, invoice, refund-request or business-document domain models.</li>
+      <li>No scheduled job layer for document expiry, campaigns, invoice due dates or re-KYC.</li>
+    </ul>
+  </section>
+
+  <section class="page">
+    <h2>Recommended delivery plan</h2>
+    <h3>Phase 1 — runtime controls and authorization</h3>
+    <ul class="checklist">
+      <li>Create validated system-settings and service-area schemas.</li>
+      <li>Enforce maintenance, coverage, hours, wallet floor and search radius in backend APIs.</li>
+      <li>Add mobile app banners/errors for each enforced condition.</li>
+      <li>Implement real admin identities, invitations, deactivation and role/city permissions.</li>
+      <li>Add centralized audit events to every privileged mutation.</li>
+    </ul>
+    <h3>Phase 2 — financial and support workflows</h3>
+    <ul class="checklist">
+      <li>Build gateway-backed refund requests with idempotent provider calls.</li>
+      <li>Build support tickets, attachments, threads, SLA and customer/partner app screens.</li>
+      <li>Build in-app announcements with targeting and read state.</li>
+      <li>Add document expiry dates, reminder jobs and re-KYC lifecycle.</li>
+    </ul>
+    <h3>Phase 3 — B2B and advanced intelligence</h3>
+    <ul class="checklist">
+      <li>Expand business profiles, verification, contracts and authorized contacts.</li>
+      <li>Add persistent invoices, due dates, receipts, credits and reconciliation.</li>
+      <li>Add advanced report APIs, pagination and Excel exports.</li>
+      <li>Add assignment distance/performance ranking and delay monitoring.</li>
+    </ul>
+  </section>
+
+  <section class="page">
+    <h2>Production-completion checklist</h2>
+    <p>A feature should be marked fully integrated only when all relevant checks below are satisfied:</p>
+    <ul class="checklist">
+      <li>Backend has a validated model and authorized API.</li>
+      <li>Admin action changes persistent application state.</li>
+      <li>Customer and/or partner app consumes the state where required.</li>
+      <li>The user receives a clear result or error.</li>
+      <li>The action is auditable with actor, time and outcome.</li>
+      <li>Empty/error/loading states are implemented.</li>
+      <li>Tests cover authorization, validation and failure recovery.</li>
+      <li>No placeholder records, invented totals or misleading provider status exist.</li>
+    </ul>
+    <div class="note"><strong>Current conclusion:</strong> core operations are usable and connected, while the gaps listed in this report must be completed before the entire original admin-panel document can accurately be declared fully integrated.</div>
+    <p class="small">End of integration-gap report.</p>
+  </section>
+</body>
+</html>

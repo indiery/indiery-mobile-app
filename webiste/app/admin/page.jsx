@@ -905,12 +905,14 @@ export default function AdminPage() {
     return drivers.find((d) => d._id === selectedRadarDriverId) || drivers[0] || null;
   }, [drivers, selectedRadarDriverId]);
 
-  const assignableDrivers = useMemo(() => drivers.filter((driver) =>
-    driver.status === "active" &&
-    driver.partnerProfile?.kycStatus === "verified" &&
-    driver.partnerProfile?.online === true &&
-    !driver.activeOrder
-  ), [drivers]);
+  const assignableDrivers = useMemo(() => drivers
+    .filter((driver) =>
+      driver.status === "active" &&
+      driver.partnerProfile?.kycStatus === "verified" &&
+      !driver.activeOrder
+    )
+    .sort((left, right) => Number(Boolean(right.partnerProfile?.online)) - Number(Boolean(left.partnerProfile?.online))),
+  [drivers]);
 
   return (
     <div className={styles.adminLayout}>
@@ -3002,13 +3004,16 @@ export default function AdminPage() {
                       value={dispatchForm.driverId}
                       onChange={(e) => setDispatchForm({ ...dispatchForm, driverId: e.target.value })}
                     >
-                      <option value="">-- Auto-Queue for Nearby Fleet --</option>
+                      <option value="">-- Auto-Queue for Nearby Online Fleet --</option>
                       {assignableDrivers.map((d) => (
                         <option key={d._id} value={d._id}>
-                          {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · Online and available
+                          {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · {d.partnerProfile?.online ? "Online" : "Offline"} · Available for manual assignment
                         </option>
                       ))}
                     </select>
+                    <small style={{ color: "#64748b" }}>
+                      Manual assignment includes active, KYC-verified drivers without another active order. Offline drivers receive an app notification.
+                    </small>
                   </div>
                 </div>
 
@@ -3096,13 +3101,21 @@ export default function AdminPage() {
                   value={selectedDriverIdForAssign}
                   onChange={(e) => setSelectedDriverIdForAssign(e.target.value)}
                 >
-                  <option value="">-- Choose Available Driver --</option>
+                  <option value="">-- Choose Verified Driver --</option>
                   {assignableDrivers.map((d) => (
                     <option key={d._id} value={d._id}>
-                      {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · Online and available
+                      {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · {d.partnerProfile?.online ? "Online" : "Offline"} · Available for manual assignment
                     </option>
                   ))}
                 </select>
+                <small style={{ color: "#64748b" }}>
+                  Active, KYC-verified drivers without another active order are listed. Offline drivers receive an app notification after assignment.
+                </small>
+                {assignableDrivers.length === 0 ? (
+                  <div style={{ marginTop: 8, color: "#b45309", fontSize: 12.5, fontWeight: 700 }}>
+                    No active KYC-verified driver is currently free from another order.
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className={styles.modalFooter}>

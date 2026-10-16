@@ -186,11 +186,36 @@ async function loadAssignableDriver(driverId: string) {
   if (driver.partnerProfile?.kycStatus !== 'verified') {
     throw new ApiError(409, 'Driver KYC must be verified before assignment');
   }
-  if (!driver.partnerProfile?.online) throw new ApiError(409, 'Driver must be online before assignment');
 
   const activeOrder = await Order.exists({ partner: driver._id, status: { $in: ACTIVE_ORDER_STATUSES } });
   if (activeOrder) throw new ApiError(409, 'Driver already has an active order');
   return driver;
+}
+
+function notifyManualAssignment(
+  driver: { expoPushTokens?: string[] },
+  order: { _id: unknown; orderNo: string }
+) {
+  void sendPush(
+    driver.expoPushTokens,
+    'Delivery assigned by operations',
+    `${order.orderNo} has been assigned to you. Open the Partner app to view the delivery.`,
+    {
+      event: 'admin_order_assigned',
+      role: 'partner',
+      screen: 'active',
+      orderId: String(order._id),
+      orderNo: order.orderNo
+    },
+    {
+      ttl: 3600,
+      collapseId: `admin-assignment-${String(order._id)}`,
+      channelId: 'driver-order-alerts-v2',
+      priority: 'high'
+    }
+  ).catch((error) => {
+    console.error('Unable to send manual driver-assignment notification', error);
+  });
 }
 
 async function loadOverviewMetrics() {
@@ -501,6 +526,7 @@ adminRouter.post('/orders/:id/assign', async (req: Request, res: Response, next:
     });
 
     await order.save();
+    notifyManualAssignment(driver, order);
     const updated = await Order.findById(order._id)
       .populate('partner', 'name phone partnerProfile')
       .populate('customer', 'name phone')
@@ -741,6 +767,7 @@ adminRouter.post('/orders/create-on-demand', async (req: Request, res: Response,
     }
 
     await newOrder.save();
+    if (selectedDriver) notifyManualAssignment(selectedDriver, newOrder);
     const populated = await Order.findById(newOrder._id)
       .populate('partner')
       .populate('customer')
@@ -1368,6 +1395,7 @@ adminRouter.post('/orders/create-b2b', async (req: Request, res: Response, next:
     }
 
     await newOrder.save();
+    if (selectedDriver) notifyManualAssignment(selectedDriver, newOrder);
     await B2bClient.updateOne({ _id: client._id }, { $inc: { outstandingBalance: fareNum } });
     const populated = await Order.findById(newOrder._id)
       .populate('partner')

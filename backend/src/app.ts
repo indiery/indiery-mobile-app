@@ -14,28 +14,22 @@ import { legalRouter } from './routes/legal.routes';
 import { trackingRouter } from './routes/tracking.routes';
 import { adminRouter } from './routes/admin.routes';
 import { errorHandler, notFound } from './middleware/error';
-
-const requestBuckets = new Map<string, { count: number; resetAt: number }>();
+import { createRateLimit } from './middleware/rateLimit';
 
 function corsOrigin() {
   if (env.CORS_ORIGIN === '*') return true;
   return env.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean);
 }
 
-function rateLimit(windowMs = 60_000, maxRequests = 180) {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (req.path === '/health') return next();
-    const now = Date.now();
-    const key = req.ip || req.socket.remoteAddress || 'unknown';
-    const bucket = requestBuckets.get(key);
-    if (!bucket || bucket.resetAt <= now) {
-      requestBuckets.set(key, { count: 1, resetAt: now + windowMs });
-      return next();
-    }
-    bucket.count += 1;
-    if (bucket.count > maxRequests) return res.status(429).json({ message: 'Too many requests' });
-    return next();
-  };
+const standardApiRateLimit = createRateLimit({ windowMs: 60_000, maxRequests: 180 });
+const adminAuthRateLimit = createRateLimit({ windowMs: 60_000, maxRequests: 120 });
+const adminApiIngressRateLimit = createRateLimit({ windowMs: 60_000, maxRequests: 600 });
+
+function scopedRateLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (req.path === '/health') return next();
+  if (req.path.startsWith('/api/admin')) return adminApiIngressRateLimit(req, res, next);
+  if (req.path.startsWith('/api/auth/admin-')) return adminAuthRateLimit(req, res, next);
+  return standardApiRateLimit(req, res, next);
 }
 
 function skipSensitiveTrackingLogs(req: express.Request) {
@@ -47,7 +41,7 @@ export function createApp() {
   if (env.NODE_ENV === 'production') app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({ origin: corsOrigin(), credentials: true }));
-  app.use(rateLimit());
+  app.use(scopedRateLimit);
   app.use(
     morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev', {
       skip: skipSensitiveTrackingLogs
@@ -70,7 +64,6 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
   app.use('/api/partner', partnerRouter);
   app.use('/api/uploads', uploadRouter);
-  app.use('/api/admin', adminRouter);
 
   app.use(notFound);
   app.use(errorHandler);

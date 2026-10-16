@@ -16,10 +16,17 @@ import { calculateDeliverySettlement, calculatePartnerWalletSettlement } from '.
 import { resolveRouteMetrics } from '../services/maps.service';
 import { normalizeFareBreakup } from '../services/fare.service';
 import { sendPush } from '../services/notification.service';
+import { createRateLimit } from '../middleware/rateLimit';
 
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth(['admin']));
+adminRouter.use(createRateLimit({
+  windowMs: 60_000,
+  maxRequests: 300,
+  keyGenerator: (req) => `admin:${(req as AuthRequest).auth?.userId || 'unknown'}`,
+  message: 'Admin request limit reached. Please wait briefly before retrying.'
+}));
 
 adminRouter.get(
   '/enterprise-enquiries',
@@ -186,76 +193,193 @@ async function loadAssignableDriver(driverId: string) {
   return driver;
 }
 
+async function loadOverviewMetrics() {
+  const [
+    activeOrders,
+    searchingOrders,
+    totalDrivers,
+    onlineDrivers,
+    pendingKyc,
+    b2bClients,
+    totalOrders,
+    totalCustomers,
+    paidOrders,
+    partners,
+    customers
+  ] = await Promise.all([
+    Order.countDocuments({ status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } }),
+    Order.countDocuments({ status: 'searching' }),
+    User.countDocuments({ role: 'partner' }),
+    User.countDocuments({ role: 'partner', 'partnerProfile.online': true }),
+    User.countDocuments({ role: 'partner', 'partnerProfile.kycStatus': 'pending' }),
+    B2bClient.countDocuments({ status: 'active' }),
+    Order.countDocuments(),
+    User.countDocuments({ role: 'customer' }),
+    Order.find({ paymentStatus: 'paid' }).select('fare').lean(),
+    User.find({ role: 'partner' }).select('partnerProfile.walletBalance').lean(),
+    User.find({ role: 'customer' }).select('customerProfile.coins').lean()
+  ]);
+
+  const totals = paidOrders.reduce(
+    (result, order) => ({
+      totalGmv: result.totalGmv + (order.fare?.total || 0),
+      platformCommission: result.platformCommission + (order.fare?.platformCommission || 0),
+      driverEarnings: result.driverEarnings + (order.fare?.driverCommission || 0)
+    }),
+    { totalGmv: 0, platformCommission: 0, driverEarnings: 0 }
+  );
+
+  return {
+    activeOrders,
+    searchingOrders,
+    totalOrders,
+    totalCustomers,
+    totalDrivers,
+    onlineDrivers,
+    pendingKyc,
+    b2bClients,
+    totalGmv: Math.round(totals.totalGmv),
+    platformCommission: Math.round(totals.platformCommission),
+    driverEarnings: Math.round(totals.driverEarnings),
+    pendingDriverDisbursements: Math.round(
+      partners.reduce((sum, partner) => sum + (partner.partnerProfile?.walletBalance || 0), 0)
+    ),
+    coinsInCirculation: customers.reduce(
+      (sum, customer) => sum + (customer.customerProfile?.coins || 0),
+      0
+    )
+  };
+}
+
+async function loadOrders(filter: Record<string, unknown>, limit: number) {
+  return Order.find(filter)
+    .select('orderNo customer b2bClient partner vehicle pickup drop goodsType weightKg distanceKm fare status paymentStatus paymentMode paymentReference customerCancellation cancellationReason partnerCancellationHistory createdAt updatedAt')
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .populate('partner', 'name phone partnerProfile.vehicleNumber partnerProfile.currentLocation partnerProfile.online status')
+    .populate('customer', 'name phone email city status customerProfile.coins customerProfile.walletBalance')
+    .populate('b2bClient', 'companyName contactPerson phone email contractType outstandingBalance')
+    .populate('vehicle', 'name shortName icon code')
+    .lean();
+}
+
+async function loadCustomers(limit: number) {
+  return User.find({ role: 'customer' })
+    .select('name phone email city status createdAt customerProfile.coins customerProfile.walletBalance')
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+}
+
+async function loadDrivers(filter: Record<string, unknown>, limit: number) {
+  const drivers = await User.find(filter)
+    .select('-expoPushTokens')
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .populate('partnerProfile.vehicleId', 'name shortName icon code capacityKg')
+    .lean();
+
+  const activeOrders = await Order.find({
+    partner: { $in: drivers.map((driver) => driver._id) },
+    status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] }
+  })
+    .select('orderNo status pickup drop distanceKm fare partner partnerLocation')
+    .lean();
+
+  const activeOrderMap = new Map(
+    activeOrders
+      .filter((order) => order.partner)
+      .map((order) => [String(order.partner), order])
+  );
+
+  return drivers.map((driver) => ({
+    ...driver,
+    activeOrder: activeOrderMap.get(String(driver._id)) || null
+  }));
+}
+
+async function loadFinanceData() {
+  const [eligibleDrivers, recentPayouts] = await Promise.all([
+    User.find({ role: 'partner', 'partnerProfile.walletBalance': { $gt: 0 } })
+      .select('name phone partnerProfile.walletBalance partnerProfile.bankDetails partnerProfile.vehicleNumber partnerProfile.kycStatus')
+      .sort({ 'partnerProfile.walletBalance': -1 })
+      .lean(),
+    WalletLedger.find({
+      bucket: 'cash',
+      kind: 'debit',
+      settled: true,
+      $or: [
+        { reference: { $regex: /^DISB-/ } },
+        { title: { $regex: /^Driver payout recorded/ } }
+      ]
+    })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .populate('user', 'name phone role partnerProfile.vehicleNumber')
+      .lean()
+  ]);
+
+  return {
+    totalPendingPayout: Math.round(
+      eligibleDrivers.reduce((sum, driver) => sum + (driver.partnerProfile?.walletBalance || 0), 0)
+    ),
+    eligibleDrivers,
+    recentPayouts
+  };
+}
+
+async function loadCoinsData() {
+  const [users, coinLedger] = await Promise.all([
+    User.find({ role: 'customer' })
+      .select('name phone email city status createdAt role customerProfile.coins customerProfile.walletBalance')
+      .sort({ 'customerProfile.coins': -1 })
+      .limit(50)
+      .lean(),
+    WalletLedger.find({ bucket: 'coins' })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .populate('user', 'name phone role')
+      .lean()
+  ]);
+
+  return { users, coinLedger };
+}
+
+adminRouter.get('/dashboard-snapshot', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [metrics, orders, drivers, clients, finance, coins, vehicles, customers] = await Promise.all([
+      loadOverviewMetrics(),
+      loadOrders({}, 500),
+      loadDrivers({ role: 'partner' }, 200),
+      B2bClient.find().sort({ companyName: 1 }).lean(),
+      loadFinanceData(),
+      loadCoinsData(),
+      Vehicle.find().sort({ name: 1 }).lean(),
+      loadCustomers(1000)
+    ]);
+
+    res.json({
+      overview: { metrics },
+      orders: { orders },
+      drivers: { drivers },
+      b2b: { clients },
+      finance,
+      coins,
+      vehicles: { vehicles },
+      customers: { customers },
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============================================================================
 // 1. DASHBOARD OVERVIEW
 // ============================================================================
 adminRouter.get('/overview', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const [
-      activeOrdersCount,
-      searchingOrdersCount,
-      totalDrivers,
-      onlineDrivers,
-      pendingKycDrivers,
-      b2bClientsCount,
-      totalOrders,
-      totalCustomers
-    ] = await Promise.all([
-      Order.countDocuments({ status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } }),
-      Order.countDocuments({ status: 'searching' }),
-      User.countDocuments({ role: 'partner' }),
-      User.countDocuments({ role: 'partner', 'partnerProfile.online': true }),
-      User.countDocuments({ role: 'partner', 'partnerProfile.kycStatus': 'pending' }),
-      B2bClient.countDocuments({ status: 'active' }),
-      Order.countDocuments(),
-      User.countDocuments({ role: 'customer' })
-    ]);
-
-    // Financial aggregates
-    const orders = await Order.find({ paymentStatus: 'paid' }).select('fare').lean();
-    let totalRevenue = 0;
-    let platformCommission = 0;
-    let driverEarnings = 0;
-
-    for (const ord of orders) {
-      if (ord.fare) {
-        totalRevenue += ord.fare.total || 0;
-        platformCommission += ord.fare.platformCommission || 0;
-        driverEarnings += ord.fare.driverCommission || 0;
-      }
-    }
-
-    // Driver balances liability
-    const partners = await User.find({ role: 'partner' }).select('partnerProfile.walletBalance').lean();
-    let totalDriverWalletLiability = 0;
-    for (const p of partners) {
-      totalDriverWalletLiability += p.partnerProfile?.walletBalance || 0;
-    }
-
-    // Coins liability
-    const customers = await User.find({ role: 'customer' }).select('customerProfile.coins').lean();
-    let totalCoinsInCirculation = 0;
-    for (const c of customers) {
-      totalCoinsInCirculation += c.customerProfile?.coins || 0;
-    }
-
-    res.json({
-      metrics: {
-        activeOrders: activeOrdersCount,
-        searchingOrders: searchingOrdersCount,
-        totalOrders,
-        totalCustomers,
-        totalDrivers,
-        onlineDrivers,
-        pendingKyc: pendingKycDrivers,
-        b2bClients: b2bClientsCount,
-        totalGmv: Math.round(totalRevenue),
-        platformCommission: Math.round(platformCommission),
-        driverEarnings: Math.round(driverEarnings),
-        pendingDriverDisbursements: Math.round(totalDriverWalletLiability),
-        coinsInCirculation: totalCoinsInCirculation
-      }
-    });
+    res.json({ metrics: await loadOverviewMetrics() });
   } catch (error) {
     next(error);
   }
@@ -288,15 +412,7 @@ adminRouter.get('/orders', async (req: Request, res: Response, next: NextFunctio
       ];
     }
 
-    const orders = await Order.find(filter)
-      .select('orderNo customer b2bClient partner vehicle pickup drop goodsType weightKg distanceKm fare status paymentStatus paymentMode paymentReference customerCancellation cancellationReason partnerCancellationHistory createdAt updatedAt')
-      .sort({ updatedAt: -1 })
-      .limit(boundedLimit(limit, 100, 500))
-      .populate('partner', 'name phone partnerProfile.vehicleNumber partnerProfile.currentLocation partnerProfile.online status')
-      .populate('customer', 'name phone email city status customerProfile.coins customerProfile.walletBalance')
-      .populate('b2bClient', 'companyName contactPerson phone email contractType outstandingBalance')
-      .populate('vehicle', 'name shortName icon code')
-      .lean();
+    const orders = await loadOrders(filter, boundedLimit(limit, 100, 500));
 
     res.json({ orders });
   } catch (error) {
@@ -343,11 +459,7 @@ adminRouter.post('/customers/:id/status', async (req: Request, res: Response, ne
 
 adminRouter.get('/customers', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const customers = await User.find({ role: 'customer' })
-      .select('name phone email city status createdAt customerProfile.coins customerProfile.walletBalance')
-      .sort({ createdAt: -1 })
-      .limit(boundedLimit(req.query.limit, 500, 1000))
-      .lean();
+    const customers = await loadCustomers(boundedLimit(req.query.limit, 500, 1000));
     res.json({ customers });
   } catch (error) {
     next(error);
@@ -714,35 +826,8 @@ adminRouter.get('/drivers', async (req: Request, res: Response, next: NextFuncti
       ];
     }
 
-    const drivers = await User.find(filter)
-      .select('-expoPushTokens')
-      .sort({ updatedAt: -1 })
-      .limit(boundedLimit(limit, 200, 500))
-      .populate('partnerProfile.vehicleId', 'name shortName icon code capacityKg')
-      .lean();
-
-    // Attach active order info if any
-    const driverIds = drivers.map((d) => d._id);
-    const activeOrders = await Order.find({
-      partner: { $in: driverIds },
-      status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] }
-    })
-      .select('orderNo status pickup drop distanceKm fare partner partnerLocation')
-      .lean();
-
-    const activeOrderMap = new Map();
-    for (const ord of activeOrders) {
-      if (ord.partner) {
-        activeOrderMap.set(String(ord.partner), ord);
-      }
-    }
-
-    const driversWithOrders = drivers.map((d) => ({
-      ...d,
-      activeOrder: activeOrderMap.get(String(d._id)) || null
-    }));
-
-    res.json({ drivers: driversWithOrders });
+    const drivers = await loadDrivers(filter, boundedLimit(limit, 200, 500));
+    res.json({ drivers });
   } catch (error) {
     next(error);
   }
@@ -912,41 +997,7 @@ adminRouter.post('/drivers/:id/status', async (req: Request, res: Response, next
 // ============================================================================
 adminRouter.get('/finance', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    // Eligible driver payouts
-    const eligibleDrivers = await User.find({
-      role: 'partner',
-      'partnerProfile.walletBalance': { $gt: 0 }
-    })
-      .select('name phone partnerProfile.walletBalance partnerProfile.bankDetails partnerProfile.vehicleNumber partnerProfile.kycStatus')
-      .sort({ 'partnerProfile.walletBalance': -1 })
-      .lean();
-
-    // Only completed admin payout records belong in the payout history.
-    const recentPayouts = await WalletLedger.find({
-      bucket: 'cash',
-      kind: 'debit',
-      settled: true,
-      $or: [
-        { reference: { $regex: /^DISB-/ } },
-        { title: { $regex: /^Driver payout recorded/ } }
-      ]
-    })
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .populate('user', 'name phone role partnerProfile.vehicleNumber')
-      .lean();
-
-    // Summary numbers
-    const totalPendingPayout = eligibleDrivers.reduce(
-      (sum, d) => sum + (d.partnerProfile?.walletBalance || 0),
-      0
-    );
-
-    res.json({
-      totalPendingPayout: Math.round(totalPendingPayout),
-      eligibleDrivers,
-      recentPayouts
-    });
+    res.json(await loadFinanceData());
   } catch (error) {
     next(error);
   }
@@ -1078,17 +1129,23 @@ adminRouter.get('/coins', async (req: Request, res: Response, next: NextFunction
       ];
     }
 
-    const users = await User.find(filter)
-      .select('name phone email city status createdAt role customerProfile.coins customerProfile.walletBalance')
-      .sort({ 'customerProfile.coins': -1 })
-      .limit(50)
-      .lean();
+    if (Object.keys(filter).length === 1) {
+      res.json(await loadCoinsData());
+      return;
+    }
 
-    const coinLedger = await WalletLedger.find({ bucket: 'coins' })
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .populate('user', 'name phone role')
-      .lean();
+    const [users, coinLedger] = await Promise.all([
+      User.find(filter)
+        .select('name phone email city status createdAt role customerProfile.coins customerProfile.walletBalance')
+        .sort({ 'customerProfile.coins': -1 })
+        .limit(50)
+        .lean(),
+      WalletLedger.find({ bucket: 'coins' })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .populate('user', 'name phone role')
+        .lean()
+    ]);
 
     res.json({ users, coinLedger });
   } catch (error) {

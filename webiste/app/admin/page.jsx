@@ -335,59 +335,36 @@ export default function AdminPage() {
     setSyncError(null);
 
     try {
-      const endpoints = [
-        ["/overview", "Overview"],
-        ["/orders?limit=500", "Orders"],
-        ["/drivers", "Drivers"],
-        ["/b2b/clients", "B2B clients"],
-        ["/finance", "Finance"],
-        ["/coins", "Coins"],
-        ["/vehicles", "Vehicles"],
-        ["/customers?limit=1000", "Customers"]
-      ];
-
-      const requestAdminData = async ([path, label]) => {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), 10000);
-
-        try {
-          const response = await adminFetch(`${API_BASE}${path}`, {
-            cache: "no-store",
-            signal: controller.signal
-          });
-          const data = await response.json().catch(() => null);
-          if (!response.ok) {
-            throw new Error(`${label}: ${data?.message || `HTTP ${response.status}`}`);
-          }
-          return data;
-        } catch (error) {
-          if (error?.name === "AbortError") {
-            throw new Error(`${label}: request timed out`);
-          }
-          throw error;
-        } finally {
-          window.clearTimeout(timeout);
-        }
-      };
-
-      const results = await Promise.allSettled(endpoints.map(requestAdminData));
-      const failures = results
-        .filter((result) => result.status === "rejected")
-        .map((result) => result.reason?.message || "Unknown admin API error");
-
-      if (failures.length === results.length) {
-        throw new Error(failures.join("; "));
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 15000);
+      let response;
+      let snapshot;
+      try {
+        response = await adminFetch(`${API_BASE}/dashboard-snapshot`, {
+          cache: "no-store",
+          signal: controller.signal
+        });
+        snapshot = await response.json().catch(() => null);
+      } finally {
+        window.clearTimeout(timeout);
       }
 
-      const dataAt = (index) => results[index].status === "fulfilled" ? results[index].value : null;
-      const overviewData = dataAt(0);
-      const ordersData = dataAt(1);
-      const driversData = dataAt(2);
-      const b2bData = dataAt(3);
-      const financeData = dataAt(4);
-      const coinsData = dataAt(5);
-      const vehiclesData = dataAt(6);
-      const customersData = dataAt(7);
+      if (!response.ok) {
+        const retryAfter = response.headers.get("Retry-After");
+        const retryMessage = response.status === 429 && retryAfter
+          ? ` Retry in ${retryAfter} seconds.`
+          : "";
+        throw new Error(`${snapshot?.message || `HTTP ${response.status}`}${retryMessage}`);
+      }
+
+      const overviewData = snapshot?.overview;
+      const ordersData = snapshot?.orders;
+      const driversData = snapshot?.drivers;
+      const b2bData = snapshot?.b2b;
+      const financeData = snapshot?.finance;
+      const coinsData = snapshot?.coins;
+      const vehiclesData = snapshot?.vehicles;
+      const customersData = snapshot?.customers;
 
       if (overviewData) {
         const d = overviewData;
@@ -449,21 +426,18 @@ export default function AdminPage() {
         setCustomerUsers(customersData.customers);
       }
 
-      if (failures.length > 0) {
-        setSyncError(`Partial sync failure: ${failures.join("; ")}`);
-      }
-      setLastSynced(new Date());
+      setLastSynced(snapshot?.generatedAt ? new Date(snapshot.generatedAt) : new Date());
     } catch (err) {
       console.error("Realtime sync error:", err);
-      setSyncError(`Admin API unavailable: ${err?.message || "connection failed"}`);
+      const message = err?.name === "AbortError" ? "request timed out" : err?.message;
+      setSyncError(`Admin API unavailable: ${message || "connection failed"}`);
     } finally {
       setLoading(false);
       if (!isSilent) setSyncing(false);
     }
   }, []);
 
-  // Refresh while the dashboard is visible. A 30-second interval avoids
-  // repeatedly transferring the full order history in background tabs.
+  // Refresh one consolidated snapshot while the dashboard is visible.
   useEffect(() => {
     fetchAllRealtimeData();
     const interval = setInterval(() => {

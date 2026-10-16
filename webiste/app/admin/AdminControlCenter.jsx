@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./control-center.module.css";
 
 const EMPTY_SETTINGS = {
@@ -20,6 +20,7 @@ const ACTIVE_ORDER_STATUSES = new Set(["searching", "offered", "accepted", "arri
 function useStoredState(key, fallback) {
   const [value, setValue] = useState(fallback);
   const [loaded, setLoaded] = useState(false);
+  const skipInitialPersist = useRef(true);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -48,6 +49,10 @@ function useStoredState(key, fallback) {
   }, [key]);
   useEffect(() => {
     if (!loaded) return;
+    if (skipInitialPersist.current) {
+      skipInitialPersist.current = false;
+      return;
+    }
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {

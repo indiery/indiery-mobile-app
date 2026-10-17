@@ -34,7 +34,6 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
-import indierySplashMark from './assets/splash-mark.png';
 import partnerLoginBackgroundImage from './assets/bg1.png';
 import customerHomeHeaderSkyline from './assets/home-header-skyline.png';
 import customerHomeHeaderTruck from './assets/home-header-truck.png';
@@ -1943,7 +1942,13 @@ export default function App() {
       <LanguageContext.Provider value={language}>
         <SafeAreaView edges={['left', 'right']} style={styles.startupLoadingScreen}>
           <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-          <Image source={indierySplashMark} style={styles.startupLoadingMark} resizeMode="contain" />
+          <Image
+            source={indieryLogoImage}
+            style={styles.startupLoadingMark}
+            resizeMode="contain"
+            tintColor={colors.white}
+            accessibilityLabel="Indiery Partner"
+          />
           <View style={styles.startupLoadingFooter}>
             <ActivityIndicator color={colors.white} size="small" />
             <Text style={styles.startupLoadingText}>{copyFor(language, 'loadingPartner')}</Text>
@@ -6215,7 +6220,7 @@ function Empty({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap
 const styles = StyleSheet.create({
   startupTransitionRoot: { flex: 1 },
   startupLoadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#002B49' },
-  startupLoadingMark: { width: 176, height: 176 },
+  startupLoadingMark: { width: 258, height: 88 },
   startupLoadingFooter: { position: 'absolute', bottom: 72, alignItems: 'center', gap: 10 },
   startupLoadingText: { color: colors.white, fontSize: 12, fontWeight: '600' },
   shell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },

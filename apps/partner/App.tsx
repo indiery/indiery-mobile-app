@@ -258,6 +258,8 @@ const enCopy = {
   rechargeToUnlock: 'Recharge {amount} to unlock new orders',
   requesting: 'Requesting',
   requestPayout: 'Request Payout',
+  payoutAmountLabel: 'Amount to withdraw',
+  payoutAmountHint: 'Enter any amount up to your available balance',
   recentTransactions: 'Recent Transactions',
   wallet: 'Wallet',
   earn: 'Earn',
@@ -579,6 +581,8 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   rechargeToUnlock: 'नए ऑर्डर अनलॉक करने के लिए {amount} रिचार्ज करें',
   requesting: 'अनुरोध हो रहा है',
   requestPayout: 'पेआउट अनुरोध',
+  payoutAmountLabel: 'निकासी राशि',
+  payoutAmountHint: 'उपलब्ध बैलेंस तक कोई भी राशि दर्ज करें',
   recentTransactions: 'हाल की ट्रांजैक्शन',
   wallet: 'वॉलेट',
   earn: 'कमाई',
@@ -2176,10 +2180,9 @@ export default function App() {
             onPageScroll={handlePageScroll}
             data={data}
             busy={busy}
-            onPayout={() =>
+            onPayout={(amount) =>
               withBusy(async () => {
-                const balance = data.user.partnerProfile?.walletBalance ?? 0;
-                const result = await api.requestPayout(balance);
+                const result = await api.requestPayout(amount);
                 setData((current) => current ? { ...current, user: result.user } : current);
                 scheduleRefresh(50);
                 showToast(copyFor(language, 'payoutRequested'));
@@ -4673,15 +4676,31 @@ function EarningsScreen({
   onPageScroll: (offsetY: number) => void;
   data: PartnerBootstrap;
   busy: boolean;
-  onPayout: () => void;
+  onPayout: (amount: number) => void;
   onTopup: (amount: number) => void;
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
+  const { bottom: bottomInset } = useSafeAreaInsets();
   const profile = data.user.partnerProfile;
   const balance = profile?.walletBalance ?? 0;
+  const [payoutSheetOpen, setPayoutSheetOpen] = useState(false);
+  const [payoutAmount, setPayoutAmount] = useState('');
+  const payoutAmountInputRef = useRef<TextInput | null>(null);
+  const requestedAmount = Number(payoutAmount);
+  const payoutAmountValid = Number.isFinite(requestedAmount) && requestedAmount > 0 && requestedAmount <= balance;
   const walletReady = balance >= minPartnerWalletBalance;
   const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
+  const closePayoutSheet = () => {
+    Keyboard.dismiss();
+    setPayoutSheetOpen(false);
+  };
+
+  useEffect(() => {
+    if (!payoutSheetOpen) return;
+    const focusTimer = setTimeout(() => payoutAmountInputRef.current?.focus(), 320);
+    return () => clearTimeout(focusTimer);
+  }, [payoutSheetOpen]);
   return (
     <View style={styles.partnerScrollViewport}>
     <ScrollView
@@ -4712,7 +4731,13 @@ function EarningsScreen({
         {!walletReady ? (
           <PrimaryButton title={busy ? copy.opening : `${copy.recharge} ${money(rechargeAmount)}`} icon="add-circle" onPress={() => onTopup(rechargeAmount)} />
         ) : null}
-        <PrimaryButton title={busy ? copy.requesting : copy.requestPayout} icon="send" onPress={onPayout} />
+        <PrimaryButton
+          title={busy ? copy.requesting : copy.requestPayout}
+          icon="send"
+          onPress={() => {
+            if (!busy) setPayoutSheetOpen(true);
+          }}
+        />
       </View>
       <View style={[styles.statRow, responsive.isCompact && styles.statRowCompact]}>
         <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
@@ -4734,6 +4759,65 @@ function EarningsScreen({
         </View>
       ))}
     </ScrollView>
+    <Modal
+      visible={payoutSheetOpen}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={closePayoutSheet}
+    >
+      <KeyboardAvoidingView style={styles.payoutSheetOverlay} behavior="padding">
+        <Pressable style={styles.payoutSheetBackdrop} onPress={closePayoutSheet} />
+        <View style={[styles.payoutSheet, { paddingBottom: Math.max(24, bottomInset + 12) }]}>
+          <View style={styles.orderHistoryFilterHandle} />
+          <View style={styles.payoutSheetHeader}>
+            <View style={styles.flex}>
+              <Text style={styles.payoutSheetTitle}>{copy.requestPayout}</Text>
+              <Text style={styles.payoutAmountHint}>{copy.payoutAmountHint}</Text>
+            </View>
+            <Pressable
+              style={styles.orderHistoryFilterClose}
+              onPress={closePayoutSheet}
+              accessibilityRole="button"
+              accessibilityLabel={copy.cancel}
+            >
+              <Ionicons name="close" size={20} color={colors.ink} />
+            </Pressable>
+          </View>
+          <Text style={styles.payoutAmountLabel}>{copy.payoutAmountLabel}</Text>
+          <View style={styles.payoutAmountInputWrap}>
+            <Text style={styles.payoutCurrency}>₹</Text>
+            <TextInput
+              value={payoutAmount}
+              onChangeText={(value) => {
+                const cleaned = value.replace(/[^\d.]/g, '');
+                const [whole, ...fraction] = cleaned.split('.');
+                setPayoutAmount(fraction.length ? `${whole}.${fraction.join('').slice(0, 2)}` : whole);
+              }}
+              placeholder="200"
+              keyboardType="decimal-pad"
+              style={styles.payoutAmountInput}
+              accessibilityLabel={copy.payoutAmountLabel}
+              ref={payoutAmountInputRef}
+            />
+          </View>
+          <Text style={styles.payoutSheetAvailable}>{copy.walletBalance}: {money(balance)}</Text>
+          <PrimaryButton
+            title={busy ? copy.requesting : copy.requestPayout}
+            icon="send"
+            disabled={!payoutAmountValid || busy}
+            fullWidth
+            onPress={() => {
+              if (!payoutAmountValid || busy) return;
+              Keyboard.dismiss();
+              setPayoutSheetOpen(false);
+              onPayout(requestedAmount);
+            }}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
     </View>
   );
 }
@@ -5527,10 +5611,10 @@ function getNextActions(order: Order, copy: Record<CopyKey, string>) {
   return [{ kind: 'status' as const, label: copy.refreshTrip, status: 'in_transit' as const, icon: 'refresh' as const }];
 }
 
-function PrimaryButton({ title, icon, onPress }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }) {
+function PrimaryButton({ title, icon, onPress, disabled = false, fullWidth = false }: { title: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void; disabled?: boolean; fullWidth?: boolean }) {
   const responsive = useResponsiveLayout();
   return (
-    <Pressable style={[styles.primaryButton, responsive.isCompact && styles.primaryButtonCompact, responsive.isSmall && styles.primaryButtonSmall]} onPress={onPress}>
+    <Pressable disabled={disabled} style={[styles.primaryButton, responsive.isCompact && styles.primaryButtonCompact, responsive.isSmall && styles.primaryButtonSmall, fullWidth && styles.primaryButtonFullWidth, disabled && styles.primaryButtonDisabled]} onPress={onPress}>
       <Ionicons name={icon} size={responsive.isSmall ? 13 : responsive.isCompact ? 15 : 17} color={colors.white} />
       <Text style={[styles.primaryButtonText, responsive.isCompact && styles.primaryButtonTextCompact, responsive.isSmall && styles.primaryButtonTextSmall]}>{title}</Text>
     </Pressable>
@@ -6942,6 +7026,8 @@ const styles = StyleSheet.create({
   priceTextCompact: { fontSize: 12 },
   priceTextSmall: { fontSize: 10 },
   primaryButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.partner, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12, marginBottom: 10 },
+  primaryButtonDisabled: { opacity: 0.45 },
+  primaryButtonFullWidth: { flex: 0, width: '100%', alignSelf: 'stretch', marginBottom: 0 },
   primaryButtonCompact: { minHeight: 40, borderRadius: 12, gap: 5, paddingHorizontal: 9, marginBottom: 8 },
   primaryButtonSmall: { minHeight: 37, borderRadius: 11, gap: 4, paddingHorizontal: 8, marginBottom: 7 },
   primaryButtonText: { flexShrink: 1, color: colors.white, fontWeight: '900', textAlign: 'center' },
@@ -7006,6 +7092,17 @@ const styles = StyleSheet.create({
   expandedRouteError: { color: '#B45309', fontSize: 10, fontWeight: '800', lineHeight: 14, marginTop: 4 },
   expandedRouteMinimizeButton: { position: 'absolute', right: 16, bottom: 20, width: 50, height: 50, borderRadius: 25, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   payoutCard: { backgroundColor: colors.partnerLight, borderRadius: 16, padding: 14, marginBottom: 14 },
+  payoutSheetOverlay: { flex: 1, justifyContent: 'flex-end' },
+  payoutSheetBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
+  payoutSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.white, paddingHorizontal: 20, paddingTop: 10, gap: 10 },
+  payoutSheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
+  payoutSheetTitle: { color: colors.ink, fontSize: 19, fontWeight: '800', marginBottom: 4 },
+  payoutAmountLabel: { alignSelf: 'flex-start', color: colors.ink, fontSize: 12, fontWeight: '800', marginTop: 4 },
+  payoutAmountHint: { alignSelf: 'flex-start', color: colors.muted, fontSize: 11, fontWeight: '600' },
+  payoutAmountInputWrap: { width: '100%', minHeight: 48, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.white, paddingHorizontal: 13 },
+  payoutCurrency: { color: colors.ink, fontSize: 18, fontWeight: '800', marginRight: 8 },
+  payoutAmountInput: { flex: 1, minHeight: 46, color: colors.ink, fontSize: 18, fontWeight: '700', paddingVertical: 0 },
+  payoutSheetAvailable: { alignSelf: 'flex-start', color: colors.muted, fontSize: 11, fontWeight: '700' },
   payoutCardCompact: { borderRadius: 14, padding: 10, marginBottom: 10 },
   fareLabel: { color: colors.partner, fontSize: 13 },
   fareLabelCompact: { flexShrink: 1, fontSize: 11 },

@@ -12,7 +12,6 @@ import {
 } from "react-leaflet";
 import styles from "./admin.module.css";
 
-const DEFAULT_CENTER = [26.8467, 80.9462];
 const FRESH_LOCATION_MS = 5 * 60 * 1000;
 
 function coordinates(value) {
@@ -78,7 +77,11 @@ export default function LiveFleetMap({ drivers, selectedDriverId, onSelectDriver
   const pickupPosition = orderCoordinates(selectedDriver?.activeOrder?.pickup);
   const dropPosition = orderCoordinates(selectedDriver?.activeOrder?.drop);
   const routePositions = pickupPosition && dropPosition ? [pickupPosition, dropPosition] : null;
-  const initialCenter = selectedPosition || locatedDrivers[0]?.position || DEFAULT_CENTER;
+  const initialCenter = selectedPosition || locatedDrivers[0]?.position;
+
+  if (!initialCenter) {
+    return <div className={styles.mapEmptyNotice}>No drivers in this view have sent GPS coordinates yet.</div>;
+  }
 
   return (
     <>
@@ -150,10 +153,6 @@ export default function LiveFleetMap({ drivers, selectedDriverId, onSelectDriver
           );
         })}
       </MapContainer>
-
-      {locatedDrivers.length === 0 && (
-        <div className={styles.mapEmptyNotice}>No drivers in this view have sent GPS coordinates yet.</div>
-      )}
 
       <div className={styles.mapLegend} aria-label="Map status legend">
         <span><i className={styles.legendLive}></i>Live</span>

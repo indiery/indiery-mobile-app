@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth';
+import { AuthRequest, requireAuth } from '../middleware/auth';
 import { asyncRoute } from '../middleware/error';
 import { EnterpriseEnquiry } from '../models/EnterpriseEnquiry';
 import { User } from '../models/User';
@@ -8,15 +8,25 @@ import { Order } from '../models/Order';
 import { Vehicle } from '../models/Vehicle';
 import { WalletLedger } from '../models/WalletLedger';
 import { B2bClient } from '../models/B2bClient';
+import { AdminWorkspace } from '../models/AdminWorkspace';
 import { Counter } from '../models/Counter';
 import { ApiError } from '../middleware/error';
 import { isValidObjectId } from 'mongoose';
 import { calculateDeliverySettlement, calculatePartnerWalletSettlement } from '../services/settlement.service';
 import { resolveRouteMetrics } from '../services/maps.service';
+import { normalizeFareBreakup } from '../services/fare.service';
+import { sendPush } from '../services/notification.service';
+import { createRateLimit } from '../middleware/rateLimit';
 
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth(['admin']));
+adminRouter.use(createRateLimit({
+  windowMs: 60_000,
+  maxRequests: 300,
+  keyGenerator: (req) => `admin:${(req as AuthRequest).auth?.userId || 'unknown'}`,
+  message: 'Admin request limit reached. Please wait briefly before retrying.'
+}));
 
 adminRouter.get(
   '/enterprise-enquiries',
@@ -36,6 +46,121 @@ adminRouter.get(
     res.json({ enquiries, total, page: query.page, limit: query.limit });
   })
 );
+
+const adminWorkspaceKeys = new Set([
+  'customer-overrides',
+  'tickets',
+  'notifications',
+  'areas',
+  'users',
+  'settings',
+  'audit',
+  'disputes'
+]);
+
+adminRouter.get('/workspace/:key', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+    if (!adminWorkspaceKeys.has(key)) throw new ApiError(404, 'Admin workspace resource not found');
+    const resource = await AdminWorkspace.findOne({ key }).lean();
+    res.json({ key, value: resource?.value ?? null, updatedAt: resource?.updatedAt ?? null });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.put('/workspace/:key', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+    if (!adminWorkspaceKeys.has(key)) throw new ApiError(404, 'Admin workspace resource not found');
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'value')) throw new ApiError(400, 'value is required');
+    const serializedSize = Buffer.byteLength(JSON.stringify(req.body.value), 'utf8');
+    if (serializedSize > 500_000) throw new ApiError(413, 'Admin workspace resource is too large');
+    const resource = await AdminWorkspace.findOneAndUpdate(
+      { key },
+      { $set: { value: req.body.value, updatedBy: req.auth?.userId } },
+      { new: true, upsert: true, runValidators: true }
+    ).lean();
+    res.json({ success: true, key, value: resource?.value, updatedAt: resource?.updatedAt });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.get('/vehicles', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const vehicles = await Vehicle.find().sort({ name: 1 }).lean();
+    res.json({ vehicles });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.patch('/vehicles/:id/pricing', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!isValidObjectId(req.params.id)) throw new ApiError(400, 'Invalid vehicle ID');
+
+    const baseFare = Number(req.body.baseFare);
+    const perKm = Number(req.body.perKm);
+    const partnerShare = Number(req.body.partnerShare);
+    const etaMinutes = Number(req.body.etaMinutes);
+    if (!Number.isFinite(baseFare) || baseFare < 0) throw new ApiError(400, 'baseFare must be zero or greater');
+    if (!Number.isFinite(perKm) || perKm < 0) throw new ApiError(400, 'perKm must be zero or greater');
+    if (!Number.isFinite(partnerShare) || partnerShare < 0 || partnerShare > 1) {
+      throw new ApiError(400, 'partnerShare must be between zero and one');
+    }
+    if (!Number.isInteger(etaMinutes) || etaMinutes < 1) throw new ApiError(400, 'etaMinutes must be a positive whole number');
+    if (typeof req.body.active !== 'boolean') throw new ApiError(400, 'active must be a boolean');
+
+    const vehicle = await Vehicle.findByIdAndUpdate(
+      req.params.id,
+      { $set: { baseFare, perKm, partnerShare, etaMinutes, active: req.body.active } },
+      { new: true, runValidators: true }
+    ).lean();
+    if (!vehicle) throw new ApiError(404, 'Vehicle not found');
+    res.json({ success: true, vehicle });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/notifications/send', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
+    const message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
+    const audience = typeof req.body.audience === 'string' ? req.body.audience : '';
+    if (!title || !message) throw new ApiError(400, 'title and message are required');
+
+    const allowedAudiences = new Set([
+      'all_customers',
+      'all_drivers',
+      'pending_kyc_drivers',
+      'active_delivery_customers'
+    ]);
+    if (!allowedAudiences.has(audience)) throw new ApiError(400, 'Invalid notification audience');
+
+    let userFilter: Record<string, unknown>;
+    if (audience === 'all_customers') userFilter = { role: 'customer' };
+    else if (audience === 'all_drivers') userFilter = { role: 'partner' };
+    else if (audience === 'pending_kyc_drivers') {
+      userFilter = { role: 'partner', 'partnerProfile.kycStatus': 'pending' };
+    } else {
+      const customerIds = await Order.distinct('customer', {
+        status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] }
+      });
+      userFilter = { role: 'customer', _id: { $in: customerIds } };
+    }
+
+    const users = await User.find(userFilter).select('expoPushTokens').lean();
+    const tokens = users.flatMap((user) => user.expoPushTokens ?? []);
+    const campaignId = `NTF-${Date.now()}`;
+    const result = await sendPush(tokens, title, message, { type: 'admin_campaign', campaignId }, { channelId: 'general' });
+    res.json({ success: true, campaignId, audienceSize: users.length, ...result });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const ACTIVE_ORDER_STATUSES = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];
 
 function boundedLimit(value: unknown, fallback: number, maximum: number) {
@@ -61,80 +186,225 @@ async function loadAssignableDriver(driverId: string) {
   if (driver.partnerProfile?.kycStatus !== 'verified') {
     throw new ApiError(409, 'Driver KYC must be verified before assignment');
   }
-  if (!driver.partnerProfile?.online) throw new ApiError(409, 'Driver must be online before assignment');
 
   const activeOrder = await Order.exists({ partner: driver._id, status: { $in: ACTIVE_ORDER_STATUSES } });
   if (activeOrder) throw new ApiError(409, 'Driver already has an active order');
   return driver;
 }
 
+function notifyManualAssignment(
+  driver: { expoPushTokens?: string[] },
+  order: { _id: unknown; orderNo: string }
+) {
+  void sendPush(
+    driver.expoPushTokens,
+    'Delivery assigned by operations',
+    `${order.orderNo} has been assigned to you. Open the Partner app to view the delivery.`,
+    {
+      event: 'admin_order_assigned',
+      role: 'partner',
+      screen: 'active',
+      orderId: String(order._id),
+      orderNo: order.orderNo
+    },
+    {
+      ttl: 3600,
+      collapseId: `admin-assignment-${String(order._id)}`,
+      channelId: 'driver-order-alerts-v2',
+      priority: 'high'
+    }
+  ).catch((error) => {
+    console.error('Unable to send manual driver-assignment notification', error);
+  });
+}
+
+async function loadOverviewMetrics() {
+  const [
+    activeOrders,
+    searchingOrders,
+    totalDrivers,
+    onlineDrivers,
+    pendingKyc,
+    b2bClients,
+    totalOrders,
+    totalCustomers,
+    paidOrders,
+    partners,
+    customers
+  ] = await Promise.all([
+    Order.countDocuments({ status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } }),
+    Order.countDocuments({ status: 'searching' }),
+    User.countDocuments({ role: 'partner' }),
+    User.countDocuments({ role: 'partner', 'partnerProfile.online': true }),
+    User.countDocuments({ role: 'partner', 'partnerProfile.kycStatus': 'pending' }),
+    B2bClient.countDocuments({ status: 'active' }),
+    Order.countDocuments(),
+    User.countDocuments({ role: 'customer' }),
+    Order.find({ paymentStatus: 'paid' }).select('fare').lean(),
+    User.find({ role: 'partner' }).select('partnerProfile.walletBalance').lean(),
+    User.find({ role: 'customer' }).select('customerProfile.coins').lean()
+  ]);
+
+  const totals = paidOrders.reduce(
+    (result, order) => ({
+      totalGmv: result.totalGmv + (order.fare?.total || 0),
+      platformCommission: result.platformCommission + (order.fare?.platformCommission || 0),
+      driverEarnings: result.driverEarnings + (order.fare?.driverCommission || 0)
+    }),
+    { totalGmv: 0, platformCommission: 0, driverEarnings: 0 }
+  );
+
+  return {
+    activeOrders,
+    searchingOrders,
+    totalOrders,
+    totalCustomers,
+    totalDrivers,
+    onlineDrivers,
+    pendingKyc,
+    b2bClients,
+    totalGmv: Math.round(totals.totalGmv),
+    platformCommission: Math.round(totals.platformCommission),
+    driverEarnings: Math.round(totals.driverEarnings),
+    pendingDriverDisbursements: Math.round(
+      partners.reduce((sum, partner) => sum + (partner.partnerProfile?.walletBalance || 0), 0)
+    ),
+    coinsInCirculation: customers.reduce(
+      (sum, customer) => sum + (customer.customerProfile?.coins || 0),
+      0
+    )
+  };
+}
+
+async function loadOrders(filter: Record<string, unknown>, limit: number) {
+  return Order.find(filter)
+    .select('orderNo customer b2bClient partner vehicle pickup drop goodsType weightKg distanceKm fare status paymentStatus paymentMode paymentReference customerCancellation cancellationReason partnerCancellationHistory createdAt updatedAt')
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .populate('partner', 'name phone partnerProfile.vehicleNumber partnerProfile.currentLocation partnerProfile.online status')
+    .populate('customer', 'name phone email city status customerProfile.coins customerProfile.walletBalance')
+    .populate('b2bClient', 'companyName contactPerson phone email contractType outstandingBalance')
+    .populate('vehicle', 'name shortName icon code')
+    .lean();
+}
+
+async function loadCustomers(limit: number) {
+  return User.find({ role: 'customer' })
+    .select('name phone email city status createdAt customerProfile.coins customerProfile.walletBalance')
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+}
+
+async function loadDrivers(filter: Record<string, unknown>, limit: number) {
+  const drivers = await User.find(filter)
+    .select('-expoPushTokens')
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .populate('partnerProfile.vehicleId', 'name shortName icon code capacityKg')
+    .lean();
+
+  const activeOrders = await Order.find({
+    partner: { $in: drivers.map((driver) => driver._id) },
+    status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] }
+  })
+    .select('orderNo status pickup drop distanceKm fare partner partnerLocation')
+    .lean();
+
+  const activeOrderMap = new Map(
+    activeOrders
+      .filter((order) => order.partner)
+      .map((order) => [String(order.partner), order])
+  );
+
+  return drivers.map((driver) => ({
+    ...driver,
+    activeOrder: activeOrderMap.get(String(driver._id)) || null
+  }));
+}
+
+async function loadFinanceData() {
+  const [eligibleDrivers, recentPayouts] = await Promise.all([
+    User.find({ role: 'partner', 'partnerProfile.walletBalance': { $gt: 0 } })
+      .select('name phone partnerProfile.walletBalance partnerProfile.bankDetails partnerProfile.vehicleNumber partnerProfile.kycStatus')
+      .sort({ 'partnerProfile.walletBalance': -1 })
+      .lean(),
+    WalletLedger.find({
+      bucket: 'cash',
+      kind: 'debit',
+      settled: true,
+      $or: [
+        { reference: { $regex: /^DISB-/ } },
+        { title: { $regex: /^Driver payout recorded/ } }
+      ]
+    })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .populate('user', 'name phone role partnerProfile.vehicleNumber')
+      .lean()
+  ]);
+
+  return {
+    totalPendingPayout: Math.round(
+      eligibleDrivers.reduce((sum, driver) => sum + (driver.partnerProfile?.walletBalance || 0), 0)
+    ),
+    eligibleDrivers,
+    recentPayouts
+  };
+}
+
+async function loadCoinsData() {
+  const [users, coinLedger] = await Promise.all([
+    User.find({ role: 'customer' })
+      .select('name phone email city status createdAt role customerProfile.coins customerProfile.walletBalance')
+      .sort({ 'customerProfile.coins': -1 })
+      .limit(50)
+      .lean(),
+    WalletLedger.find({ bucket: 'coins' })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .populate('user', 'name phone role')
+      .lean()
+  ]);
+
+  return { users, coinLedger };
+}
+
+adminRouter.get('/dashboard-snapshot', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [metrics, orders, drivers, clients, finance, coins, vehicles, customers] = await Promise.all([
+      loadOverviewMetrics(),
+      loadOrders({}, 500),
+      loadDrivers({ role: 'partner' }, 200),
+      B2bClient.find().sort({ companyName: 1 }).lean(),
+      loadFinanceData(),
+      loadCoinsData(),
+      Vehicle.find().sort({ name: 1 }).lean(),
+      loadCustomers(1000)
+    ]);
+
+    res.json({
+      overview: { metrics },
+      orders: { orders },
+      drivers: { drivers },
+      b2b: { clients },
+      finance,
+      coins,
+      vehicles: { vehicles },
+      customers: { customers },
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============================================================================
 // 1. DASHBOARD OVERVIEW
 // ============================================================================
 adminRouter.get('/overview', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const [
-      activeOrdersCount,
-      searchingOrdersCount,
-      totalDrivers,
-      onlineDrivers,
-      pendingKycDrivers,
-      b2bClientsCount,
-      totalOrders
-    ] = await Promise.all([
-      Order.countDocuments({ status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] } }),
-      Order.countDocuments({ status: 'searching' }),
-      User.countDocuments({ role: 'partner' }),
-      User.countDocuments({ role: 'partner', 'partnerProfile.online': true }),
-      User.countDocuments({ role: 'partner', 'partnerProfile.kycStatus': 'pending' }),
-      B2bClient.countDocuments({ status: 'active' }),
-      Order.countDocuments()
-    ]);
-
-    // Financial aggregates
-    const orders = await Order.find({ paymentStatus: 'paid' }).select('fare').lean();
-    let totalRevenue = 0;
-    let platformCommission = 0;
-    let driverEarnings = 0;
-
-    for (const ord of orders) {
-      if (ord.fare) {
-        totalRevenue += ord.fare.total || 0;
-        platformCommission += ord.fare.platformCommission || 0;
-        driverEarnings += ord.fare.driverCommission || 0;
-      }
-    }
-
-    // Driver balances liability
-    const partners = await User.find({ role: 'partner' }).select('partnerProfile.walletBalance').lean();
-    let totalDriverWalletLiability = 0;
-    for (const p of partners) {
-      totalDriverWalletLiability += p.partnerProfile?.walletBalance || 0;
-    }
-
-    // Coins liability
-    const customers = await User.find({ role: 'customer' }).select('customerProfile.coins').lean();
-    let totalCoinsInCirculation = 0;
-    for (const c of customers) {
-      totalCoinsInCirculation += c.customerProfile?.coins || 0;
-    }
-
-    res.json({
-      metrics: {
-        activeOrders: activeOrdersCount,
-        searchingOrders: searchingOrdersCount,
-        totalOrders,
-        totalDrivers,
-        onlineDrivers,
-        pendingKyc: pendingKycDrivers,
-        b2bClients: b2bClientsCount,
-        totalGmv: Math.round(totalRevenue),
-        platformCommission: Math.round(platformCommission),
-        driverEarnings: Math.round(driverEarnings),
-        pendingDriverDisbursements: Math.round(totalDriverWalletLiability),
-        coinsInCirculation: totalCoinsInCirculation
-      }
-    });
+    res.json({ metrics: await loadOverviewMetrics() });
   } catch (error) {
     next(error);
   }
@@ -167,14 +437,7 @@ adminRouter.get('/orders', async (req: Request, res: Response, next: NextFunctio
       ];
     }
 
-    const orders = await Order.find(filter)
-      .select('orderNo customer partner vehicle pickup drop goodsType weightKg distanceKm fare status paymentStatus paymentMode createdAt updatedAt')
-      .sort({ updatedAt: -1 })
-      .limit(boundedLimit(limit, 100, 500))
-      .populate('partner', 'name phone partnerProfile.vehicleNumber partnerProfile.currentLocation partnerProfile.online status')
-      .populate('customer', 'name phone email customerProfile.coins')
-      .populate('vehicle', 'name shortName icon code')
-      .lean();
+    const orders = await loadOrders(filter, boundedLimit(limit, 100, 500));
 
     res.json({ orders });
   } catch (error) {
@@ -187,11 +450,42 @@ adminRouter.get('/orders/:id', async (req: Request, res: Response, next: NextFun
     const order = await Order.findById(req.params.id)
       .populate('partner')
       .populate('customer')
+      .populate('b2bClient')
       .populate('vehicle')
       .lean();
 
     if (!order) throw new ApiError(404, 'Order not found');
     res.json({ order });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/customers/:id/status', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { status, reason } = req.body;
+    if (!['active', 'blocked'].includes(status)) {
+      throw new ApiError(400, "status must be 'active' or 'blocked'");
+    }
+    if (typeof reason !== 'string' || !reason.trim()) {
+      throw new ApiError(400, 'An account status reason is required');
+    }
+    const customer = await User.findOneAndUpdate(
+      { _id: req.params.id, role: 'customer' },
+      { $set: { status } },
+      { new: true }
+    ).select('-expoPushTokens');
+    if (!customer) throw new ApiError(404, 'Customer not found');
+    res.json({ success: true, customer, reason: reason.trim() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.get('/customers', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const customers = await loadCustomers(boundedLimit(req.query.limit, 500, 1000));
+    res.json({ customers });
   } catch (error) {
     next(error);
   }
@@ -232,6 +526,7 @@ adminRouter.post('/orders/:id/assign', async (req: Request, res: Response, next:
     });
 
     await order.save();
+    notifyManualAssignment(driver, order);
     const updated = await Order.findById(order._id)
       .populate('partner', 'name phone partnerProfile')
       .populate('customer', 'name phone')
@@ -383,15 +678,15 @@ adminRouter.post('/orders/create-on-demand', async (req: Request, res: Response,
       customerPhone,
       pickupAddress,
       dropAddress,
-      vehicleCode = 'mini750',
-      goodsType = 'Household & Commercial Goods',
-      weightKg = 150,
-      totalFare = 450,
+      vehicleCode,
+      goodsType,
+      weightKg,
+      totalFare,
       driverId
     } = req.body;
 
-    if (!customerPhone || !pickupAddress || !dropAddress) {
-      throw new ApiError(400, 'customerPhone, pickupAddress, and dropAddress are required');
+    if (!customerName || !customerPhone || !pickupAddress || !dropAddress || !vehicleCode || !goodsType) {
+      throw new ApiError(400, 'customerName, customerPhone, pickupAddress, dropAddress, vehicleCode, and goodsType are required');
     }
 
     const fareNum = Number(totalFare);
@@ -406,12 +701,11 @@ adminRouter.post('/orders/create-on-demand', async (req: Request, res: Response,
     if (!customer) {
       customer = await User.create({
         role: 'customer',
-        name: customerName || 'Retail Customer',
-        initials: (customerName || 'RC').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
+        name: String(customerName).trim(),
+        initials: String(customerName).trim().split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase(),
         phone: String(customerPhone).trim(),
-        city: 'Lucknow',
         status: 'active',
-        customerProfile: { coins: 50, walletBalance: 0, savedAddresses: [] }
+        customerProfile: { coins: 0, walletBalance: 0, savedAddresses: [] }
       });
     }
 
@@ -419,8 +713,12 @@ adminRouter.post('/orders/create-on-demand', async (req: Request, res: Response,
     if (!vehicle) throw new ApiError(400, 'The requested vehicle type is invalid or inactive');
 
     const orderNo = await nextOrderNo();
-    const driverCommission = Math.round(fareNum * 0.82);
-    const platformCommission = fareNum - driverCommission;
+    const fare = normalizeFareBreakup({
+      orderValue: fareNum,
+      base: Math.min(vehicle.baseFare, fareNum),
+      distance: Math.max(0, fareNum - vehicle.baseFare),
+      total: fareNum
+    }, routeMetrics.distanceKm);
 
     const newOrder = new Order({
       orderNo,
@@ -429,33 +727,19 @@ adminRouter.post('/orders/create-on-demand', async (req: Request, res: Response,
       pickup: {
         label: 'Pickup Address',
         address: pickupAddress,
-        contactName: customerName || 'Customer Pickup',
+        contactName: String(customerName).trim(),
         contactPhone: customerPhone
       },
       drop: {
         label: 'Delivery Destination',
         address: dropAddress,
-        contactName: 'Consignee Receiver',
+        contactName: String(customerName).trim(),
         contactPhone: customerPhone
       },
       goodsType,
       weightKg: weightNum,
       distanceKm: routeMetrics.distanceKm,
-      fare: {
-        orderValue: fareNum,
-        billableKm: routeMetrics.distanceKm,
-        base: 200,
-        distance: Math.max(0, fareNum - 200),
-        total: fareNum,
-        driverCommission,
-        reserveAmount: Math.round(fareNum * 0.1),
-        partnerNet: driverCommission,
-        platformCommission,
-        lateDriverPenalty: 0,
-        latePlatformPenalty: 0,
-        onTimePartnerPayout: driverCommission,
-        latePartnerPayout: driverCommission
-      },
+      fare,
       paymentMode: 'cash',
       paymentProvider: 'cash',
       paymentStatus: 'pending',
@@ -483,9 +767,11 @@ adminRouter.post('/orders/create-on-demand', async (req: Request, res: Response,
     }
 
     await newOrder.save();
+    if (selectedDriver) notifyManualAssignment(selectedDriver, newOrder);
     const populated = await Order.findById(newOrder._id)
       .populate('partner')
       .populate('customer')
+      .populate('b2bClient')
       .populate('vehicle')
       .lean();
 
@@ -495,13 +781,15 @@ adminRouter.post('/orders/create-on-demand', async (req: Request, res: Response,
   }
 });
 
-// Update driver live location (for real-time simulated tracking)
+// Update a driver location supplied by the application.
 adminRouter.post('/drivers/:id/location', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { lat, lng, heading = 0, speed = 25 } = req.body;
+    const { lat, lng, heading, speed } = req.body;
     if (typeof lat !== 'number' || typeof lng !== 'number') {
       throw new ApiError(400, 'Valid numeric lat and lng are required');
     }
+    if (heading !== undefined && typeof heading !== 'number') throw new ApiError(400, 'heading must be numeric');
+    if (speed !== undefined && typeof speed !== 'number') throw new ApiError(400, 'speed must be numeric');
 
     const driver = await User.findById(req.params.id);
     if (!driver || driver.role !== 'partner') throw new ApiError(404, 'Driver not found');
@@ -511,8 +799,8 @@ adminRouter.post('/drivers/:id/location', async (req: Request, res: Response, ne
     partnerProfile.currentLocation = {
       lat,
       lng,
-      heading,
-      speed,
+      ...(heading !== undefined ? { heading } : {}),
+      ...(speed !== undefined ? { speed } : {}),
       updatedAt: new Date()
     };
     await driver.save();
@@ -525,8 +813,8 @@ adminRouter.post('/drivers/:id/location', async (req: Request, res: Response, ne
           partnerLocation: {
             lat,
             lng,
-            heading,
-            speed,
+            ...(heading !== undefined ? { heading } : {}),
+            ...(speed !== undefined ? { speed } : {}),
             updatedAt: new Date()
           }
         }
@@ -565,35 +853,8 @@ adminRouter.get('/drivers', async (req: Request, res: Response, next: NextFuncti
       ];
     }
 
-    const drivers = await User.find(filter)
-      .select('-expoPushTokens')
-      .sort({ updatedAt: -1 })
-      .limit(boundedLimit(limit, 200, 500))
-      .populate('partnerProfile.vehicleId', 'name shortName icon code capacityKg')
-      .lean();
-
-    // Attach active order info if any
-    const driverIds = drivers.map((d) => d._id);
-    const activeOrders = await Order.find({
-      partner: { $in: driverIds },
-      status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] }
-    })
-      .select('orderNo status pickup drop distanceKm fare partner partnerLocation')
-      .lean();
-
-    const activeOrderMap = new Map();
-    for (const ord of activeOrders) {
-      if (ord.partner) {
-        activeOrderMap.set(String(ord.partner), ord);
-      }
-    }
-
-    const driversWithOrders = drivers.map((d) => ({
-      ...d,
-      activeOrder: activeOrderMap.get(String(d._id)) || null
-    }));
-
-    res.json({ drivers: driversWithOrders });
+    const drivers = await loadDrivers(filter, boundedLimit(limit, 200, 500));
+    res.json({ drivers });
   } catch (error) {
     next(error);
   }
@@ -683,6 +944,48 @@ adminRouter.post('/drivers/:id/kyc', async (req: Request, res: Response, next: N
   }
 });
 
+adminRouter.post('/drivers/:id/kyc/document', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { documentKey, approved, reason } = req.body;
+    const allowedDocumentKeys = ['selfie', 'pan', 'aadhaar', 'drivingLicence', 'rc', 'insurance', 'bank'];
+    if (!allowedDocumentKeys.includes(documentKey)) {
+      throw new ApiError(400, 'Select a valid KYC document');
+    }
+    if (typeof approved !== 'boolean') {
+      throw new ApiError(400, 'approved must be true or false');
+    }
+    if (!approved && (typeof reason !== 'string' || !reason.trim())) {
+      throw new ApiError(400, 'A correction reason is required');
+    }
+
+    const driver = await User.findOne({ _id: req.params.id, role: 'partner' });
+    if (!driver) throw new ApiError(404, 'Driver not found');
+
+    const uploadedUrl = driver.get(`partnerProfile.docUrls.${documentKey}`);
+    if (approved && (typeof uploadedUrl !== 'string' || !uploadedUrl.trim())) {
+      throw new ApiError(400, 'The document cannot be approved until a file is uploaded');
+    }
+
+    driver.set(`partnerProfile.docs.${documentKey}`, approved);
+    driver.set('partnerProfile.kycReviewedAt', new Date());
+    if (!approved) {
+      driver.set('partnerProfile.kycStatus', 'pending');
+      driver.set('partnerProfile.kycRejectionReason', `${documentKey}: ${reason.trim()}`);
+    }
+    await driver.save();
+
+    res.json({
+      success: true,
+      message: approved ? `${documentKey} approved` : `Correction requested for ${documentKey}`,
+      documentKey,
+      approved,
+      reviewedAt: driver.partnerProfile?.kycReviewedAt
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Toggle driver block/active status
 adminRouter.post('/drivers/:id/status', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -721,41 +1024,7 @@ adminRouter.post('/drivers/:id/status', async (req: Request, res: Response, next
 // ============================================================================
 adminRouter.get('/finance', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    // Eligible driver payouts
-    const eligibleDrivers = await User.find({
-      role: 'partner',
-      'partnerProfile.walletBalance': { $gt: 0 }
-    })
-      .select('name phone partnerProfile.walletBalance partnerProfile.bankDetails partnerProfile.vehicleNumber partnerProfile.kycStatus')
-      .sort({ 'partnerProfile.walletBalance': -1 })
-      .lean();
-
-    // Only completed admin payout records belong in the payout history.
-    const recentPayouts = await WalletLedger.find({
-      bucket: 'cash',
-      kind: 'debit',
-      settled: true,
-      $or: [
-        { reference: { $regex: /^DISB-/ } },
-        { title: { $regex: /^Driver payout recorded/ } }
-      ]
-    })
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .populate('user', 'name phone role partnerProfile.vehicleNumber')
-      .lean();
-
-    // Summary numbers
-    const totalPendingPayout = eligibleDrivers.reduce(
-      (sum, d) => sum + (d.partnerProfile?.walletBalance || 0),
-      0
-    );
-
-    res.json({
-      totalPendingPayout: Math.round(totalPendingPayout),
-      eligibleDrivers,
-      recentPayouts
-    });
+    res.json(await loadFinanceData());
   } catch (error) {
     next(error);
   }
@@ -887,17 +1156,23 @@ adminRouter.get('/coins', async (req: Request, res: Response, next: NextFunction
       ];
     }
 
-    const users = await User.find(filter)
-      .select('name phone role customerProfile.coins partnerProfile.walletBalance')
-      .sort({ 'customerProfile.coins': -1 })
-      .limit(50)
-      .lean();
+    if (Object.keys(filter).length === 1) {
+      res.json(await loadCoinsData());
+      return;
+    }
 
-    const coinLedger = await WalletLedger.find({ bucket: 'coins' })
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .populate('user', 'name phone role')
-      .lean();
+    const [users, coinLedger] = await Promise.all([
+      User.find(filter)
+        .select('name phone email city status createdAt role customerProfile.coins customerProfile.walletBalance')
+        .sort({ 'customerProfile.coins': -1 })
+        .limit(50)
+        .lean(),
+      WalletLedger.find({ bucket: 'coins' })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .populate('user', 'name phone role')
+        .lean()
+    ]);
 
     res.json({ users, coinLedger });
   } catch (error) {
@@ -907,7 +1182,7 @@ adminRouter.get('/coins', async (req: Request, res: Response, next: NextFunction
 
 adminRouter.post('/coins/adjust', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { userId, phone, amount, type = 'credit', reason = 'Admin Adjustment' } = req.body;
+    const { userId, phone, amount, type = 'credit', reason } = req.body;
     const numAmount = Number(amount);
 
     if (!Number.isInteger(numAmount) || numAmount <= 0) {
@@ -915,6 +1190,9 @@ adminRouter.post('/coins/adjust', async (req: Request, res: Response, next: Next
     }
     if (!['credit', 'debit'].includes(type)) {
       throw new ApiError(400, "type must be 'credit' or 'debit'");
+    }
+    if (typeof reason !== 'string' || !reason.trim()) {
+      throw new ApiError(400, 'A reason is required for coin adjustments');
     }
 
     let user;
@@ -946,7 +1224,7 @@ adminRouter.post('/coins/adjust', async (req: Request, res: Response, next: Next
       amount: numAmount,
       kind: type as 'credit' | 'debit',
       bucket: 'coins',
-      title: `Admin Coin Adjustment: ${reason}`,
+      title: `Admin Coin Adjustment: ${reason.trim()}`,
       reference: 'ADMIN-COIN-' + Date.now(),
       settled: true
     });
@@ -1003,16 +1281,16 @@ adminRouter.post('/orders/create-b2b', async (req: Request, res: Response, next:
     const {
       b2bClientId,
       driverId,
-      vehicleCode = 'mini750',
+      vehicleCode,
       pickup,
       drop,
-      goodsType = 'Commercial Bulk Goods',
-      weightKg = 450,
-      totalFare = 480
+      goodsType,
+      weightKg,
+      totalFare
     } = req.body;
 
-    if (!pickup?.address || !drop?.address) {
-      throw new ApiError(400, 'Pickup and drop address details are required');
+    if (!pickup?.address || !drop?.address || !vehicleCode || !goodsType) {
+      throw new ApiError(400, 'Pickup, drop, vehicleCode, and goodsType are required');
     }
 
     const fareNum = Number(totalFare);
@@ -1046,7 +1324,7 @@ adminRouter.post('/orders/create-b2b', async (req: Request, res: Response, next:
         name: client.companyName,
         initials: 'B2B',
         phone: clientPhone,
-        city: 'Lucknow',
+        ...(client.city ? { city: client.city } : {}),
         status: 'active'
       });
     }
@@ -1056,6 +1334,7 @@ adminRouter.post('/orders/create-b2b', async (req: Request, res: Response, next:
     const newOrder = new Order({
       orderNo,
       customer: customer._id,
+      b2bClient: client._id,
       vehicle: vehicle._id,
       pickup: {
         label: client.companyName,
@@ -1065,33 +1344,24 @@ adminRouter.post('/orders/create-b2b', async (req: Request, res: Response, next:
         contactPhone: pickup.contactPhone || clientPhone
       },
       drop: {
-        label: drop.label || 'B2B Destination Store',
+        label: drop.label || drop.address,
         address: drop.address,
         ...(typeof drop.lat === 'number' && typeof drop.lng === 'number' ? { lat: drop.lat, lng: drop.lng } : {}),
-        contactName: drop.contactName || 'Store In-Charge',
+        contactName: drop.contactName || client.contactPerson,
         contactPhone: drop.contactPhone || clientPhone
       },
       goodsType,
       weightKg: weightNum,
       distanceKm: routeMetrics.distanceKm,
-      fare: {
+      fare: normalizeFareBreakup({
         orderValue: fareNum,
-        billableKm: routeMetrics.distanceKm,
-        base: 200,
-        distance: Math.max(0, fareNum - 200),
-        total: fareNum,
-        driverCommission: Math.round(fareNum * 0.8),
-        reserveAmount: Math.round(fareNum * 0.1),
-        partnerNet: Math.round(fareNum * 0.8),
-        platformCommission: Math.round(fareNum * 0.2),
-        lateDriverPenalty: 0,
-        latePlatformPenalty: 0,
-        onTimePartnerPayout: Math.round(fareNum * 0.8),
-        latePartnerPayout: Math.round(fareNum * 0.8)
-      },
+        base: Math.min(vehicle.baseFare, fareNum),
+        distance: Math.max(0, fareNum - vehicle.baseFare),
+        total: fareNum
+      }, routeMetrics.distanceKm),
       paymentMode: 'wallet',
       paymentProvider: 'wallet',
-      paymentStatus: 'paid',
+      paymentStatus: 'pending',
       status: selectedDriver ? 'accepted' : 'searching',
       timeline: [
         {
@@ -1125,6 +1395,8 @@ adminRouter.post('/orders/create-b2b', async (req: Request, res: Response, next:
     }
 
     await newOrder.save();
+    if (selectedDriver) notifyManualAssignment(selectedDriver, newOrder);
+    await B2bClient.updateOne({ _id: client._id }, { $inc: { outstandingBalance: fareNum } });
     const populated = await Order.findById(newOrder._id)
       .populate('partner')
       .populate('customer')

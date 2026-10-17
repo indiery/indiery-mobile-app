@@ -4,7 +4,7 @@ const PartnerProfileSchema = new Schema(
   {
     vehicleId: { type: Schema.Types.ObjectId, ref: 'Vehicle' },
     vehicleNumber: { type: String },
-    rating: { type: Number, default: 5 },
+    rating: { type: Number },
     online: { type: Boolean, default: false },
     walletBalance: { type: Number, default: 0 },
     weeklyOrders: { type: Number, default: 0 },
@@ -69,7 +69,7 @@ const UserSchema = new Schema(
     initials: { type: String, required: true },
     phone: { type: String, required: true },
     email: { type: String },
-    city: { type: String, default: 'Lucknow' },
+    city: { type: String },
     status: { type: String, enum: ['active', 'blocked'], default: 'active' },
     expoPushTokens: [{ type: String }],
     customerProfile: { type: CustomerProfileSchema },

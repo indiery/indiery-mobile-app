@@ -3073,7 +3073,7 @@ function LoginScreen({
   const [profileRequired, setProfileRequired] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
-  const [profileCity, setProfileCity] = useState('Lucknow');
+  const [profileCity, setProfileCity] = useState('');
   const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
@@ -3328,7 +3328,7 @@ function LoginScreen({
     setProfileRequired(false);
     setProfileName('');
     setProfileEmail('');
-    setProfileCity('Lucknow');
+    setProfileCity('');
     setResendSeconds(0);
     setError('');
     setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 0);
@@ -4080,7 +4080,7 @@ function ProfileSetupScreen({
   const responsive = useResponsiveLayout();
   const [name, setName] = useState(user.name === 'Indiery Customer' ? '' : user.name);
   const [email, setEmail] = useState(user.email || '');
-  const [city, setCity] = useState(user.city || 'Lucknow');
+  const [city, setCity] = useState(user.city || '');
   const [localError, setLocalError] = useState('');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const profileScrollRef = useRef<ScrollView | null>(null);

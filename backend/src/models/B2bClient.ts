@@ -7,7 +7,7 @@ const B2bClientSchema = new Schema(
     phone: { type: String, required: true },
     email: { type: String },
     gstin: { type: String },
-    city: { type: String, default: 'Lucknow' },
+    city: { type: String },
     address: { type: String, required: true },
     contractType: {
       type: String,
@@ -15,7 +15,7 @@ const B2bClientSchema = new Schema(
       default: 'on_demand'
     },
     discountPercentage: { type: Number, default: 0 },
-    creditLimit: { type: Number, default: 50000 },
+    creditLimit: { type: Number, default: 0 },
     outstandingBalance: { type: Number, default: 0 },
     status: { type: String, enum: ['active', 'paused'], default: 'active' }
   },

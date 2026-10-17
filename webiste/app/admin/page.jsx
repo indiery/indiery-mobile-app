@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import styles from "./admin.module.css";
+import AdminControlCenter, { EXTENDED_TAB_TITLES } from "./AdminControlCenter";
 
 const LiveFleetMap = dynamic(() => import("./LiveFleetMap"), {
   ssr: false,
@@ -89,6 +90,62 @@ function SidebarIcon({ name }) {
       <>
         <path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M8 7h4M8 11h4M8 15h4M9 21v-2h2v2" />
       </>
+    ),
+    customers: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3.5 19a5.5 5.5 0 0 1 11 0M17 8h4M19 6v4" />
+      </>
+    ),
+    vehicles: (
+      <>
+        <path d="M3 15V8l2-4h10l4 5v6M5 15h12M7 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM21 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />
+      </>
+    ),
+    payments: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 10h18M7 15h4" />
+      </>
+    ),
+    pricing: (
+      <>
+        <path d="M20 13 13 20 4 11V4h7l9 9Z" />
+        <circle cx="8.5" cy="8.5" r="1" />
+      </>
+    ),
+    disputes: (
+      <>
+        <path d="M12 3 4 7v5c0 4 3 7 8 9 5-2 8-5 8-9V7l-8-4Z" />
+        <path d="M12 8v5M12 17h.01" />
+      </>
+    ),
+    support: (
+      <>
+        <path d="M4 13a8 8 0 0 1 16 0M4 13v5h3v-5H4ZM20 13v5h-3v-5h3ZM17 20h-4" />
+      </>
+    ),
+    notifications: (
+      <>
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" />
+      </>
+    ),
+    reports: (
+      <>
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+      </>
+    ),
+    areas: (
+      <>
+        <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+        <circle cx="12" cy="10" r="2.5" />
+      </>
+    ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
+      </>
     )
   };
 
@@ -102,7 +159,7 @@ function uploadedKycDocuments(driver) {
 
 export default function AdminPage() {
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState("radar"); // 'radar' | 'orders' | 'drivers' | 'kyc' | 'finance' | 'coins' | 'b2b'
+  const [activeTab, setActiveTab] = useState("radar");
 
   const handleAdminLogout = async () => {
     try {
@@ -123,6 +180,7 @@ export default function AdminPage() {
     activeOrders: 0,
     searchingOrders: 0,
     totalOrders: 0,
+    totalCustomers: 0,
     totalDrivers: 0,
     onlineDrivers: 0,
     pendingKyc: 0,
@@ -141,6 +199,8 @@ export default function AdminPage() {
   const [recentPayouts, setRecentPayouts] = useState([]);
   const [coinUsers, setCoinUsers] = useState([]);
   const [coinLedger, setCoinLedger] = useState([]);
+  const [vehicleCatalog, setVehicleCatalog] = useState([]);
+  const [customerUsers, setCustomerUsers] = useState([]);
 
   // Search queries per tab
   const [orderSearch, setOrderSearch] = useState("");
@@ -170,9 +230,9 @@ export default function AdminPage() {
   const [disburseReference, setDisburseReference] = useState("");
   const [disbursing, setDisbursing] = useState(false);
   const [coinModalUser, setCoinModalUser] = useState(null);
-  const [coinAdjustAmount, setCoinAdjustAmount] = useState("50");
+  const [coinAdjustAmount, setCoinAdjustAmount] = useState("");
   const [coinAdjustType, setCoinAdjustType] = useState("credit");
-  const [coinAdjustReason, setCoinAdjustReason] = useState("Promotional Credit");
+  const [coinAdjustReason, setCoinAdjustReason] = useState("");
 
   // Unified Dispatch Modal (On-Demand or B2B)
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
@@ -181,7 +241,7 @@ export default function AdminPage() {
     customerName: "",
     customerPhone: "",
     b2bClientId: "",
-    vehicleCode: "mini750",
+    vehicleCode: "",
     pickupAddress: "",
     dropAddress: "",
     goodsType: "",
@@ -249,7 +309,20 @@ export default function AdminPage() {
       payouts: "finance",
       finance: "finance",
       coins: "coins",
-      b2b: "b2b"
+      b2b: "b2b",
+      customers: "customers",
+      vehicles: "vehicles",
+      payments: "payments",
+      pricing: "pricing",
+      disputes: "disputes",
+      support: "support",
+      notifications: "notifications",
+      reports: "reports",
+      areas: "areas",
+      admins: "admins",
+      settings: "settings",
+      b2bOrders: "b2bOrders",
+      billing: "billing"
     };
     if (requestedTab && tabAliases[requestedTab]) setActiveTab(tabAliases[requestedTab]);
   }, []);
@@ -262,55 +335,36 @@ export default function AdminPage() {
     setSyncError(null);
 
     try {
-      const endpoints = [
-        ["/overview", "Overview"],
-        ["/orders?limit=500", "Orders"],
-        ["/drivers", "Drivers"],
-        ["/b2b/clients", "B2B clients"],
-        ["/finance", "Finance"],
-        ["/coins", "Coins"]
-      ];
-
-      const requestAdminData = async ([path, label]) => {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), 10000);
-
-        try {
-          const response = await adminFetch(`${API_BASE}${path}`, {
-            cache: "no-store",
-            signal: controller.signal
-          });
-          const data = await response.json().catch(() => null);
-          if (!response.ok) {
-            throw new Error(`${label}: ${data?.message || `HTTP ${response.status}`}`);
-          }
-          return data;
-        } catch (error) {
-          if (error?.name === "AbortError") {
-            throw new Error(`${label}: request timed out`);
-          }
-          throw error;
-        } finally {
-          window.clearTimeout(timeout);
-        }
-      };
-
-      const results = await Promise.allSettled(endpoints.map(requestAdminData));
-      const failures = results
-        .filter((result) => result.status === "rejected")
-        .map((result) => result.reason?.message || "Unknown admin API error");
-
-      if (failures.length === results.length) {
-        throw new Error(failures.join("; "));
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 15000);
+      let response;
+      let snapshot;
+      try {
+        response = await adminFetch(`${API_BASE}/dashboard-snapshot`, {
+          cache: "no-store",
+          signal: controller.signal
+        });
+        snapshot = await response.json().catch(() => null);
+      } finally {
+        window.clearTimeout(timeout);
       }
 
-      const dataAt = (index) => results[index].status === "fulfilled" ? results[index].value : null;
-      const overviewData = dataAt(0);
-      const ordersData = dataAt(1);
-      const driversData = dataAt(2);
-      const b2bData = dataAt(3);
-      const financeData = dataAt(4);
-      const coinsData = dataAt(5);
+      if (!response.ok) {
+        const retryAfter = response.headers.get("Retry-After");
+        const retryMessage = response.status === 429 && retryAfter
+          ? ` Retry in ${retryAfter} seconds.`
+          : "";
+        throw new Error(`${snapshot?.message || `HTTP ${response.status}`}${retryMessage}`);
+      }
+
+      const overviewData = snapshot?.overview;
+      const ordersData = snapshot?.orders;
+      const driversData = snapshot?.drivers;
+      const b2bData = snapshot?.b2b;
+      const financeData = snapshot?.finance;
+      const coinsData = snapshot?.coins;
+      const vehiclesData = snapshot?.vehicles;
+      const customersData = snapshot?.customers;
 
       if (overviewData) {
         const d = overviewData;
@@ -362,21 +416,28 @@ export default function AdminPage() {
         if (Array.isArray(d.coinLedger)) setCoinLedger(d.coinLedger);
       }
 
-      if (failures.length > 0) {
-        setSyncError(`Partial sync failure: ${failures.join("; ")}`);
+      if (vehiclesData && Array.isArray(vehiclesData.vehicles)) {
+        setVehicleCatalog(vehiclesData.vehicles);
+        const firstActiveCode = vehiclesData.vehicles.find((vehicle) => vehicle.active)?.code || "";
+        setDispatchForm((current) => current.vehicleCode ? current : { ...current, vehicleCode: firstActiveCode });
       }
-      setLastSynced(new Date());
+
+      if (customersData && Array.isArray(customersData.customers)) {
+        setCustomerUsers(customersData.customers);
+      }
+
+      setLastSynced(snapshot?.generatedAt ? new Date(snapshot.generatedAt) : new Date());
     } catch (err) {
       console.error("Realtime sync error:", err);
-      setSyncError(`Admin API unavailable: ${err?.message || "connection failed"}`);
+      const message = err?.name === "AbortError" ? "request timed out" : err?.message;
+      setSyncError(`Admin API unavailable: ${message || "connection failed"}`);
     } finally {
       setLoading(false);
       if (!isSilent) setSyncing(false);
     }
   }, []);
 
-  // Refresh while the dashboard is visible. A 30-second interval avoids
-  // repeatedly transferring the full order history in background tabs.
+  // Refresh one consolidated snapshot while the dashboard is visible.
   useEffect(() => {
     fetchAllRealtimeData();
     const interval = setInterval(() => {
@@ -395,7 +456,12 @@ export default function AdminPage() {
       if (!response.ok || !data?.driver) {
         throw new Error(data?.message || `Unable to load driver details (${response.status})`);
       }
-      setInspectDriver({ ...data.driver, activeOrder: data.activeOrder || null });
+      setInspectDriver({
+        ...data.driver,
+        activeOrder: data.activeOrder || null,
+        recentOrders: Array.isArray(data.recentOrders) ? data.recentOrders : [],
+        ledger: Array.isArray(data.ledger) ? data.ledger : []
+      });
     } catch (error) {
       showNotification(error?.message || "Unable to load driver details", true);
     }
@@ -463,7 +529,7 @@ export default function AdminPage() {
 
   // 3. Cancel Order
   const handleCancelOrder = async (orderId) => {
-    const reason = prompt("Enter cancellation reason for the audit trail:", "Customer requested cancellation");
+    const reason = prompt("Enter cancellation reason for the audit trail:");
     if (!reason) return;
 
     try {
@@ -491,8 +557,8 @@ export default function AdminPage() {
         b2bClientId: dispatchForm.b2bClientId,
         driverId: dispatchForm.driverId || undefined,
         vehicleCode: dispatchForm.vehicleCode,
-        pickup: { address: dispatchForm.pickupAddress, label: "Corporate Depot" },
-        drop: { address: dispatchForm.dropAddress, label: "Client Destination" },
+        pickup: { address: dispatchForm.pickupAddress, label: dispatchForm.pickupAddress },
+        drop: { address: dispatchForm.dropAddress, label: dispatchForm.dropAddress },
         goodsType: dispatchForm.goodsType,
         weightKg: Number(dispatchForm.weightKg),
         totalFare: Number(dispatchForm.totalFare)
@@ -590,6 +656,37 @@ export default function AdminPage() {
     }
   };
 
+  const handleReviewKycDocument = async (approved) => {
+    if (!inspectDriver || !lightboxDoc?.key) return;
+    const reason = approved
+      ? "Verified against the submitted application"
+      : window.prompt(`What should ${inspectDriver.name} correct in ${lightboxDoc.title}?`);
+    if (!reason) return;
+    try {
+      const res = await adminFetch(`${API_BASE}/drivers/${inspectDriver._id}/kyc/document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentKey: lightboxDoc.key, approved, reason })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Document review failed");
+      setInspectDriver((current) => current ? {
+        ...current,
+        partnerProfile: {
+          ...current.partnerProfile,
+          docs: { ...current.partnerProfile?.docs, [lightboxDoc.key]: approved },
+          kycStatus: approved ? current.partnerProfile?.kycStatus : "pending",
+          kycRejectionReason: approved ? current.partnerProfile?.kycRejectionReason : reason
+        }
+      } : current);
+      setLightboxDoc((current) => current ? { ...current, verified: approved } : current);
+      showNotification(approved ? `${lightboxDoc.title} approved.` : `Correction requested for ${lightboxDoc.title}.`);
+      fetchAllRealtimeData(true);
+    } catch (err) {
+      showNotification(err.message, true);
+    }
+  };
+
   const openPayoutModal = (requestedDriver) => {
     if (requestedDriver && requestedDriver.partnerProfile?.kycStatus !== "verified") {
       showNotification("Driver KYC must be verified before payout.", true);
@@ -662,8 +759,8 @@ export default function AdminPage() {
 
   // 8. Coin Adjustment
   const handleAdjustCoins = async () => {
-    if (!coinModalUser || !coinAdjustAmount || Number(coinAdjustAmount) <= 0) {
-      alert("Enter valid coin amount.");
+    if (!coinModalUser || !coinAdjustAmount || Number(coinAdjustAmount) <= 0 || !coinAdjustReason.trim()) {
+      alert("Enter a valid coin amount and reason.");
       return;
     }
     try {
@@ -808,12 +905,14 @@ export default function AdminPage() {
     return drivers.find((d) => d._id === selectedRadarDriverId) || drivers[0] || null;
   }, [drivers, selectedRadarDriverId]);
 
-  const assignableDrivers = useMemo(() => drivers.filter((driver) =>
-    driver.status === "active" &&
-    driver.partnerProfile?.kycStatus === "verified" &&
-    driver.partnerProfile?.online === true &&
-    !driver.activeOrder
-  ), [drivers]);
+  const assignableDrivers = useMemo(() => drivers
+    .filter((driver) =>
+      driver.status === "active" &&
+      driver.partnerProfile?.kycStatus === "verified" &&
+      !driver.activeOrder
+    )
+    .sort((left, right) => Number(Boolean(right.partnerProfile?.online)) - Number(Boolean(left.partnerProfile?.online))),
+  [drivers]);
 
   return (
     <div className={styles.adminLayout}>
@@ -888,12 +987,40 @@ export default function AdminPage() {
 
           <button
             type="button"
+            className={`${styles.navItem} ${activeTab === "b2bOrders" ? styles.active : ""}`}
+            onClick={() => setActiveTab("b2bOrders")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="business" /></span>
+            <span>B2B orders</span>
+          </button>
+
+          <button
+            type="button"
             className={`${styles.navItem} ${activeTab === "drivers" ? styles.active : ""}`}
             onClick={() => setActiveTab("drivers")}
           >
             <span className={styles.navIcon}><SidebarIcon name="drivers" /></span>
             <span>Drivers</span>
             <span className={styles.navBadge}>{drivers.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "customers" ? styles.active : ""}`}
+            onClick={() => setActiveTab("customers")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="customers" /></span>
+            <span>Customers</span>
+            <span className={styles.navBadge}>{coinUsers.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "vehicles" ? styles.active : ""}`}
+            onClick={() => setActiveTab("vehicles")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="vehicles" /></span>
+            <span>Vehicles</span>
           </button>
 
           <span className={styles.navCategory}>Compliance and finance</span>
@@ -931,6 +1058,91 @@ export default function AdminPage() {
             <span>Coin ledger</span>
           </button>
 
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "payments" ? styles.active : ""}`}
+            onClick={() => setActiveTab("payments")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="payments" /></span>
+            <span>Payments &amp; refunds</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "pricing" ? styles.active : ""}`}
+            onClick={() => setActiveTab("pricing")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="pricing" /></span>
+            <span>Pricing &amp; charges</span>
+          </button>
+
+          <span className={styles.navCategory}>Customer experience</span>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "disputes" ? styles.active : ""}`}
+            onClick={() => setActiveTab("disputes")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="disputes" /></span>
+            <span>Cancellations</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "support" ? styles.active : ""}`}
+            onClick={() => setActiveTab("support")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="support" /></span>
+            <span>Support tickets</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "notifications" ? styles.active : ""}`}
+            onClick={() => setActiveTab("notifications")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="notifications" /></span>
+            <span>Notifications</span>
+          </button>
+
+          <span className={styles.navCategory}>Insights &amp; configuration</span>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "reports" ? styles.active : ""}`}
+            onClick={() => setActiveTab("reports")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="reports" /></span>
+            <span>Reports</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "areas" ? styles.active : ""}`}
+            onClick={() => setActiveTab("areas")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="areas" /></span>
+            <span>Service areas</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "admins" ? styles.active : ""}`}
+            onClick={() => setActiveTab("admins")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="customers" /></span>
+            <span>Admin users</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "settings" ? styles.active : ""}`}
+            onClick={() => setActiveTab("settings")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="settings" /></span>
+            <span>Settings &amp; audit</span>
+          </button>
+
           <span className={styles.navCategory}>Accounts</span>
 
           <button
@@ -942,12 +1154,21 @@ export default function AdminPage() {
             <span>B2B clients</span>
             <span className={styles.navBadge}>{b2bClients.length}</span>
           </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "billing" ? styles.active : ""}`}
+            onClick={() => setActiveTab("billing")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="payments" /></span>
+            <span>Business billing</span>
+          </button>
         </nav>
 
         <div className={styles.sidebarFooter}>
           <div className={styles.adminAvatar}><SidebarIcon name="drivers" /></div>
           <div className={styles.adminDetails}>
-            <span className={styles.adminName}>Indiery Operations</span>
+            <span className={styles.adminName}>Signed-in administrator</span>
             <span className={styles.adminRole}>Administrator</span>
           </div>
         </div>
@@ -969,6 +1190,7 @@ export default function AdminPage() {
                 {activeTab === "finance" && "Payouts"}
                 {activeTab === "coins" && "Coin ledger"}
                 {activeTab === "b2b" && "B2B clients"}
+                {EXTENDED_TAB_TITLES[activeTab] || ""}
               </h1>
               <span className={styles.pageSubtitle}>
                 <span>● Live data</span>
@@ -1045,7 +1267,7 @@ export default function AdminPage() {
           {/* ==================================================================
               EXECUTIVE METRIC CARDS
               ================================================================== */}
-          <section className={styles.metricsGrid}>
+          {!EXTENDED_TAB_TITLES[activeTab] && <section className={styles.metricsGrid}>
             <div className={styles.metricCard}>
               <div className={styles.metricHeader}>
                 <span className={styles.metricTitle}>Active Deliveries</span>
@@ -1064,7 +1286,7 @@ export default function AdminPage() {
               </div>
               <span className={styles.metricValue}>{drivers.length}</span>
               <span className={styles.metricSubtext}>
-                <strong className={styles.trendPositive}>{metrics.onlineDrivers} Online</strong> in Lucknow
+                <strong className={styles.trendPositive}>{metrics.onlineDrivers} Online</strong> currently
               </span>
             </div>
 
@@ -1091,7 +1313,7 @@ export default function AdminPage() {
               </span>
               <span className={styles.metricSubtext}>Driver Wallet Liability</span>
             </div>
-          </section>
+          </section>}
 
           {/* ==================================================================
               TAB 1: LIVE RADAR & TELEMETRY WITH ROUTE LINES
@@ -1101,7 +1323,7 @@ export default function AdminPage() {
               <div className={styles.cardHeader}>
                 <div className={styles.cardTitle}>
                   <span>Fleet status</span>
-                  <span className={styles.cardTitleBadge}>Lucknow</span>
+                  <span className={styles.cardTitleBadge}>Live GPS</span>
                 </div>
 
                 <div className={styles.cardActions}>
@@ -1165,7 +1387,7 @@ export default function AdminPage() {
                           {selectedRadarDriver.name} · {selectedRadarDriver.partnerProfile?.vehicleNumber || "No vehicle number"}
                         </div>
                         <span className={styles.hudStatus}>
-                          Speed: <strong>{selectedRadarDriver.partnerProfile?.currentLocation?.speed || 0} km/h</strong> • Status:{" "}
+                          Speed: <strong>{selectedRadarDriver.partnerProfile?.currentLocation?.speed != null ? `${selectedRadarDriver.partnerProfile.currentLocation.speed} km/h` : "Unavailable"}</strong> • Status:{" "}
                           <strong style={{ color: selectedRadarDriver.partnerProfile?.online ? "#059669" : "#94a3b8" }}>
                             {selectedRadarDriver.partnerProfile?.online ? "Online" : "Offline"}
                           </strong>
@@ -1220,7 +1442,7 @@ export default function AdminPage() {
                             )}
                           </span>
                           <span className={styles.radarTelemetry}>
-                            {driver.partnerProfile?.currentLocation?.speed || 0} km/h · {driver.partnerProfile?.rating || 5.0}/5
+                            {driver.partnerProfile?.currentLocation?.speed != null ? `${driver.partnerProfile.currentLocation.speed} km/h` : "Speed unavailable"} · {driver.partnerProfile?.rating != null ? `${driver.partnerProfile.rating}/5` : "Not rated"}
                           </span>
                         </div>
 
@@ -1545,7 +1767,7 @@ export default function AdminPage() {
                               <div>
                                 <strong>{driver.name}</strong>
                                 <div style={{ fontSize: 11, color: "#64748b" }}>
-                                {driver.partnerProfile?.online ? "Online" : "Offline"} · {driver.partnerProfile?.rating || 5.0}/5
+                                {driver.partnerProfile?.online ? "Online" : "Offline"} · {driver.partnerProfile?.rating != null ? `${driver.partnerProfile.rating}/5` : "Not rated"}
                                 </div>
                               </div>
                             </div>
@@ -1728,7 +1950,7 @@ export default function AdminPage() {
               <div className={styles.cardHeader}>
                 <div className={styles.cardTitle}>
                   <span>Payouts</span>
-                  <span className={styles.cardTitleBadge}>82% Driver Net / 18% Indiery Cut</span>
+                  <span className={styles.cardTitleBadge}>Recorded settlements</span>
                 </div>
 
                 <div className={styles.cardActions}>
@@ -2095,6 +2317,22 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
+          <AdminControlCenter
+            activeTab={activeTab}
+            orders={orders}
+            drivers={drivers}
+            b2bClients={b2bClients}
+            customerUsers={customerUsers}
+            metrics={metrics}
+            onInspectOrder={handleInspectOrder}
+            onInspectDriver={handleInspectDriver}
+            onAssignOrder={(order) => {
+              setAssignModalOrder(order);
+              setSelectedDriverIdForAssign(order.partner?._id || "");
+            }}
+            notify={showNotification}
+          />
         </div>
       </main>
 
@@ -2343,7 +2581,7 @@ export default function AdminPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
                   <div>License plate: <strong>{inspectDriver.partnerProfile?.vehicleNumber || "Not provided"}</strong></div>
                   <div>Model class: <strong>{inspectDriver.partnerProfile?.vehicleId?.name || "Not provided"}</strong></div>
-                  <div>Lifetime rating: <strong>{inspectDriver.partnerProfile?.rating || 5.0}/5</strong></div>
+                  <div>Lifetime rating: <strong>{inspectDriver.partnerProfile?.rating != null ? `${inspectDriver.partnerProfile.rating}/5` : "Not rated"}</strong></div>
                   <div>Weekly Trips: <strong>{inspectDriver.partnerProfile?.weeklyOrders || 0} orders</strong></div>
                 </div>
               </div>
@@ -2379,7 +2617,7 @@ export default function AdminPage() {
                           borderColor: hasDoc ? (isVerified ? "#86efac" : "#c084fc") : "#e2e8f0",
                           background: hasDoc ? "#ffffff" : "#f8fafc"
                         }}
-                        onClick={() => setLightboxDoc({ title: doc.title, url: docUrl, verified: isVerified, hasDoc })}
+                        onClick={() => setLightboxDoc({ key: doc.key, title: doc.title, url: docUrl, verified: isVerified, hasDoc })}
                       >
                         <div className={styles.docThumbWrap}>
                           {hasDoc ? (
@@ -2410,6 +2648,71 @@ export default function AdminPage() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              <div className={styles.drawerSection}>
+                <span className={styles.drawerSectionTitle}>Availability &amp; current trip</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+                  <div>Availability: <strong>{inspectDriver.partnerProfile?.online ? "Online and available" : "Offline"}</strong></div>
+                  <div>Current trip: <strong>{inspectDriver.activeOrder?.orderNo || "No active delivery"}</strong></div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    Last location: <strong>
+                      {Number.isFinite(inspectDriver.partnerProfile?.currentLocation?.lat)
+                        ? `${inspectDriver.partnerProfile.currentLocation.lat.toFixed(5)}, ${inspectDriver.partnerProfile.currentLocation.lng.toFixed(5)}`
+                        : "Location permission unavailable"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.drawerSection}>
+                <span className={styles.drawerSectionTitle}>Booking history</span>
+                {(inspectDriver.recentOrders || []).length ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {inspectDriver.recentOrders.slice(0, 8).map((order) => (
+                      <button
+                        type="button"
+                        key={order._id}
+                        className={styles.outlineBtn}
+                        style={{ justifyContent: "space-between", width: "100%" }}
+                        onClick={() => handleInspectOrder(order)}
+                      >
+                        <span>{order.orderNo} · {order.vehicle?.name || "Vehicle"}</span>
+                        <span className={`${styles.statusPill} ${styles[order.status] || styles.pending}`}>{order.status?.replaceAll("_", " ")}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : <span style={{ fontSize: 12, color: "#64748b" }}>No assigned, completed, cancelled or failed bookings recorded.</span>}
+              </div>
+
+              <div className={styles.drawerSection}>
+                <span className={styles.drawerSectionTitle}>Earnings, payouts &amp; performance</span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, fontSize: 13 }}>
+                  <div>Completed deliveries: <strong>{(inspectDriver.recentOrders || []).filter((order) => order.status === "delivered").length}</strong></div>
+                  <div>Cancellation count: <strong>{(inspectDriver.recentOrders || []).filter((order) => order.status === "cancelled").length}</strong></div>
+                  <div>Acceptance rate: <strong>{inspectDriver.partnerProfile?.acceptanceRate != null ? `${inspectDriver.partnerProfile.acceptanceRate}%` : "Not calculated"}</strong></div>
+                  <div>Driver rating: <strong>{inspectDriver.partnerProfile?.rating != null ? `${inspectDriver.partnerProfile.rating}/5` : "Not rated"}</strong></div>
+                </div>
+                {(inspectDriver.ledger || []).length ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 4 }}>
+                    {inspectDriver.ledger.slice(0, 6).map((entry) => (
+                      <div key={entry._id} style={{ display: "flex", justifyContent: "space-between", gap: 12, borderTop: "1px solid #ede9f2", paddingTop: 8, fontSize: 12 }}>
+                        <span>{entry.title || entry.type || "Wallet entry"}<small style={{ display: "block", color: "#94a3b8" }}>{new Date(entry.createdAt).toLocaleString()}</small></span>
+                        <strong style={{ color: Number(entry.amount) < 0 ? "#be123c" : "#059669" }}>₹{Number(entry.amount || 0).toLocaleString("en-IN")}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : <span style={{ fontSize: 12, color: "#64748b" }}>No payout or deduction entries recorded.</span>}
+              </div>
+
+              <div className={styles.drawerSection}>
+                <span className={styles.drawerSectionTitle}>Complaints, notes &amp; activity log</span>
+                <div style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.6 }}>
+                  <div><strong>Support cases:</strong> Support case data is not available on this profile.</div>
+                  <div><strong>KYC reviewed:</strong> {inspectDriver.partnerProfile?.kycReviewedAt ? new Date(inspectDriver.partnerProfile.kycReviewedAt).toLocaleString() : "Awaiting first review"}</div>
+                  <div><strong>Profile updated:</strong> {inspectDriver.updatedAt ? new Date(inspectDriver.updatedAt).toLocaleString() : "Not available"}</div>
+                  <div><strong>Account control:</strong> {inspectDriver.status === "active" ? "Eligible for operations" : "Restricted by administrator"}</div>
                 </div>
               </div>
             </div>
@@ -2512,6 +2815,24 @@ export default function AdminPage() {
                     Open original
                   </a>
                 )}
+                {lightboxDoc.hasDoc && (
+                  <button
+                    type="button"
+                    className={styles.dangerBtn}
+                    onClick={() => handleReviewKycDocument(false)}
+                  >
+                    Request correction
+                  </button>
+                )}
+                {lightboxDoc.hasDoc && !lightboxDoc.verified && (
+                  <button
+                    type="button"
+                    className={styles.successBtn}
+                    onClick={() => handleReviewKycDocument(true)}
+                  >
+                    Approve document
+                  </button>
+                )}
                 <button
                   type="button"
                   className={styles.primaryBtn}
@@ -2592,7 +2913,7 @@ export default function AdminPage() {
                         type="text"
                         required
                         className={styles.formInput}
-                        placeholder="e.g. Ramesh Verma"
+                        placeholder="Customer's full name"
                         value={dispatchForm.customerName}
                         onChange={(e) => setDispatchForm({ ...dispatchForm, customerName: e.target.value })}
                       />
@@ -2603,7 +2924,7 @@ export default function AdminPage() {
                         type="text"
                         required
                         className={styles.formInput}
-                        placeholder="+91 98765 00000"
+                        placeholder="Customer's phone number"
                         value={dispatchForm.customerPhone}
                         onChange={(e) => setDispatchForm({ ...dispatchForm, customerPhone: e.target.value })}
                       />
@@ -2663,13 +2984,16 @@ export default function AdminPage() {
                     <label className={styles.formLabel}>Vehicle Class:</label>
                     <select
                       className={styles.formSelect}
+                      required
                       value={dispatchForm.vehicleCode}
                       onChange={(e) => setDispatchForm({ ...dispatchForm, vehicleCode: e.target.value })}
                     >
-                      <option value="bike">2 Wheeler (Bikes, 20 kg)</option>
-                      <option value="loader90">Mini Loader (90 kg)</option>
-                      <option value="mini500">Mini Truck (500 kg)</option>
-                      <option value="mini750">Tata Ace (750 kg)</option>
+                      <option value="">-- Choose an active vehicle --</option>
+                      {vehicleCatalog.filter((vehicle) => vehicle.active).map((vehicle) => (
+                        <option key={vehicle._id} value={vehicle.code}>
+                          {vehicle.name} ({vehicle.capacityKg} kg)
+                        </option>
+                      ))}
                     </select>
                   </div>
 
@@ -2680,13 +3004,16 @@ export default function AdminPage() {
                       value={dispatchForm.driverId}
                       onChange={(e) => setDispatchForm({ ...dispatchForm, driverId: e.target.value })}
                     >
-                      <option value="">-- Auto-Queue for Nearby Fleet --</option>
+                      <option value="">-- Auto-Queue for Nearby Online Fleet --</option>
                       {assignableDrivers.map((d) => (
                         <option key={d._id} value={d._id}>
-                          {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · Online and available
+                          {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · {d.partnerProfile?.online ? "Online" : "Offline"} · Available for manual assignment
                         </option>
                       ))}
                     </select>
+                    <small style={{ color: "#64748b" }}>
+                      Manual assignment includes active, KYC-verified drivers without another active order. Offline drivers receive an app notification.
+                    </small>
                   </div>
                 </div>
 
@@ -2695,9 +3022,22 @@ export default function AdminPage() {
                     <label className={styles.formLabel}>Goods Description:</label>
                     <input
                       type="text"
+                      required
                       className={styles.formInput}
                       value={dispatchForm.goodsType}
                       onChange={(e) => setDispatchForm({ ...dispatchForm, goodsType: e.target.value })}
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label className={styles.formLabel}>Weight (kg):</label>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      className={styles.formInput}
+                      value={dispatchForm.weightKg}
+                      onChange={(e) => setDispatchForm({ ...dispatchForm, weightKg: e.target.value })}
                     />
                   </div>
                   <div className={styles.formGroup}>
@@ -2761,13 +3101,21 @@ export default function AdminPage() {
                   value={selectedDriverIdForAssign}
                   onChange={(e) => setSelectedDriverIdForAssign(e.target.value)}
                 >
-                  <option value="">-- Choose Available Driver --</option>
+                  <option value="">-- Choose Verified Driver --</option>
                   {assignableDrivers.map((d) => (
                     <option key={d._id} value={d._id}>
-                      {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · Online and available
+                      {d.name} ({d.partnerProfile?.vehicleNumber || "No plate"}) · {d.partnerProfile?.online ? "Online" : "Offline"} · Available for manual assignment
                     </option>
                   ))}
                 </select>
+                <small style={{ color: "#64748b" }}>
+                  Active, KYC-verified drivers without another active order are listed. Offline drivers receive an app notification after assignment.
+                </small>
+                {assignableDrivers.length === 0 ? (
+                  <div style={{ marginTop: 8, color: "#b45309", fontSize: 12.5, fontWeight: 700 }}>
+                    No active KYC-verified driver is currently free from another order.
+                  </div>
+                ) : null}
               </div>
             </div>
             <div className={styles.modalFooter}>
@@ -2890,6 +3238,9 @@ export default function AdminPage() {
                 <label className={styles.formLabel}>Disbursement Amount (₹):</label>
                 <input
                   type="number"
+                  min="1"
+                  step="1"
+                  required
                   className={styles.formInput}
                   value={disburseAmount}
                   onChange={(e) => setDisburseAmount(e.target.value)}
@@ -2916,6 +3267,7 @@ export default function AdminPage() {
                 <label className={styles.formLabel}>Transaction or receipt reference:</label>
                 <input
                   type="text"
+                  required
                   className={styles.formInput}
                   value={disburseReference}
                   onChange={(e) => setDisburseReference(e.target.value)}
@@ -2938,7 +3290,7 @@ export default function AdminPage() {
                 onClick={handleDisbursePayout}
                 disabled={disbursing}
               >
-                {disbursing ? "Recording payout..." : `Record ₹${disburseAmount || 0} payout`}
+                {disbursing ? "Recording payout..." : disburseAmount ? `Record ₹${disburseAmount} payout` : "Enter payout amount"}
               </button>
             </div>
           </div>

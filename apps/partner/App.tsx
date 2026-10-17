@@ -3201,7 +3201,7 @@ function PartnerOnboardingScreen({
   const vehicleDetailsDone = Boolean(user.partnerProfile?.vehicleId && user.partnerProfile?.vehicleNumber && docs?.rc);
   const [name, setName] = useState(user.name === 'Indiery Partner' ? '' : user.name);
   const [email, setEmail] = useState(user.email || '');
-  const [city, setCity] = useState(user.city || 'Lucknow');
+  const [city, setCity] = useState(user.city || '');
   const [vehicleId, setVehicleId] = useState(user.partnerProfile?.vehicleId || vehicles[0]?.id || '');
   const [vehicleNumber, setVehicleNumber] = useState(user.partnerProfile?.vehicleNumber || '');
   const [activeStep, setActiveStep] = useState<OnboardingStepId>(() => {
@@ -3637,7 +3637,7 @@ function ProfileSetupScreen({
   const copy = useCopy();
   const [name, setName] = useState(user.name === 'Indiery Partner' ? '' : user.name);
   const [email, setEmail] = useState(user.email || '');
-  const [city, setCity] = useState(user.city || 'Lucknow');
+  const [city, setCity] = useState(user.city || '');
   const [vehicleId, setVehicleId] = useState(user.partnerProfile?.vehicleId || vehicles[0]?.id || '');
   const [vehicleNumber, setVehicleNumber] = useState(user.partnerProfile?.vehicleNumber || '');
   const [localError, setLocalError] = useState('');
@@ -4228,7 +4228,7 @@ function DashboardScreen({
       <View style={[styles.statRow, responsive.isCompact && styles.statRowCompact, styles.dashboardStatRow]}>
         <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
         <StatCard title={copy.orders} value={String(data.stats.completedCount)} tone="blue" />
-        <StatCard title={copy.rating} value={`${profile?.rating ?? 5}`} tone="amber" />
+        <StatCard title={copy.rating} value={profile?.rating != null ? `${profile.rating}` : 'Not rated'} tone="amber" />
       </View>
 
       <View style={styles.row}>

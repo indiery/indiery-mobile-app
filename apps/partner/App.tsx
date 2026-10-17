@@ -2025,6 +2025,7 @@ export default function App() {
       title={copyFor(language, tab === 'active' ? 'active' : tab === 'earnings' ? 'earn' : 'account')}
       user={data.user}
       home={tab === 'dashboard'}
+      section={tab}
       topInset={rootTopInset}
       onPanic={openPanicOptions}
     />
@@ -4062,12 +4063,14 @@ function PartnerTabHeader({
   title,
   user,
   home,
+  section,
   topInset,
   onPanic
 }: {
   title: string;
   user: UserProfile;
   home: boolean;
+  section: 'dashboard' | 'active' | 'earnings' | 'profile';
   topInset: number;
   onPanic: () => void;
 }) {
@@ -4449,7 +4452,15 @@ function ActiveScreen({
       scrollEventThrottle={16}
     >
       <PartnerScrollingHeader header={header} horizontalInset={responsive.horizontalPadding} topInset={responsive.isSmall ? 10 : responsive.isCompact ? 12 : 16} />
-      <SectionTitle title={`${copy.activeOrders} (${orders.length})`} />
+      <View style={[styles.activeOverviewCard, responsive.isCompact && styles.activeOverviewCardCompact]}>
+        <View style={[styles.activeOverviewIcon, responsive.isCompact && styles.activeOverviewIconCompact]}>
+          <Ionicons name="navigate-outline" size={responsive.isCompact ? 18 : 21} color="#2563EB" />
+        </View>
+        <Text style={[styles.activeOverviewTitle, responsive.isCompact && styles.activeOverviewTitleCompact]}>{copy.activeOrders}</Text>
+        <View style={styles.activeOverviewCount}>
+          <Text style={styles.activeOverviewCountText}>{orders.length}</Text>
+        </View>
+      </View>
       {!order ? (
         <>
           <Empty icon="navigate-outline" title={copy.noActiveDelivery} subtitle={copy.acceptOrderFromHome} />
@@ -4685,6 +4696,7 @@ function EarningsScreen({
   const profile = data.user.partnerProfile;
   const balance = profile?.walletBalance ?? 0;
   const [payoutSheetOpen, setPayoutSheetOpen] = useState(false);
+  const [payoutKeyboardVisible, setPayoutKeyboardVisible] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('');
   const payoutAmountInputRef = useRef<TextInput | null>(null);
   const requestedAmount = Number(payoutAmount);
@@ -4695,11 +4707,31 @@ function EarningsScreen({
     Keyboard.dismiss();
     setPayoutSheetOpen(false);
   };
+  const dismissPayoutKeyboardOrCloseSheet = () => {
+    if (payoutKeyboardVisible) Keyboard.dismiss();
+    else closePayoutSheet();
+  };
 
   useEffect(() => {
     if (!payoutSheetOpen) return;
     const focusTimer = setTimeout(() => payoutAmountInputRef.current?.focus(), 320);
     return () => clearTimeout(focusTimer);
+  }, [payoutSheetOpen]);
+
+  useEffect(() => {
+    if (!payoutSheetOpen) {
+      setPayoutKeyboardVisible(false);
+      return;
+    }
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => setPayoutKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setPayoutKeyboardVisible(false));
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
   }, [payoutSheetOpen]);
   return (
     <View style={styles.partnerScrollViewport}>
@@ -4765,10 +4797,13 @@ function EarningsScreen({
       animationType="slide"
       statusBarTranslucent
       navigationBarTranslucent
-      onRequestClose={closePayoutSheet}
+      onRequestClose={dismissPayoutKeyboardOrCloseSheet}
     >
-      <KeyboardAvoidingView style={styles.payoutSheetOverlay} behavior="padding">
-        <Pressable style={styles.payoutSheetBackdrop} onPress={closePayoutSheet} />
+      <KeyboardAvoidingView
+        style={styles.payoutSheetOverlay}
+        behavior={Platform.OS === 'ios' || payoutKeyboardVisible ? 'padding' : undefined}
+      >
+        <Pressable style={styles.payoutSheetBackdrop} onPress={dismissPayoutKeyboardOrCloseSheet} />
         <View style={[styles.payoutSheet, { paddingBottom: Math.max(24, bottomInset + 12) }]}>
           <View style={styles.orderHistoryFilterHandle} />
           <View style={styles.payoutSheetHeader}>
@@ -6960,6 +6995,14 @@ const styles = StyleSheet.create({
   sectionTitleSmall: { fontSize: 12, marginTop: 11, marginBottom: 7 },
   orderCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, marginBottom: 12, backgroundColor: colors.white },
   orderCardCompact: { borderRadius: 14, padding: 10, marginBottom: 8 },
+  activeOverviewCard: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#DBEAFE', borderRadius: 18, backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14 },
+  activeOverviewCardCompact: { minHeight: 58, gap: 9, borderRadius: 15, paddingHorizontal: 11, paddingVertical: 8, marginBottom: 11 },
+  activeOverviewIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  activeOverviewIconCompact: { width: 36, height: 36, borderRadius: 12 },
+  activeOverviewTitle: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: '800' },
+  activeOverviewTitleCompact: { fontSize: 12 },
+  activeOverviewCount: { minWidth: 34, height: 34, borderRadius: 12, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 },
+  activeOverviewCountText: { color: '#2563EB', fontSize: 15, fontWeight: '900' },
   activeTripSwitchRow: { gap: 10, paddingBottom: 10 },
   activeTripSwitchRowCompact: { gap: 8, paddingBottom: 8 },
   activeTripSwitchCard: { width: 190, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, padding: 12 },

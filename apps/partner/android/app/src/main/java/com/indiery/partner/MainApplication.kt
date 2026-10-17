@@ -22,7 +22,7 @@ import expo.modules.ExpoReactHostFactory
 class MainApplication : Application(), ReactApplication {
 
   companion object {
-    const val DRIVER_ORDER_ALERT_CHANNEL_ID = "driver-order-alerts-v2"
+    const val DRIVER_ORDER_ALERT_CHANNEL_ID = "driver-order-alerts-v3"
   }
 
   override val reactHost: ReactHost by lazy {
@@ -51,10 +51,10 @@ class MainApplication : Application(), ReactApplication {
   private fun createDriverOrderAlertChannel() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
-    val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-      ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+      ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
     val audioAttributes = AudioAttributes.Builder()
-      .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+      .setUsage(AudioAttributes.USAGE_NOTIFICATION)
       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
       .build()
     val channel = NotificationChannel(
@@ -62,11 +62,11 @@ class MainApplication : Application(), ReactApplication {
       "Incoming delivery requests",
       NotificationManager.IMPORTANCE_HIGH
     ).apply {
-      description = "Rings and vibrates when a new delivery request is available"
+      description = "Plays a notification chime and vibrates for new delivery requests"
       enableVibration(true)
       vibrationPattern = longArrayOf(0, 700, 250, 700, 250, 900)
       enableLights(true)
-      setSound(ringtoneUri, audioAttributes)
+      setSound(notificationUri, audioAttributes)
       lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
     }
     getSystemService(NotificationManager::class.java).createNotificationChannel(channel)

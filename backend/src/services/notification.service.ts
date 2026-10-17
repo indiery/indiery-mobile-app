@@ -19,6 +19,7 @@ type ExpoReceipt =
   | { status: 'error'; message?: string; details?: ExpoErrorDetails };
 
 export type PushOptions = {
+  categoryId?: string;
   channelId?: string;
   priority?: 'default' | 'normal' | 'high';
   ttl?: number;
@@ -152,6 +153,7 @@ export async function sendPush(
       body,
       data,
       sound: 'default',
+      ...(options.categoryId ? { categoryId: options.categoryId } : {}),
       channelId: options.channelId ?? 'orders',
       priority: options.priority ?? 'high',
       ...(options.ttl !== undefined ? { ttl: options.ttl } : {}),

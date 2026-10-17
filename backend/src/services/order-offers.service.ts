@@ -128,18 +128,26 @@ async function sendPartnerBatchPush(order: OrderDocument, partners: UserDocument
       const distanceLabel = Number.isFinite(pickupDistance) && pickupDistance < Number.MAX_SAFE_INTEGER
         ? `${pickupDistance < 10 ? pickupDistance.toFixed(1) : Math.round(pickupDistance)} km to pickup - `
         : '';
-      return sendPush(partner.expoPushTokens, '🔔 New order nearby', `${distanceLabel}${order.pickup.label} → ${order.drop.label}. Open now to accept.`, {
+      return sendPush(partner.expoPushTokens, 'New order nearby', `${distanceLabel}${order.pickup.label} to ${order.drop.label}. Accept before the offer expires.`, {
         event: 'order_offer',
         role: 'partner',
         screen: 'dashboard',
         orderId: String(order._id),
         orderNo: order.orderNo,
         status: order.status,
+        pickupLabel: order.pickup.label,
+        dropLabel: order.drop.label,
+        tripDistanceKm: String(order.distanceKm),
+        weightKg: String(order.weightKg),
+        goodsType: order.goodsType,
+        partnerEarnings: String(order.fare.partnerNet),
+        offerExpiresAtMs: order.offerExpiresAt?.getTime() ?? Date.now() + DRIVER_OFFER_TIMEOUT_MS,
         ...(distanceLabel ? { pickupDistanceKm: Number(pickupDistance.toFixed(2)) } : {})
       }, {
         ttl: Math.ceil((DRIVER_OFFER_TIMEOUT_MS + 15_000) / 1000),
         collapseId: `offer-${String(order._id)}`,
-        channelId: 'driver-order-alerts-v2',
+        channelId: 'driver-order-alerts-v3',
+        categoryId: 'driver-order-offer',
         priority: 'high'
       });
     })

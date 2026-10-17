@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   AppState,
   BackHandler,
@@ -29,13 +28,16 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Notifications from 'expo-notifications';
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { FirebaseAuthTypes, getAuth, getIdToken, onAuthStateChanged, signInWithPhoneNumber, signOut } from '@react-native-firebase/auth';
 import RazorpayCheckout from 'react-native-razorpay';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { io, Socket } from 'socket.io-client';
 import { Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
+import indierySplashMark from './assets/splash-mark.png';
 import partnerLoginBackgroundImage from './assets/bg1.png';
+import customerHomeHeaderSkyline from './assets/home-header-skyline.png';
+import customerHomeHeaderTruck from './assets/home-header-truck.png';
 import { partnerLegalPoliciesHi } from './legal.hi';
 import {
   colors,
@@ -85,9 +87,15 @@ const androidStatusBarInset = Platform.OS === 'android' ? StatusBar.currentHeigh
 const appSafeAreaEdges: Edge[] = Platform.OS === 'android'
   ? ['left', 'right', 'bottom']
   : ['top', 'right', 'bottom', 'left'];
-const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'bottom');
 const incomingOrderAlert = NativeModules.OrderAlert as
-  | { start: () => void; stop: () => void }
+  | {
+      start: () => void;
+      stop: () => void;
+      canDrawOverlays: () => Promise<boolean>;
+      requestOverlayPermission: () => void;
+      hideOrderOverlay: () => void;
+      showPreviewOverlay?: () => void;
+    }
   | undefined;
 const incomingOrderAlertDurationMs = 45_000;
 
@@ -407,6 +415,7 @@ const enCopy = {
   requestFailed: 'Request failed',
   youAreOnline: 'You are online',
   youAreOffline: 'You are offline',
+  overlayPermissionPrompt: 'Allow Display over other apps to receive Rapido-style order cards outside Indiery Partner.',
   orderAccepted: 'Order accepted',
   orderSkipped: 'Order skipped',
   otpVerified: 'OTP verified',
@@ -712,6 +721,7 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   requestFailed: 'अनुरोध फेल हुआ',
   youAreOnline: 'आप ऑनलाइन हैं',
   youAreOffline: 'आप ऑफलाइन हैं',
+  overlayPermissionPrompt: 'Indiery Partner के बाहर ऑर्डर कार्ड पाने के लिए अन्य ऐप्स के ऊपर दिखाने की अनुमति दें।',
   orderAccepted: 'ऑर्डर स्वीकार हुआ',
   orderSkipped: 'ऑर्डर छोड़ा गया',
   otpVerified: 'OTP सत्यापित हुआ',
@@ -945,12 +955,24 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
+type PartnerDialog = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+  onCancel?: () => void;
+};
+
+type PresentPartnerDialog = (dialog: PartnerDialog) => void;
+
 function showAndroidPermissionDisclosure(input: {
   title: string;
   message: string;
   allowLabel: string;
   cancelLabel: string;
-}) {
+}, presentDialog: PresentPartnerDialog) {
   if (Platform.OS !== 'android') return Promise.resolve(true);
 
   return new Promise<boolean>((resolve) => {
@@ -961,15 +983,14 @@ function showAndroidPermissionDisclosure(input: {
       resolve(accepted);
     };
 
-    Alert.alert(
-      input.title,
-      input.message,
-      [
-        { text: input.cancelLabel, style: 'cancel', onPress: () => finish(false) },
-        { text: input.allowLabel, onPress: () => finish(true) }
-      ],
-      { cancelable: true, onDismiss: () => finish(false) }
-    );
+    presentDialog({
+      title: input.title,
+      message: input.message,
+      confirmLabel: input.allowLabel,
+      cancelLabel: input.cancelLabel,
+      onConfirm: () => finish(true),
+      onCancel: () => finish(false)
+    });
   });
 }
 
@@ -977,7 +998,7 @@ let partnerLocationPermissionRequest:
   | Promise<Awaited<ReturnType<typeof Location.getForegroundPermissionsAsync>>>
   | null = null;
 
-function requestPartnerLocationPermission(language: AppLanguage) {
+function requestPartnerLocationPermission(language: AppLanguage, presentDialog: PresentPartnerDialog) {
   if (partnerLocationPermissionRequest) return partnerLocationPermissionRequest;
 
   const request = (async () => {
@@ -991,7 +1012,7 @@ function requestPartnerLocationPermission(language: AppLanguage) {
       message: copyFor(language, 'locationDisclosureBody'),
       allowLabel: copyFor(language, 'allowLocation'),
       cancelLabel: copyFor(language, 'notNow')
-    });
+    }, presentDialog);
     if (!accepted) return existingPermission;
 
     return Location.requestForegroundPermissionsAsync();
@@ -1009,7 +1030,7 @@ let partnerCameraPermissionRequest:
   | Promise<Awaited<ReturnType<typeof ImagePicker.getCameraPermissionsAsync>>>
   | null = null;
 
-function requestPartnerCameraPermission(language: AppLanguage) {
+function requestPartnerCameraPermission(language: AppLanguage, presentDialog: PresentPartnerDialog) {
   if (partnerCameraPermissionRequest) return partnerCameraPermissionRequest;
 
   const request = (async () => {
@@ -1023,7 +1044,7 @@ function requestPartnerCameraPermission(language: AppLanguage) {
       message: copyFor(language, 'cameraDisclosureBody'),
       allowLabel: copyFor(language, 'allowCamera'),
       cancelLabel: copyFor(language, 'notNow')
-    });
+    }, presentDialog);
     if (!accepted) return existingPermission;
 
     return ImagePicker.requestCameraPermissionsAsync();
@@ -1038,10 +1059,11 @@ function requestPartnerCameraPermission(language: AppLanguage) {
 }
 
 async function readDeviceLocation(
-  language: AppLanguage = 'en',
-  accuracy: Location.Accuracy = Location.Accuracy.Balanced
+  language: AppLanguage,
+  accuracy: Location.Accuracy,
+  presentDialog: PresentPartnerDialog
 ) {
-  const permission = await requestPartnerLocationPermission(language);
+  const permission = await requestPartnerLocationPermission(language, presentDialog);
   if (permission.status !== 'granted') {
     throw new Error(copyFor(language, 'locationPermissionRequired'));
   }
@@ -1072,20 +1094,25 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
   let registeredPushToken: string | undefined;
 
   try {
+    await Notifications.setNotificationCategoryAsync('driver-order-offer', [
+      {
+        identifier: 'accept-order',
+        buttonTitle: language === 'hi' ? 'ऑर्डर स्वीकार करें' : 'Accept order',
+        options: { opensAppToForeground: true }
+      }
+    ]);
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('orders', {
         name: copyFor(language, 'orderAlerts'),
         importance: Notifications.AndroidImportance.HIGH,
-        sound: 'default',
         enableVibrate: true,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: colors.partner
       });
-      await Notifications.setNotificationChannelAsync('driver-order-alerts-v2', {
+      await Notifications.setNotificationChannelAsync('driver-order-alerts-v3', {
         name: 'Incoming delivery requests',
-        description: 'Loud alerts for new delivery offers and urgent driver updates',
+        description: 'Chime and vibration for new delivery offers and urgent driver updates',
         importance: Notifications.AndroidImportance.MAX,
-        sound: 'default',
         enableVibrate: true,
         vibrationPattern: [0, 700, 250, 700, 250, 900],
         lightColor: colors.partner,
@@ -1177,6 +1204,7 @@ type PendingLocationUpdate = {
 export default function App() {
   const api = useMemo(() => new IndieryApi(apiBaseUrl), []);
   const responsive = useResponsiveLayout();
+  const { top: rootTopInset } = useSafeAreaInsets();
   const socketRef = useRef<Socket | null>(null);
   const pushTokenRef = useRef<string | undefined>(undefined);
   const lastNotificationResponseIdRef = useRef<string | undefined>(undefined);
@@ -1203,12 +1231,20 @@ export default function App() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [profileDetailOpen, setProfileDetailOpen] = useState(false);
+  const [headerScrolled, setHeaderScrolled] = useState(false);
   const [panicOpen, setPanicOpen] = useState(false);
+  const [dialog, setDialog] = useState<PartnerDialog | null>(null);
+  const presentDialog: PresentPartnerDialog = (nextDialog) => setDialog(nextDialog);
+  useEffect(() => {
+    setHeaderScrolled(false);
+  }, [tab, profileDetailOpen]);
   const [selectedActiveOrderId, setSelectedActiveOrderId] = useState<string | undefined>();
   const [notificationIntent, setNotificationIntent] = useState<{
     responseId: string;
     orderId: string;
     screen?: string;
+    accept?: boolean;
+    reject?: boolean;
   } | null>(null);
   const activeOrderIds = (data?.activeOrders ?? []).map((order) => order.id).join('|');
   const availableOrderIds = (data?.availableOrders ?? []).map((order) => order.id).join('|');
@@ -1234,6 +1270,7 @@ export default function App() {
       setNotificationIntent({
         responseId,
         orderId: payload.orderId,
+        accept: payload.event === 'order_offer' && response.actionIdentifier === 'accept-order',
         screen: typeof payload.screen === 'string' ? payload.screen : undefined
       });
       void Notifications.clearLastNotificationResponseAsync();
@@ -1243,6 +1280,32 @@ export default function App() {
       if (response) handleResponse(response);
     });
     const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    const handleUrl = (url: string | null) => {
+      if (__DEV__ && url?.startsWith('indierypartner://preview-order-overlay')) {
+        incomingOrderAlert?.showPreviewOverlay?.();
+        return;
+      }
+      if (!url?.startsWith('indierypartner://order-offer')) return;
+      const orderIdMatch = url.match(/[?&]orderId=([^&]+)/);
+      const actionMatch = url.match(/[?&]action=([^&]+)/);
+      const orderId = orderIdMatch ? decodeURIComponent(orderIdMatch[1]) : '';
+      const action = actionMatch ? decodeURIComponent(actionMatch[1]) : '';
+      if (!orderId) return;
+      incomingOrderAlert?.hideOrderOverlay();
+      setNotificationIntent({
+        responseId: url,
+        orderId,
+        accept: action === 'accept',
+        reject: action === 'reject'
+      });
+    };
+
+    void Linking.getInitialURL().then(handleUrl);
+    const subscription = Linking.addEventListener('url', (event) => handleUrl(event.url));
     return () => subscription.remove();
   }, []);
 
@@ -1274,6 +1337,32 @@ export default function App() {
   useEffect(() => {
     if (!data || !notificationIntent) return;
     const isActive = data.activeOrders.some((order) => order.id === notificationIntent.orderId);
+    if (notificationIntent.accept && !isActive) {
+      const orderId = notificationIntent.orderId;
+      setNotificationIntent(null);
+      void withBusy(async () => {
+        stopIncomingOrderAlert();
+        const accepted = await api.acceptOrder(orderId);
+        setSelectedActiveOrderId(accepted.order.id);
+        mergeRealtimeOrder(accepted.order);
+        scheduleRefresh(50);
+        setTab('active');
+        showToast(copyFor(language, 'orderAccepted'));
+      });
+      return;
+    }
+    if (notificationIntent.reject && !isActive) {
+      const orderId = notificationIntent.orderId;
+      setNotificationIntent(null);
+      void withBusy(async () => {
+        stopIncomingOrderAlert();
+        await api.rejectOrder(orderId);
+        scheduleRefresh(50);
+        setTab('dashboard');
+        showToast(copyFor(language, 'orderSkipped'));
+      });
+      return;
+    }
     if (notificationIntent.screen === 'active' || isActive) {
       setSelectedActiveOrderId(notificationIntent.orderId);
       setTab('active');
@@ -1373,12 +1462,12 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
-      const currentUser = auth().currentUser;
+      const currentUser = getAuth().currentUser;
       if (!currentUser) {
         setData(null);
         return;
       }
-      const firebaseIdToken = await withTransientRetry(() => currentUser.getIdToken());
+      const firebaseIdToken = await withTransientRetry(() => getIdToken(currentUser));
       await completeFirebaseLogin(firebaseIdToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : copyFor(language, 'unableToLoadPartnerApp'));
@@ -1598,7 +1687,7 @@ export default function App() {
 
     try {
       const accuracy = activeTrip ? Location.Accuracy.High : Location.Accuracy.Balanced;
-      const current = await readDeviceLocation(language, accuracy);
+      const current = await readDeviceLocation(language, accuracy, presentDialog);
       if (locationStreamGenerationRef.current !== generation || locationStreamModeRef.current !== mode) return;
       sendLocationUpdate(current.coords);
       const subscription = await Location.watchPositionAsync(
@@ -1650,7 +1739,7 @@ export default function App() {
   }
 
   async function syncLocation() {
-    const current = await readDeviceLocation(language);
+    const current = await readDeviceLocation(language, Location.Accuracy.Balanced, presentDialog);
     await sendLocationUpdate(current.coords, { throwOnError: true });
   }
 
@@ -1694,7 +1783,7 @@ export default function App() {
   }
 
   async function captureAndUploadImage(input: { purpose: 'pod' | 'kyc' | 'profile'; orderId?: string; documentKey?: string }) {
-    const permission = await requestPartnerCameraPermission(language);
+    const permission = await requestPartnerCameraPermission(language, presentDialog);
     if (permission.status !== 'granted') {
       throw new Error(copyFor(language, 'cameraPermissionRequired'));
     }
@@ -1821,7 +1910,7 @@ export default function App() {
         pushTokenRef.current = undefined;
       }
       api.setToken('');
-      await auth().signOut();
+      await signOut(getAuth());
     } catch (err) {
       showToast(err instanceof Error ? err.message : copyFor(language, 'logoutFailed'));
     } finally {
@@ -1830,37 +1919,31 @@ export default function App() {
   }
 
   function requestAccountDeletion() {
-    Alert.alert(
-      copyFor(language, 'requestAccountDeletion'),
-      copyFor(language, 'requestAccountDeletionBody'),
-      [
-        { text: copyFor(language, 'cancel'), style: 'cancel' },
-        {
-          text: copyFor(language, 'submitRequest'),
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              await api.requestAccountDeletion('Requested from partner KYC screen');
-              showToast(copyFor(language, 'deletionRequestSubmitted'));
-            } catch (err) {
-              showToast(err instanceof Error ? err.message : copyFor(language, 'requestFailed'));
-            } finally {
-              setBusy(false);
-            }
-          }
-        }
-      ]
-    );
+    presentDialog({
+      title: copyFor(language, 'requestAccountDeletion'),
+      message: copyFor(language, 'requestAccountDeletionBody'),
+      confirmLabel: copyFor(language, 'submitRequest'),
+      cancelLabel: copyFor(language, 'cancel'),
+      destructive: true,
+      onConfirm: () => {
+        void withBusy(async () => {
+          await api.requestAccountDeletion('Requested from partner KYC screen');
+          showToast(copyFor(language, 'deletionRequestSubmitted'));
+        });
+      }
+    });
   }
 
   if (loading) {
     return (
       <LanguageContext.Provider value={language}>
-        <SafeAreaView edges={appSafeAreaEdges} style={styles.center}>
-          <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-          <ActivityIndicator color={colors.partner} size="large" />
-          <Text style={styles.muted}>{copyFor(language, 'loadingPartner')}</Text>
+        <SafeAreaView edges={['left', 'right']} style={styles.startupLoadingScreen}>
+          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <Image source={indierySplashMark} style={styles.startupLoadingMark} resizeMode="contain" />
+          <View style={styles.startupLoadingFooter}>
+            <ActivityIndicator color={colors.white} size="small" />
+            <Text style={styles.startupLoadingText}>{copyFor(language, 'loadingPartner')}</Text>
+          </View>
         </SafeAreaView>
       </LanguageContext.Provider>
     );
@@ -1869,12 +1952,14 @@ export default function App() {
   if (!data) {
     return (
       <LanguageContext.Provider value={language}>
-        <LoginScreen
-          initialError={error}
-          language={language}
-          onChangeLanguage={setLanguage}
-          onVerified={completeFirebaseLogin}
-        />
+        <View style={styles.startupTransitionRoot}>
+          <LoginScreen
+            initialError={error}
+            language={language}
+            onChangeLanguage={setLanguage}
+            onVerified={completeFirebaseLogin}
+          />
+        </View>
       </LanguageContext.Provider>
     );
   }
@@ -1882,8 +1967,8 @@ export default function App() {
   if (needsPartnerOnboarding(data.user)) {
     return (
       <LanguageContext.Provider value={language}>
-      <SafeAreaView edges={appSafeAreaEdges} style={styles.shell}>
-        <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+      <SafeAreaView edges={appSafeAreaEdges} style={[styles.shell, styles.partnerHeaderShell]}>
+        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent={false} />
         <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
           <View style={[
             styles.appHeaderInner,
@@ -1903,18 +1988,12 @@ export default function App() {
                 {copyFor(language, 'partnerSetup')}
               </Text>
             </View>
-            <View style={[styles.headerActions, responsive.isCompact && styles.headerActionsCompact]}>
-              <Pressable style={[styles.panicButton, responsive.isCompact && styles.panicButtonCompact, responsive.isSmall && styles.panicButtonSmall]} onPress={openPanicOptions}>
-                <Ionicons name="alert-circle" size={responsive.isSmall ? 14 : responsive.isCompact ? 16 : 18} color={colors.white} />
-                <Text style={[styles.panicButtonText, responsive.isCompact && styles.panicButtonTextCompact, responsive.isSmall && styles.panicButtonTextSmall]}>{copyFor(language, 'panic')}</Text>
-              </Pressable>
-              <View style={[styles.avatar, responsive.isCompact && styles.avatarCompact, responsive.isSmall && styles.avatarSmall]}>
-                <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact, responsive.isSmall && styles.avatarTextSmall]}>{data.user.initials}</Text>
-              </View>
+            <View style={[styles.avatar, responsive.isCompact && styles.avatarCompact, responsive.isSmall && styles.avatarSmall]}>
+              <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact, responsive.isSmall && styles.avatarTextSmall]}>{data.user.initials}</Text>
             </View>
           </View>
         </View>
-        <View style={[styles.content, { maxWidth: responsive.contentMaxWidth }]}>
+        <View style={[styles.content, styles.partnerTabContent, { maxWidth: responsive.contentMaxWidth }]}>
           <PartnerOnboardingScreen
             user={data.user}
             vehicles={data.vehicles}
@@ -1925,11 +2004,7 @@ export default function App() {
             onRootBack={confirmExitFromRoot}
           />
         </View>
-        <PanicSheet
-          visible={panicOpen}
-          onClose={() => setPanicOpen(false)}
-          onCall={openEmergencyNumber}
-        />
+        <PartnerDialogModal dialog={dialog} onClose={() => setDialog(null)} />
         {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
       </SafeAreaView>
       </LanguageContext.Provider>
@@ -1937,59 +2012,37 @@ export default function App() {
   }
 
   const activeOrder = data.activeOrders.find((order) => order.id === selectedActiveOrderId) ?? data.activeOrders[0];
+  const handlePageScroll = (offsetY: number) => {
+    const scrolled = offsetY > 2;
+    setHeaderScrolled((current) => current === scrolled ? current : scrolled);
+  };
+  const tabHeader = !profileDetailOpen ? (
+    <PartnerTabHeader
+      title={copyFor(language, tab === 'active' ? 'active' : tab === 'earnings' ? 'earn' : 'account')}
+      user={data.user}
+      home={tab === 'dashboard'}
+      topInset={rootTopInset}
+      onPanic={openPanicOptions}
+    />
+  ) : null;
 
   return (
     <LanguageContext.Provider value={language}>
-    <SafeAreaView edges={profileDetailOpen ? appSafeAreaEdges : tabScreenSafeAreaEdges} style={styles.shell}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
-      {tab !== 'profile' ? (
-        <View style={[styles.appHeader, responsive.isCompact && styles.appHeaderCompact, responsive.isSmall && styles.appHeaderSmall]}>
-          <View style={[
-            styles.appHeaderInner,
-            responsive.isCompact && styles.appHeaderInnerCompact,
-            { maxWidth: responsive.contentMaxWidth }
-          ]}>
-            <View style={styles.appHeaderCopy}>
-              <Text style={[styles.eyebrow, responsive.isCompact && styles.eyebrowCompact, responsive.isSmall && styles.eyebrowSmall]}>{copyFor(language, 'appEyebrow')}</Text>
-              <Text
-                style={[
-                  styles.headerTitle,
-                  responsive.isCompact && styles.headerTitleCompact,
-                  responsive.isSmall && styles.headerTitleSmall
-                ]}
-                numberOfLines={2}
-                ellipsizeMode="tail"
-              >
-                {data.user.name}
-              </Text>
-            </View>
-            <View style={[styles.headerActions, responsive.isCompact && styles.headerActionsCompact]}>
-              <Pressable style={[styles.panicButton, responsive.isCompact && styles.panicButtonCompact, responsive.isSmall && styles.panicButtonSmall]} onPress={openPanicOptions}>
-                <Ionicons name="alert-circle" size={responsive.isSmall ? 14 : responsive.isCompact ? 16 : 18} color={colors.white} />
-                <Text style={[styles.panicButtonText, responsive.isCompact && styles.panicButtonTextCompact, responsive.isSmall && styles.panicButtonTextSmall]}>{copyFor(language, 'panic')}</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={copyFor(language, 'profile')}
-                style={[styles.avatar, responsive.isCompact && styles.avatarCompact, responsive.isSmall && styles.avatarSmall]}
-                onPress={() => setTab('profile')}
-              >
-                <Text style={[styles.avatarText, responsive.isCompact && styles.avatarTextCompact, responsive.isSmall && styles.avatarTextSmall]}>{data.user.initials}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      ) : null}
+    <SafeAreaView
+      edges={profileDetailOpen ? ['left', 'right', 'bottom'] : ['left', 'right']}
+      style={[styles.shell, styles.tabShell]}
+    >
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       <View style={[
         styles.content,
-        tab !== 'profile' && styles.partnerPageContent,
-        tab === 'profile' && styles.accountContent,
+        styles.partnerTabContent,
         { maxWidth: responsive.contentMaxWidth }
       ]}>
-        {tab !== 'profile' ? <View pointerEvents="none" style={styles.partnerPageCurveSurface} /> : null}
         {tab === 'dashboard' && (
           <DashboardScreen
+            header={tabHeader}
+            onPageScroll={handlePageScroll}
             data={data}
             busy={busy}
             onToggle={() =>
@@ -2000,6 +2053,13 @@ export default function App() {
                 const result = await api.setAvailability(online);
                 setData((current) => current ? { ...current, user: result.user } : current);
                 showToast(online ? copyFor(language, 'youAreOnline') : copyFor(language, 'youAreOffline'));
+                if (online && Platform.OS === 'android' && incomingOrderAlert) {
+                  const overlayAllowed = await incomingOrderAlert.canDrawOverlays();
+                  if (!overlayAllowed) {
+                    showToast(copyFor(language, 'overlayPermissionPrompt'));
+                    incomingOrderAlert.requestOverlayPermission();
+                  }
+                }
                 scheduleRefresh(50);
               })
             }
@@ -2041,6 +2101,8 @@ export default function App() {
         )}
         {tab === 'active' && (
           <ActiveScreen
+            header={tabHeader}
+            onPageScroll={handlePageScroll}
             api={api}
             orders={data.activeOrders}
             completedOrders={data.completedOrders}
@@ -2074,45 +2136,44 @@ export default function App() {
               })
             }
             onCancel={(order) => {
-              Alert.alert(
-                copyFor(language, 'cancelDeliveryTitle'),
-                fillCopy(copyFor(language, 'cancelDeliveryBody'), {
+              presentDialog({
+                title: copyFor(language, 'cancelDeliveryTitle'),
+                message: fillCopy(copyFor(language, 'cancelDeliveryBody'), {
                   remaining: data.stats.cancellationsRemaining
                 }),
-                [
-                  { text: copyFor(language, 'cancel'), style: 'cancel' },
-                  {
-                    text: copyFor(language, 'cancelDelivery'),
-                    style: 'destructive',
-                    onPress: () =>
-                      withBusy(async () => {
-                        const result = await api.cancelPartnerOrder(order.id, 'Cancelled by driver');
-                        setData((current) => current ? {
-                          ...current,
-                          stats: {
-                            ...current.stats,
-                            activeCount: Math.max(0, current.stats.activeCount - 1),
-                            cancellationsToday: current.stats.cancellationsToday + 1,
-                            cancellationsRemaining: result.cancellationsRemaining
-                          },
-                          activeOrders: current.activeOrders.filter((item) => item.id !== order.id)
-                        } : current);
-                        scheduleRefresh(50);
-                        showToast(
-                          `${copyFor(language, 'driverCancellationSubmitted')} ${fillCopy(
-                            copyFor(language, 'cancellationsRemaining'),
-                            { remaining: result.cancellationsRemaining }
-                          )}`
-                        );
-                      })
-                  }
-                ]
-              );
+                confirmLabel: copyFor(language, 'cancelDelivery'),
+                cancelLabel: copyFor(language, 'cancel'),
+                destructive: true,
+                onConfirm: () => {
+                  void withBusy(async () => {
+                    const result = await api.cancelPartnerOrder(order.id, 'Cancelled by driver');
+                    setData((current) => current ? {
+                      ...current,
+                      stats: {
+                        ...current.stats,
+                        activeCount: Math.max(0, current.stats.activeCount - 1),
+                        cancellationsToday: current.stats.cancellationsToday + 1,
+                        cancellationsRemaining: result.cancellationsRemaining
+                      },
+                      activeOrders: current.activeOrders.filter((item) => item.id !== order.id)
+                    } : current);
+                    scheduleRefresh(50);
+                    showToast(
+                      `${copyFor(language, 'driverCancellationSubmitted')} ${fillCopy(
+                        copyFor(language, 'cancellationsRemaining'),
+                        { remaining: result.cancellationsRemaining }
+                      )}`
+                    );
+                  });
+                }
+              });
             }}
           />
         )}
         {tab === 'earnings' && (
           <EarningsScreen
+            header={tabHeader}
+            onPageScroll={handlePageScroll}
             data={data}
             busy={busy}
             onPayout={() =>
@@ -2129,6 +2190,8 @@ export default function App() {
         )}
         {tab === 'profile' && (
           <ProfileScreen
+            header={tabHeader}
+            onPageScroll={handlePageScroll}
             user={data.user}
             vehicles={data.vehicles}
             busy={busy}
@@ -2148,6 +2211,10 @@ export default function App() {
         )}
       </View>
 
+      {profileDetailOpen || tab !== 'dashboard' || headerScrolled ? (
+        <View pointerEvents="none" style={[styles.partnerStatusBarCover, { height: rootTopInset }]} />
+      ) : null}
+
       {!profileDetailOpen ? (
         <BottomTabs
           active={tab}
@@ -2163,6 +2230,7 @@ export default function App() {
         onClose={() => setPanicOpen(false)}
         onCall={openEmergencyNumber}
       />
+      <PartnerDialogModal dialog={dialog} onClose={() => setDialog(null)} />
       {toast ? <View style={styles.toast}><Text style={styles.toastText}>{toast}</Text></View> : null}
     </SafeAreaView>
     </LanguageContext.Provider>
@@ -2226,7 +2294,7 @@ function LoginScreen({
 
   useEffect(() => {
     if (!confirmation) return undefined;
-    return auth().onAuthStateChanged((user) => {
+    return onAuthStateChanged(getAuth(), (user) => {
       if (!user || user.phoneNumber !== expectedFirebasePhone) return;
       void completeAuthenticatedUser(user).catch((err) => {
         setError(err instanceof Error ? err.message : copy.unableToVerifyOtp);
@@ -2292,7 +2360,7 @@ function LoginScreen({
     setBusy(true);
     setError('');
     try {
-      const result = await auth().signInWithPhoneNumber(formatPhoneForFirebase(normalizedPhone, language));
+      const result = await signInWithPhoneNumber(getAuth(), formatPhoneForFirebase(normalizedPhone, language));
       setConfirmation(result);
       setCode('');
       setResendSeconds(30);
@@ -2311,7 +2379,7 @@ function LoginScreen({
     const completion = (async () => {
       setBusy(true);
       setError('');
-      const firebaseIdToken = await user.getIdToken();
+      const firebaseIdToken = await getIdToken(user);
       await onVerified(firebaseIdToken);
     })();
     verificationInFlightRef.current = completion;
@@ -2328,7 +2396,7 @@ function LoginScreen({
     setBusy(true);
     setError('');
     try {
-      const automaticallyVerifiedUser = auth().currentUser;
+      const automaticallyVerifiedUser = getAuth().currentUser;
       if (automaticallyVerifiedUser?.phoneNumber === expectedFirebasePhone) {
         await completeAuthenticatedUser(automaticallyVerifiedUser);
         return;
@@ -2338,7 +2406,7 @@ function LoginScreen({
       try {
         credential = await confirmation.confirm(code.trim());
       } catch (confirmationError) {
-        const userAfterConfirmation = auth().currentUser;
+        const userAfterConfirmation = getAuth().currentUser;
         if (userAfterConfirmation?.phoneNumber === expectedFirebasePhone) {
           await completeAuthenticatedUser(userAfterConfirmation);
           return;
@@ -2448,7 +2516,7 @@ function LoginPolicyModal({
       onRequestClose={onClose}
     >
       <SafeAreaView edges={appSafeAreaEdges} style={styles.loginPolicyShell}>
-        <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+        <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent={false} />
         {policy ? <LoginPolicyDetail policy={policy} onBack={onClose} /> : null}
       </SafeAreaView>
     </Modal>
@@ -3943,7 +4011,130 @@ function AcceptOrderSlider({
   );
 }
 
+function PartnerDialogModal({ dialog, onClose }: { dialog: PartnerDialog | null; onClose: () => void }) {
+  const dismiss = () => {
+    const onCancel = dialog?.onCancel;
+    onClose();
+    onCancel?.();
+  };
+  const confirm = () => {
+    const onConfirm = dialog?.onConfirm;
+    onClose();
+    onConfirm?.();
+  };
+
+  return (
+    <Modal visible={!!dialog} transparent animationType="fade" onRequestClose={dismiss} statusBarTranslucent>
+      <View style={styles.partnerDialogOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} accessibilityLabel={dialog?.cancelLabel} />
+        <View style={styles.partnerDialogCard}>
+          <View style={[styles.partnerDialogIcon, dialog?.destructive && styles.partnerDialogIconDestructive]}>
+            <Ionicons
+              name={dialog?.destructive ? 'alert-circle-outline' : 'shield-checkmark-outline'}
+              size={25}
+              color={dialog?.destructive ? colors.red : colors.partner}
+            />
+          </View>
+          <Text style={styles.partnerDialogTitle}>{dialog?.title}</Text>
+          <Text style={styles.partnerDialogMessage}>{dialog?.message}</Text>
+          <View style={styles.partnerDialogActions}>
+            <Pressable style={[styles.partnerDialogButton, styles.partnerDialogCancel]} onPress={dismiss} accessibilityRole="button">
+              <Text style={styles.partnerDialogCancelText}>{dialog?.cancelLabel}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.partnerDialogButton, styles.partnerDialogConfirm, dialog?.destructive && styles.partnerDialogConfirmDestructive]}
+              onPress={confirm}
+              accessibilityRole="button"
+            >
+              <Text style={styles.partnerDialogConfirmText}>{dialog?.confirmLabel}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PartnerTabHeader({
+  title,
+  user,
+  home,
+  topInset,
+  onPanic
+}: {
+  title: string;
+  user: UserProfile;
+  home: boolean;
+  topInset: number;
+  onPanic: () => void;
+}) {
+  const copy = useCopy();
+  const language = useLanguage();
+  const responsive = useResponsiveLayout();
+  return (
+    <View style={[
+      styles.partnerTabHeader,
+      home && styles.partnerHomeHeader,
+      home && responsive.isCompact && styles.partnerHomeHeaderCompact,
+      home && responsive.isSmall && styles.partnerHomeHeaderSmall,
+      { paddingTop: topInset + (home ? responsive.isSmall ? 11 : responsive.isCompact ? 13 : 18 : 14) }
+    ]}>
+      {home ? (
+        <>
+          <Image source={customerHomeHeaderSkyline} resizeMode="cover" style={styles.partnerHeaderArtwork} />
+          <Image
+            source={customerHomeHeaderTruck}
+            resizeMode="contain"
+            style={[
+              styles.partnerHeaderTruck,
+              responsive.isCompact && styles.partnerHeaderTruckCompact,
+              responsive.isSmall && styles.partnerHeaderTruckSmall
+            ]}
+          />
+          <View pointerEvents="none" style={styles.partnerHeaderBottomBlend} />
+        </>
+      ) : null}
+      <View style={[styles.partnerTabHeaderInner, home && styles.partnerHomeHeaderInner, { maxWidth: responsive.contentMaxWidth }]}>
+        <View style={styles.partnerTabHeaderCopy}>
+          {home ? <Text style={[styles.partnerHeaderEyebrow, responsive.isCompact && styles.partnerHeaderEyebrowCompact]}>INDIERY</Text> : null}
+          <Text style={[
+            styles.partnerTabHeaderTitle,
+            home && styles.partnerHomeHeaderTitle,
+            home && responsive.isCompact && styles.partnerHomeHeaderTitleCompact,
+            home && responsive.isSmall && styles.partnerHomeHeaderTitleSmall
+          ]} numberOfLines={home ? 2 : 1}>
+            {home ? `${language === 'hi' ? 'नमस्ते' : 'Hi'}, ${user.name.trim().split(/\s+/)[0] || 'Partner'}` : title}
+          </Text>
+          {home ? <Text style={[styles.partnerHeaderSubtitle, responsive.isCompact && styles.partnerHeaderSubtitleCompact]}>{user.partnerProfile?.online ? copy.youAreOnline : copy.youAreOffline}</Text> : null}
+        </View>
+        {home ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={copy.panic}
+            style={[styles.partnerHeaderPanic, styles.partnerHeaderPanicHome]}
+            onPress={onPanic}
+          >
+            <Ionicons name="alert-circle-outline" size={18} color={colors.red} />
+            <Text style={styles.partnerHeaderPanicText}>{copy.panic}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function PartnerScrollingHeader({ header, horizontalInset, topInset, bottomInset = 16 }: {
+  header: React.ReactNode;
+  horizontalInset: number;
+  topInset: number;
+  bottomInset?: number;
+}) {
+  return header ? <View style={{ marginHorizontal: -horizontalInset, marginTop: -topInset, marginBottom: bottomInset }}>{header}</View> : null;
+}
+
 function DashboardScreen({
+  header,
+  onPageScroll,
   data,
   busy,
   onToggle,
@@ -3953,6 +4144,8 @@ function DashboardScreen({
   onAccept,
   onReject
 }: {
+  header: React.ReactNode;
+  onPageScroll: (offsetY: number) => void;
   data: PartnerBootstrap;
   busy: boolean;
   onToggle: () => void;
@@ -3985,7 +4178,10 @@ function DashboardScreen({
           }
         ]}
         showsVerticalScrollIndicator={false}
+        onScroll={(event) => onPageScroll(event.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
       >
+      <PartnerScrollingHeader header={header} horizontalInset={responsive.horizontalPadding} topInset={responsive.isSmall ? 10 : responsive.isCompact ? 12 : 16} bottomInset={8} />
       {profile?.kycStatus === 'pending' ? (
         <View style={[styles.verificationPendingCard, responsive.isCompact && styles.verificationPendingCardCompact]}>
           <View style={[styles.verificationPendingHeader, responsive.isCompact && styles.verificationPendingHeaderCompact]}>
@@ -4029,7 +4225,7 @@ function DashboardScreen({
         </View>
       ) : null}
 
-      <View style={[styles.statRow, responsive.isCompact && styles.statRowCompact]}>
+      <View style={[styles.statRow, responsive.isCompact && styles.statRowCompact, styles.dashboardStatRow]}>
         <StatCard title={copy.today} value={money(data.stats.todayEarn)} tone="green" />
         <StatCard title={copy.orders} value={String(data.stats.completedCount)} tone="blue" />
         <StatCard title={copy.rating} value={`${profile?.rating ?? 5}`} tone="amber" />
@@ -4154,6 +4350,8 @@ function AvailableOrdersList({
 }
 
 function ActiveScreen({
+  header,
+  onPageScroll,
   api,
   orders,
   completedOrders,
@@ -4168,6 +4366,8 @@ function ActiveScreen({
   onStatus,
   onCancel
 }: {
+  header: React.ReactNode;
+  onPageScroll: (offsetY: number) => void;
   api: IndieryApi;
   orders: Order[];
   completedOrders: Order[];
@@ -4227,9 +4427,9 @@ function ActiveScreen({
   }
 
   return (
-    <View style={styles.partnerCurvedScrollViewport}>
+    <View style={styles.partnerScrollViewport}>
     <ScrollView
-      style={styles.partnerCurvedScroll}
+      style={styles.partnerScroll}
       contentContainerStyle={[
         styles.scroll,
         styles.responsiveScreenContent,
@@ -4238,12 +4438,14 @@ function ActiveScreen({
         {
           maxWidth: responsive.contentMaxWidth,
           paddingHorizontal: responsive.horizontalPadding
-        },
-        styles.partnerCurvedScrollContent
+        }
       ]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      onScroll={(event) => onPageScroll(event.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
     >
+      <PartnerScrollingHeader header={header} horizontalInset={responsive.horizontalPadding} topInset={responsive.isSmall ? 10 : responsive.isCompact ? 12 : 16} />
       <SectionTitle title={`${copy.activeOrders} (${orders.length})`} />
       {!order ? (
         <>
@@ -4460,11 +4662,15 @@ function ActiveScreen({
 }
 
 function EarningsScreen({
+  header,
+  onPageScroll,
   data,
   busy,
   onPayout,
   onTopup
 }: {
+  header: React.ReactNode;
+  onPageScroll: (offsetY: number) => void;
   data: PartnerBootstrap;
   busy: boolean;
   onPayout: () => void;
@@ -4477,9 +4683,9 @@ function EarningsScreen({
   const walletReady = balance >= minPartnerWalletBalance;
   const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
   return (
-    <View style={styles.partnerCurvedScrollViewport}>
+    <View style={styles.partnerScrollViewport}>
     <ScrollView
-      style={styles.partnerCurvedScroll}
+      style={styles.partnerScroll}
       contentContainerStyle={[
         styles.scroll,
         styles.responsiveScreenContent,
@@ -4488,11 +4694,13 @@ function EarningsScreen({
         {
           maxWidth: responsive.contentMaxWidth,
           paddingHorizontal: responsive.horizontalPadding
-        },
-        styles.partnerCurvedScrollContent
+        }
       ]}
       showsVerticalScrollIndicator={false}
+      onScroll={(event) => onPageScroll(event.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
     >
+      <PartnerScrollingHeader header={header} horizontalInset={responsive.horizontalPadding} topInset={responsive.isSmall ? 10 : responsive.isCompact ? 12 : 16} />
       <View style={[styles.walletCard, responsive.isCompact && styles.walletCardCompact]}>
         <Text style={[styles.eyebrowDark, responsive.isCompact && styles.eyebrowDarkCompact, responsive.isSmall && styles.eyebrowDarkSmall]}>{copy.walletBalance}</Text>
         <Text style={[styles.walletValue, responsive.isCompact && styles.walletValueCompact, responsive.isSmall && styles.walletValueSmall]}>{money(balance)}</Text>
@@ -4531,6 +4739,8 @@ function EarningsScreen({
 }
 
 function ProfileScreen({
+  header,
+  onPageScroll,
   user,
   vehicles,
   busy,
@@ -4544,6 +4754,8 @@ function ProfileScreen({
   language,
   onChangeLanguage
 }: {
+  header: React.ReactNode;
+  onPageScroll: (offsetY: number) => void;
   user: UserProfile;
   vehicles: Vehicle[];
   busy: boolean;
@@ -4559,6 +4771,7 @@ function ProfileScreen({
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
+  const { top: detailTopInset } = useSafeAreaInsets();
   const docs = user.partnerProfile?.docs;
   const bankDetails = user.partnerProfile?.bankDetails;
   const progress = partnerSetupProgress(user);
@@ -4715,7 +4928,10 @@ function ProfileScreen({
           }
         ]}
         showsVerticalScrollIndicator={false}
+        onScroll={(event) => onPageScroll(event.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
       >
+        <PartnerScrollingHeader header={header} horizontalInset={responsive.horizontalPadding} topInset={responsive.isSmall ? 10 : responsive.isCompact ? 12 : 16} />
         <View style={[styles.accountHero, responsive.isCompact && styles.accountHeroCompact, responsive.isSmall && styles.accountHeroSmall]}>
           <View style={styles.accountHeroGlow} />
           <Text style={[styles.accountEyebrow, responsive.isCompact && styles.accountEyebrowCompact, responsive.isSmall && styles.accountEyebrowSmall]}>{copy.account}</Text>
@@ -4760,18 +4976,21 @@ function ProfileScreen({
             title={copy.vehicleDetails}
             subtitle={`${vehicleName} • ${user.partnerProfile?.vehicleNumber || copy.numberNotAdded}`}
             onPress={() => openPage('vehicle')}
+            attention={!user.partnerProfile?.vehicleId || !user.partnerProfile?.vehicleNumber || !docs?.rc}
           />
           <AccountMenuRow
             icon="shield-checkmark-outline"
             title={copy.documentsKyc}
             subtitle={documentsVerified ? copy.allDocumentsVerified : copy.documentsNeedAttention}
             onPress={() => openPage('documents')}
+            attention={!docs?.selfie || !identityDone || !docs?.drivingLicence || !docs?.rc}
           />
           <AccountMenuRow
             icon="wallet-outline"
             title={copy.bankAccount}
             subtitle={docs?.bank ? `${bankDetails?.accountNumberMasked || copy.accountSaved} • ${bankDetails?.ifsc || copy.ifscSaved}` : copy.usedForPayouts}
             onPress={() => openPage('bank')}
+            attention={!docs?.bank}
           />
           <AccountMenuRow
             icon="language-outline"
@@ -4818,14 +5037,19 @@ function ProfileScreen({
           showDetailKeyboardAction && styles.profileDetailKeyboardScroll,
           {
             maxWidth: responsive.contentMaxWidth,
-            paddingHorizontal: responsive.horizontalPadding
+            paddingHorizontal: responsive.horizontalPadding,
+            paddingTop: 0
           }
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        onScroll={(event) => onPageScroll(event.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
       >
+        <View style={{ marginHorizontal: -responsive.horizontalPadding }}>
         <AccountDetailHeader
+          topInset={detailTopInset}
           title={
             page === 'personal' ? copy.personalInformation
               : page === 'training' ? copy.driverTraining
@@ -4846,6 +5070,7 @@ function ProfileScreen({
           }
           onBack={() => openPage('overview')}
         />
+        </View>
 
         {page === 'personal' ? (
           <View style={[styles.accountDetailCard, responsive.isCompact && styles.accountDetailCardCompact]}>
@@ -5035,13 +5260,15 @@ function AccountMenuRow({
   title,
   subtitle,
   onPress,
-  last
+  last,
+  attention = false
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
   onPress: () => void;
   last?: boolean;
+  attention?: boolean;
 }) {
   const responsive = useResponsiveLayout();
   return (
@@ -5050,7 +5277,10 @@ function AccountMenuRow({
         <Ionicons name={icon} size={responsive.isCompact ? 17 : 20} color={colors.partner} />
       </View>
       <View style={styles.flex}>
-        <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{title}</Text>
+        <View style={styles.accountMenuTitleRow}>
+          <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact, responsive.isSmall && styles.cardTitleSmall]}>{title}</Text>
+          {attention ? <View accessible accessibilityLabel={`${title}: incomplete`} style={styles.accountMenuAttentionDot} /> : null}
+        </View>
         <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact, responsive.isSmall && styles.mutedSmallScreenText]} numberOfLines={2}>{subtitle}</Text>
       </View>
       <Ionicons name="chevron-forward" size={responsive.isCompact ? 16 : 18} color={colors.muted} />
@@ -5058,12 +5288,16 @@ function AccountMenuRow({
   );
 }
 
-function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+function AccountDetailHeader({ title, subtitle, onBack, topInset = 0 }: { title: string; subtitle: string; onBack: () => void; topInset?: number }) {
   const responsive = useResponsiveLayout();
   return (
-    <View style={[styles.accountDetailHeader, responsive.isCompact && styles.accountDetailHeaderCompact]}>
+    <View style={[
+      styles.accountDetailHeader,
+      responsive.isCompact && styles.accountDetailHeaderCompact,
+      { paddingTop: topInset + (responsive.isCompact ? 11 : 14) }
+    ]}>
       <Pressable style={[styles.accountBackButton, responsive.isCompact && styles.accountBackButtonCompact]} onPress={onBack}>
-        <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.white} />
+        <Ionicons name="arrow-back" size={responsive.isCompact ? 18 : 21} color={colors.ink} />
       </Pressable>
       <View style={styles.flex}>
         <Text style={[styles.accountDetailTitle, responsive.isCompact && styles.accountDetailTitleCompact, responsive.isSmall && styles.accountDetailTitleSmall]}>{title}</Text>
@@ -5860,7 +6094,14 @@ function Empty({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap
 }
 
 const styles = StyleSheet.create({
+  startupTransitionRoot: { flex: 1 },
+  startupLoadingScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#002B49' },
+  startupLoadingMark: { width: 176, height: 176 },
+  startupLoadingFooter: { position: 'absolute', bottom: 72, alignItems: 'center', gap: 10 },
+  startupLoadingText: { color: colors.white, fontSize: 12, fontWeight: '600' },
   shell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
+  tabShell: { paddingTop: 0, backgroundColor: '#F8FAFC' },
+  partnerHeaderShell: { backgroundColor: '#F8FAFC' },
   loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
   authKeyboard: { flex: 1 },
   androidKeyboardFooter: {
@@ -5922,7 +6163,7 @@ const styles = StyleSheet.create({
   loginPhoneKeyboardConsent: { marginTop: 9 },
   loginConsentText: { color: colors.muted, fontSize: 10, fontWeight: '500', lineHeight: 15 },
   loginConsentLink: { color: colors.partner, fontSize: 10, fontWeight: '700', lineHeight: 15, textDecorationLine: 'underline' },
-  loginPolicyShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
+  loginPolicyShell: { flex: 1, backgroundColor: '#F8FAFC', paddingTop: androidStatusBarInset },
   loginLanguageToggle: {
     minHeight: 32,
     maxWidth: 124,
@@ -6381,7 +6622,7 @@ const styles = StyleSheet.create({
   loginError: { color: colors.red, fontSize: 12, fontWeight: '800', marginBottom: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.white },
   appHeader: {
-    backgroundColor: colors.partner,
+    backgroundColor: '#F8FAFC',
     paddingTop: 15,
     paddingBottom: 28
   },
@@ -6397,13 +6638,13 @@ const styles = StyleSheet.create({
   },
   appHeaderInnerCompact: { paddingHorizontal: 16 },
   appHeaderCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
-  eyebrow: { color: '#D1FAE5', fontSize: 11, fontWeight: '700', letterSpacing: 0.35 },
+  eyebrow: { color: colors.partner, fontSize: 11, fontWeight: '700', letterSpacing: 0.35 },
   eyebrowCompact: { fontSize: 9, letterSpacing: 0.25 },
   eyebrowSmall: { fontSize: 8, letterSpacing: 0.2 },
   eyebrowDark: { color: colors.muted, fontSize: 11, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
   eyebrowDarkCompact: { fontSize: 9, letterSpacing: 0.8 },
   eyebrowDarkSmall: { fontSize: 8, letterSpacing: 0.6 },
-  headerTitle: { color: colors.white, fontSize: 23, fontWeight: '800', marginTop: 2 },
+  headerTitle: { color: colors.ink, fontSize: 23, fontWeight: '800', marginTop: 2 },
   headerTitleCompact: { fontSize: 20, marginTop: 1 },
   headerTitleSmall: { fontSize: 18 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -6444,9 +6685,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: colors.partnerLight,
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.34)',
+    borderColor: 'rgba(5,150,105,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#064E3B',
@@ -6457,38 +6698,53 @@ const styles = StyleSheet.create({
   },
   avatarCompact: { width: 38, height: 38, borderRadius: 12 },
   avatarSmall: { width: 34, height: 34, borderRadius: 11 },
-  avatarText: { color: colors.white, fontWeight: '700' },
+  avatarText: { color: colors.partner, fontWeight: '700' },
   avatarTextCompact: { fontSize: 13 },
   avatarTextSmall: { fontSize: 11 },
   content: { flex: 1, width: '100%', alignSelf: 'center', marginTop: -14, backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
-  partnerPageContent: {
-    marginTop: -20,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    backgroundColor: 'transparent',
-    overflow: 'hidden'
-  },
-  partnerPageCurveSurface: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    top: 0,
-    bottom: 0,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-    backgroundColor: colors.white,
-    overflow: 'hidden'
-  },
-  partnerCurvedScrollViewport: {
+  partnerTabContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, backgroundColor: '#F8FAFC' },
+  partnerTabHeader: { backgroundColor: '#F8FAFC', paddingBottom: 14, overflow: 'hidden' },
+  partnerHomeHeader: { minHeight: 132, paddingBottom: 18 },
+  partnerHomeHeaderCompact: { minHeight: 118, paddingBottom: 16 },
+  partnerHomeHeaderSmall: { minHeight: 112, paddingBottom: 14 },
+  partnerHeaderArtwork: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0.82 },
+  partnerHeaderTruck: { position: 'absolute', right: 16, bottom: 8, width: 120, height: 80 },
+  partnerHeaderTruckCompact: { right: 16, bottom: 8, width: 104, height: 70 },
+  partnerHeaderTruckSmall: { right: 16, bottom: 6, width: 96, height: 64 },
+  partnerHeaderBottomBlend: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 14, backgroundColor: '#F8FAFC', opacity: 0.88 },
+  partnerTabHeaderInner: { width: '100%', alignSelf: 'center', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 16, gap: 8 },
+  partnerHomeHeaderInner: { alignItems: 'flex-start', paddingRight: 140, zIndex: 1 },
+  partnerTabHeaderCopy: { flex: 1, minWidth: 0 },
+  partnerHeaderEyebrow: { color: colors.partner, fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
+  partnerHeaderEyebrowCompact: { fontSize: 9, letterSpacing: 0.25 },
+  partnerTabHeaderTitle: { color: colors.ink, fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  partnerHomeHeaderTitle: { color: '#111827', fontSize: 28, lineHeight: 34, fontWeight: '800', marginTop: 3 },
+  partnerHomeHeaderTitleCompact: { fontSize: 20, marginTop: 1 },
+  partnerHomeHeaderTitleSmall: { fontSize: 18 },
+  partnerHeaderSubtitle: { color: '#374151', fontSize: 13, lineHeight: 18, fontWeight: '500', marginTop: 1 },
+  partnerHeaderSubtitleCompact: { fontSize: 11, lineHeight: 15 },
+  partnerHeaderPanic: { minHeight: 36, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.93)', borderWidth: 1, borderColor: '#FECACA', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 9 },
+  partnerHeaderPanicHome: { position: 'absolute', right: 16, top: 0 },
+  partnerHeaderPanicText: { color: colors.red, fontSize: 11, fontWeight: '800' },
+  partnerDialogOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(15,23,42,0.45)', paddingHorizontal: 22 },
+  partnerDialogCard: { width: '100%', maxWidth: 420, borderRadius: 24, backgroundColor: colors.white, padding: 22, shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
+  partnerDialogIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  partnerDialogIconDestructive: { backgroundColor: '#FEF2F2' },
+  partnerDialogTitle: { color: colors.ink, fontSize: 20, lineHeight: 26, fontWeight: '800', marginBottom: 8 },
+  partnerDialogMessage: { color: colors.muted, fontSize: 14, lineHeight: 21, marginBottom: 22 },
+  partnerDialogActions: { flexDirection: 'row', gap: 10 },
+  partnerDialogButton: { minHeight: 46, flex: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  partnerDialogCancel: { backgroundColor: '#F1F5F9' },
+  partnerDialogCancelText: { color: colors.ink, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  partnerDialogConfirm: { backgroundColor: colors.partner },
+  partnerDialogConfirmDestructive: { backgroundColor: colors.red },
+  partnerDialogConfirmText: { color: colors.white, fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  partnerStatusBarCover: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: '#F8FAFC', zIndex: 10 },
+  partnerScrollViewport: {
     flex: 1,
-    marginHorizontal: 14,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
     overflow: 'hidden'
   },
-  partnerCurvedScroll: { flex: 1 },
-  partnerCurvedScrollContent: { paddingHorizontal: 0 },
-  accountContent: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
+  partnerScroll: { flex: 1 },
   scroll: { padding: 16, paddingBottom: 96 },
   responsiveScreenContent: { width: '100%', alignSelf: 'center' },
   scrollCompact: { paddingTop: 12, paddingBottom: 78 },
@@ -6603,6 +6859,7 @@ const styles = StyleSheet.create({
   walletBlockBalanceCompact: { fontSize: 11, marginBottom: 8 },
   statRow: { flexDirection: 'row', gap: 10, marginTop: 16, marginBottom: 16 },
   statRowCompact: { gap: 7, marginTop: 11, marginBottom: 11 },
+  dashboardStatRow: { marginTop: 0 },
   statCard: { flex: 1, borderRadius: 14, padding: 14 },
   statCardCompact: { borderRadius: 12, paddingHorizontal: 9, paddingVertical: 10 },
   statCardSmall: { borderRadius: 11, paddingHorizontal: 8, paddingVertical: 8 },
@@ -6830,14 +7087,16 @@ const styles = StyleSheet.create({
   accountMenuIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.partnerLight, alignItems: 'center', justifyContent: 'center' },
   accountMenuIconCompact: { width: 35, height: 35, borderRadius: 11 },
   accountMenuIconComplete: { backgroundColor: colors.partner },
-  accountDetailHeader: { minHeight: 82, borderRadius: 18, backgroundColor: colors.partner, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, overflow: 'hidden' },
-  accountDetailHeaderCompact: { minHeight: 68, borderRadius: 15, padding: 11, gap: 9, marginBottom: 10 },
-  accountBackButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  accountMenuTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  accountMenuAttentionDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.red },
+  accountDetailHeader: { minHeight: 82, backgroundColor: '#F8FAFC', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  accountDetailHeaderCompact: { minHeight: 68, padding: 11, gap: 9, marginBottom: 10 },
+  accountBackButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   accountBackButtonCompact: { width: 34, height: 34, borderRadius: 11 },
-  accountDetailTitle: { color: colors.white, fontSize: 18, fontWeight: '900' },
+  accountDetailTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' },
   accountDetailTitleCompact: { fontSize: 15 },
   accountDetailTitleSmall: { fontSize: 13 },
-  accountDetailSubtitle: { color: '#D1FAE5', fontSize: 11, fontWeight: '700', marginTop: 3 },
+  accountDetailSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '700', marginTop: 3 },
   accountDetailSubtitleCompact: { fontSize: 9, lineHeight: 12, marginTop: 2 },
   accountDetailSubtitleSmall: { fontSize: 8, lineHeight: 11, marginTop: 1 },
   accountDetailCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 14 },

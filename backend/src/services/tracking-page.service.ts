@@ -110,7 +110,9 @@ export function trackingContentSecurityPolicy(nonce: string) {
 
 export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string) {
   const initialState = safeJson(state);
-  const googleMapsApiKey = safeJson(env.GOOGLE_MAPS_BROWSER_API_KEY ?? '');
+  const googleMapsApiKey = safeJson(
+    env.GOOGLE_MAPS_BROWSER_API_KEY ?? env.GOOGLE_MAPS_API_KEY ?? ''
+  );
   const partnerName = state.partner?.name || 'Driver assignment pending';
   const vehicleNumber = state.partner?.vehicleNumber || 'Vehicle number will appear after assignment';
   const senderName = state.senderName || 'Sender name unavailable';

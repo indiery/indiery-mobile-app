@@ -80,9 +80,6 @@ if (env.NODE_ENV === 'production') {
   if (!env.GOOGLE_MAPS_API_KEY) {
     throw new Error('Production GOOGLE_MAPS_API_KEY is required for fare distance calculation');
   }
-  if (!env.GOOGLE_MAPS_BROWSER_API_KEY) {
-    throw new Error('Production GOOGLE_MAPS_BROWSER_API_KEY is required for Google Maps on shared tracking pages');
-  }
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET || !env.RAZORPAY_WEBHOOK_SECRET) {
     throw new Error('Production Razorpay keys and webhook secret are required for prepaid payments');
   }

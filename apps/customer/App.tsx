@@ -23,6 +23,7 @@ import {
   View
 } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView, type Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
@@ -8550,7 +8551,44 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const formScrollRef = useRef<ScrollView>(null);
+  const draftKey = `@indiery/customer/enterprise-enquiry/${user.id}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    setDraftRestored(false);
+    AsyncStorage.getItem(draftKey)
+      .then((savedDraft) => {
+        if (cancelled) return;
+        if (savedDraft) {
+          try {
+            const draft = JSON.parse(savedDraft) as Partial<Record<'companyName' | 'contactName' | 'mobileNumber' | 'email', unknown>>;
+            if (typeof draft.companyName === 'string') setCompanyName(draft.companyName);
+            if (typeof draft.contactName === 'string') setContactName(draft.contactName);
+            if (typeof draft.mobileNumber === 'string') setMobileNumber(draft.mobileNumber);
+            if (typeof draft.email === 'string') setEmail(draft.email);
+          } catch {
+            void AsyncStorage.removeItem(draftKey);
+          }
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setDraftRestored(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftRestored || sent) return undefined;
+    const timer = setTimeout(() => {
+      void AsyncStorage.setItem(draftKey, JSON.stringify({ companyName, contactName, mobileNumber, email })).catch(() => undefined);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [companyName, contactName, mobileNumber, email, draftKey, draftRestored, sent]);
 
   function keepLastFieldsVisible() {
     setTimeout(() => formScrollRef.current?.scrollToEnd({ animated: true }), 220);
@@ -8580,6 +8618,7 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
     setSubmitting(true);
     try {
       await api.submitEnterpriseEnquiry(input);
+      await AsyncStorage.removeItem(draftKey).catch(() => undefined);
       setFormOpen(false);
       setSent(true);
     } catch {
@@ -8698,10 +8737,10 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
             </Pressable>
           </View>
           <ScrollView ref={formScrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Field label={copy.companyName} value={companyName} onChangeText={setCompanyName} editable={!submitting} />
-            <Field label={copy.contactName} value={contactName} onChangeText={setContactName} editable={!submitting} />
-            <Field label={copy.mobileNumber} value={mobileNumber} onChangeText={setMobileNumber} onFocus={keepLastFieldsVisible} keyboardType="phone-pad" editable={!submitting} />
-            <Field label={copy.email} value={email} onChangeText={setEmail} onFocus={keepLastFieldsVisible} keyboardType="email-address" editable={!submitting} />
+            <Field label={copy.companyName} value={companyName} onChangeText={setCompanyName} editable={draftRestored && !submitting} />
+            <Field label={copy.contactName} value={contactName} onChangeText={setContactName} editable={draftRestored && !submitting} />
+            <Field label={copy.mobileNumber} value={mobileNumber} onChangeText={setMobileNumber} onFocus={keepLastFieldsVisible} keyboardType="phone-pad" editable={draftRestored && !submitting} />
+            <Field label={copy.email} value={email} onChangeText={setEmail} onFocus={keepLastFieldsVisible} keyboardType="email-address" editable={draftRestored && !submitting} />
             {formError ? <Text style={styles.accountEditError}>{formError}</Text> : null}
             <Pressable style={styles.enterpriseGetInTouch} onPress={submitEnquiry} disabled={submitting} accessibilityRole="button">
               {submitting ? <ActivityIndicator color={colors.white} /> : <Text style={styles.enterpriseGetInTouchText}>{copy.getInTouch}</Text>}

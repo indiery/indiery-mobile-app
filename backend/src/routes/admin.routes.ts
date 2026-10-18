@@ -3,29 +3,68 @@ import { z } from 'zod';
 import { AuthRequest, requireAuth } from '../middleware/auth';
 import { asyncRoute } from '../middleware/error';
 import { EnterpriseEnquiry } from '../models/EnterpriseEnquiry';
+import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
 import { User } from '../models/User';
 import { Order } from '../models/Order';
 import { Vehicle } from '../models/Vehicle';
 import { WalletLedger } from '../models/WalletLedger';
 import { B2bClient } from '../models/B2bClient';
 import { AdminWorkspace } from '../models/AdminWorkspace';
+import { AdminAuditEvent } from '../models/AdminAuditEvent';
+import { AdminIdentity, ADMIN_ROLE_KEYS } from '../models/AdminIdentity';
+import { AdminSupportTicket } from '../models/AdminSupportTicket';
+import { AdminNotificationCampaign } from '../models/AdminNotificationCampaign';
+import { B2bInvoice } from '../models/B2bInvoice';
 import { Counter } from '../models/Counter';
 import { ApiError } from '../middleware/error';
 import { isValidObjectId } from 'mongoose';
 import { calculateDeliverySettlement, calculatePartnerWalletSettlement } from '../services/settlement.service';
-import { resolveRouteMetrics } from '../services/maps.service';
+import { resolveRouteMetrics, resolveRoutePath } from '../services/maps.service';
 import { normalizeFareBreakup } from '../services/fare.service';
 import { sendPush } from '../services/notification.service';
 import { createRateLimit } from '../middleware/rateLimit';
+import { AdminSettingsSchema } from '../services/admin-settings.service';
+import { assertAdminPermission } from '../middleware/admin-permissions';
+import { createHmac, createHash, randomBytes } from 'crypto';
+import { env } from '../config/env';
 
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth(['admin']));
+adminRouter.use((req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  const requestId = String(req.headers['x-request-id'] || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`).slice(0, 80);
+  res.once('finish', () => {
+    void AdminAuditEvent.create({
+      actorId: req.auth!.userId,
+      action: req.method,
+      path: req.path.slice(0, 256),
+      statusCode: res.statusCode,
+      outcome: res.statusCode < 400 ? 'success' : 'failure',
+      requestId
+    }).catch((error) => console.error('Unable to persist admin audit event', error));
+  });
+  next();
+});
+
+adminRouter.use((req: AuthRequest, _res: Response, next: NextFunction) => {
+  try {
+    assertAdminPermission(req);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 adminRouter.use(createRateLimit({
   windowMs: 60_000,
   maxRequests: 300,
   keyGenerator: (req) => `admin:${(req as AuthRequest).auth?.userId || 'unknown'}`,
   message: 'Admin request limit reached. Please wait briefly before retrying.'
+}));
+
+adminRouter.get('/audit-events', asyncRoute(async (_req, res) => {
+  const events = await AdminAuditEvent.find().populate('actorId', 'name email').sort({ createdAt: -1 }).limit(250).lean();
+  res.json({ events });
 }));
 
 adminRouter.get(
@@ -47,6 +86,62 @@ adminRouter.get(
   })
 );
 
+adminRouter.patch('/enterprise-enquiries/:id/status', asyncRoute(async (req, res) => {
+  if (!isValidObjectId(req.params.id)) throw new ApiError(404, 'Enterprise enquiry not found');
+  const { status } = z.object({ status: z.enum(['new', 'contacted', 'closed']) }).parse(req.body);
+  const enquiry = await EnterpriseEnquiry.findByIdAndUpdate(req.params.id, { $set: { status } }, { new: true, runValidators: true }).lean();
+  if (!enquiry) throw new ApiError(404, 'Enterprise enquiry not found');
+  res.json({ success: true, enquiry });
+}));
+
+adminRouter.get('/account-deletion-requests', asyncRoute(async (req, res) => {
+  const query = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    status: z.enum(['requested', 'reviewing', 'completed', 'rejected']).optional()
+  }).parse(req.query);
+  const filter = query.status ? { status: query.status } : {};
+  const [requests, total] = await Promise.all([
+    AccountDeletionRequest.find(filter)
+      .select('role name phone email reason source verificationStatus verifiedAt status lastRequestedAt requestCount createdAt completedAt')
+      .sort({ lastRequestedAt: -1 })
+      .skip((query.page - 1) * query.limit)
+      .limit(query.limit)
+      .lean(),
+    AccountDeletionRequest.countDocuments(filter)
+  ]);
+  res.json({ requests, total, page: query.page, limit: query.limit });
+}));
+
+adminRouter.patch('/account-deletion-requests/:id', asyncRoute(async (req, res) => {
+  if (!isValidObjectId(req.params.id)) throw new ApiError(404, 'Account-deletion request not found');
+  const body = z.object({
+    status: z.enum(['requested', 'reviewing', 'completed', 'rejected']).optional(),
+    verificationStatus: z.enum(['pending', 'verified']).optional()
+  }).refine((value) => value.status !== undefined || value.verificationStatus !== undefined, {
+    message: 'Provide a status or verification update'
+  }).parse(req.body);
+  const request = await AccountDeletionRequest.findById(req.params.id);
+  if (!request) throw new ApiError(404, 'Account-deletion request not found');
+  if (body.verificationStatus) {
+    if (request.status === 'completed' && body.verificationStatus !== 'verified') {
+      throw new ApiError(409, 'A completed deletion request cannot be marked unverified');
+    }
+    request.verificationStatus = body.verificationStatus;
+    request.verifiedAt = body.verificationStatus === 'verified' ? new Date() : undefined;
+  }
+  if (body.status) {
+    const verificationStatus = body.verificationStatus ?? request.verificationStatus;
+    if (body.status === 'completed' && verificationStatus !== 'verified') {
+      throw new ApiError(409, 'Verify account ownership before completing this deletion request');
+    }
+    request.status = body.status;
+    request.completedAt = body.status === 'completed' ? new Date() : undefined;
+  }
+  await request.save();
+  res.json({ success: true, request });
+}));
+
 const adminWorkspaceKeys = new Set([
   'customer-overrides',
   'tickets',
@@ -57,6 +152,104 @@ const adminWorkspaceKeys = new Set([
   'audit',
   'disputes'
 ]);
+
+const InviteAdminSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  email: z.string().trim().email().max(160),
+  roleKey: z.enum(ADMIN_ROLE_KEYS),
+  cityScope: z.array(z.string().trim().min(2).max(100)).max(50).default([])
+}).superRefine((value, context) => {
+  if (value.roleKey === 'city_manager' && value.cityScope.length === 0) {
+    context.addIssue({ code: 'custom', message: 'A city manager must be assigned at least one city.' });
+  }
+});
+
+adminRouter.get('/admin-users', asyncRoute(async (_req, res) => {
+  const identities = await AdminIdentity.find()
+    .select('email name roleKey cityScope status lastLoginAt user createdAt')
+    .sort({ createdAt: -1 })
+    .lean();
+  res.json({ admins: identities.map((identity) => ({
+    id: String(identity._id),
+    userId: String(identity.user),
+    email: identity.email,
+    name: identity.name,
+    roleKey: identity.roleKey,
+    cityScope: identity.cityScope ?? [],
+    status: identity.status,
+    lastLoginAt: identity.lastLoginAt ?? null
+  })) });
+}));
+
+adminRouter.post('/admin-users/invitations', asyncRoute(async (req: AuthRequest, res) => {
+  const body = InviteAdminSchema.parse(req.body);
+  if (body.roleKey === 'city_manager') throw new ApiError(409, 'City Manager invitations are disabled until city-scoped data filtering is implemented.');
+  const email = body.email.toLowerCase();
+  if (env.ADMIN_EMAIL?.toLowerCase() === email) throw new ApiError(409, 'The configured bootstrap administrator already owns this email.');
+  let identity = await AdminIdentity.findOne({ email });
+  if (identity && identity.status !== 'invited') throw new ApiError(409, 'An administrator account already exists for this email.');
+
+  let user = identity ? await User.findById(identity.user) : null;
+  if (!user) {
+    const phone = `admin-${createHash('sha256').update(email).digest('hex').slice(0, 18)}`;
+    const initials = body.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+    user = await User.create({ role: 'admin', name: body.name, initials, phone, email, status: 'blocked' });
+  }
+
+  const inviteToken = randomBytes(32).toString('base64url');
+  const tokenHash = createHmac('sha256', env.JWT_SECRET).update(inviteToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (identity) {
+    identity.name = body.name;
+    identity.roleKey = body.roleKey;
+    identity.cityScope = body.cityScope;
+    identity.status = 'invited';
+    identity.invitedBy = req.auth!.userId as unknown as typeof identity.invitedBy;
+    identity.invitationTokenHash = tokenHash;
+    identity.invitationExpiresAt = expiresAt;
+    identity.passwordHash = undefined;
+    await identity.save();
+  } else {
+    identity = await AdminIdentity.create({
+      user: user._id,
+      email,
+      name: body.name,
+      roleKey: body.roleKey,
+      cityScope: body.cityScope,
+      status: 'invited',
+      invitedBy: req.auth!.userId,
+      invitationTokenHash: tokenHash,
+      invitationExpiresAt: expiresAt
+    });
+  }
+  res.status(201).json({
+    success: true,
+    inviteToken,
+    expiresAt,
+    admin: { id: String(identity._id), email, name: identity.name, roleKey: identity.roleKey, cityScope: identity.cityScope }
+  });
+}));
+
+adminRouter.patch('/admin-users/:id/status', asyncRoute(async (req: AuthRequest, res) => {
+  if (!isValidObjectId(req.params.id)) throw new ApiError(404, 'Administrator account not found');
+  const { status } = z.object({ status: z.enum(['active', 'deactivated']) }).parse(req.body);
+  const identity = await AdminIdentity.findById(req.params.id);
+  if (!identity) throw new ApiError(404, 'Administrator account not found');
+  if (String(identity.user) === req.auth!.userId && status === 'deactivated') {
+    throw new ApiError(400, 'You cannot deactivate your own administrator account.');
+  }
+  if (identity.roleKey === 'super_admin' && status === 'deactivated') {
+    const activeSuperAdmins = await AdminIdentity.countDocuments({ roleKey: 'super_admin', status: 'active' });
+    if (activeSuperAdmins <= 1) throw new ApiError(409, 'The last active Super Admin cannot be deactivated.');
+  }
+  if (identity.status === 'invited' && status === 'active') {
+    throw new ApiError(409, 'The administrator must accept the invitation before activation.');
+  }
+  identity.status = status;
+  await identity.save();
+  await User.updateOne({ _id: identity.user, role: 'admin' }, { $set: { status: status === 'active' ? 'active' : 'blocked' } });
+  res.json({ success: true, id: String(identity._id), status: identity.status });
+}));
 
 adminRouter.get('/workspace/:key', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -74,12 +267,33 @@ adminRouter.put('/workspace/:key', async (req: AuthRequest, res: Response, next:
     const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
     if (!adminWorkspaceKeys.has(key)) throw new ApiError(404, 'Admin workspace resource not found');
     if (!Object.prototype.hasOwnProperty.call(req.body, 'value')) throw new ApiError(400, 'value is required');
+    if (key === 'settings') {
+      req.body.value = AdminSettingsSchema.parse(req.body.value);
+    }
+    if (key === 'areas') {
+      const areaSchema = z.object({
+        id: z.string().min(1).max(100),
+        city: z.string().max(100).optional(),
+        zone: z.string().max(120).optional(),
+        active: z.boolean().optional(),
+        centerLat: z.number().finite().min(-90).max(90).optional(),
+        centerLng: z.number().finite().min(-180).max(180).optional(),
+        radiusKm: z.number().finite().gt(0).max(500).optional(),
+        vehicleIds: z.array(z.string().min(1).max(100)).max(100).optional()
+      }).passthrough().superRefine((area, context) => {
+        const configured = area.centerLat !== undefined || area.centerLng !== undefined || area.radiusKm !== undefined;
+        if (configured && (area.centerLat === undefined || area.centerLng === undefined || area.radiusKm === undefined)) {
+          context.addIssue({ code: 'custom', message: 'A geofence requires center latitude, center longitude, and radius.' });
+        }
+      });
+      req.body.value = z.array(areaSchema).max(500).parse(req.body.value);
+    }
     const serializedSize = Buffer.byteLength(JSON.stringify(req.body.value), 'utf8');
     if (serializedSize > 500_000) throw new ApiError(413, 'Admin workspace resource is too large');
     const resource = await AdminWorkspace.findOneAndUpdate(
       { key },
-      { $set: { value: req.body.value, updatedBy: req.auth?.userId } },
-      { new: true, upsert: true, runValidators: true }
+      { $set: { value: req.body.value, updatedBy: req.auth?.userId }, $inc: { version: 1 } },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: false }
     ).lean();
     res.json({ success: true, key, value: resource?.value, updatedAt: resource?.updatedAt });
   } catch (error) {
@@ -124,7 +338,12 @@ adminRouter.patch('/vehicles/:id/pricing', async (req: Request, res: Response, n
   }
 });
 
-adminRouter.post('/notifications/send', async (req: Request, res: Response, next: NextFunction) => {
+adminRouter.get('/notifications/campaigns', asyncRoute(async (_req, res) => {
+  const campaigns = await AdminNotificationCampaign.find().sort({ createdAt: -1 }).limit(250).lean();
+  res.json({ campaigns });
+}));
+
+adminRouter.post('/notifications/send', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
     const message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
@@ -140,26 +359,98 @@ adminRouter.post('/notifications/send', async (req: Request, res: Response, next
     if (!allowedAudiences.has(audience)) throw new ApiError(400, 'Invalid notification audience');
 
     let userFilter: Record<string, unknown>;
-    if (audience === 'all_customers') userFilter = { role: 'customer' };
-    else if (audience === 'all_drivers') userFilter = { role: 'partner' };
+    if (audience === 'all_customers') userFilter = { role: 'customer', status: 'active' };
+    else if (audience === 'all_drivers') userFilter = { role: 'partner', status: 'active' };
     else if (audience === 'pending_kyc_drivers') {
-      userFilter = { role: 'partner', 'partnerProfile.kycStatus': 'pending' };
+      userFilter = { role: 'partner', status: 'active', 'partnerProfile.kycStatus': 'pending' };
     } else {
       const customerIds = await Order.distinct('customer', {
         status: { $in: ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'] }
       });
-      userFilter = { role: 'customer', _id: { $in: customerIds } };
+      userFilter = { role: 'customer', status: 'active', _id: { $in: customerIds } };
     }
 
     const users = await User.find(userFilter).select('expoPushTokens').lean();
     const tokens = users.flatMap((user) => user.expoPushTokens ?? []);
-    const campaignId = `NTF-${Date.now()}`;
+    const campaignId = `NTF-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const campaign = await AdminNotificationCampaign.create({
+      campaignId,
+      title,
+      message,
+      audience,
+      audienceSize: users.length,
+      createdBy: req.auth!.userId
+    });
     const result = await sendPush(tokens, title, message, { type: 'admin_campaign', campaignId }, { channelId: 'general' });
-    res.json({ success: true, campaignId, audienceSize: users.length, ...result });
+    const status = result.attempted === 0 ? 'no devices' : result.accepted === result.attempted ? 'sent' : result.accepted > 0 ? 'partial' : 'failed';
+    campaign.attempted = result.attempted;
+    campaign.accepted = result.accepted;
+    campaign.rejected = result.rejected;
+    campaign.removedTokens = result.removedTokens;
+    campaign.status = status;
+    await campaign.save();
+    res.json({ success: true, campaignId, audienceSize: users.length, status, ...result });
   } catch (error) {
     next(error);
   }
 });
+
+const SupportTicketCreateSchema = z.object({
+  party: z.enum(['Customer', 'Driver', 'Business']),
+  name: z.string().trim().min(1).max(120),
+  contact: z.string().trim().max(160).optional(),
+  booking: z.string().trim().max(80).optional(),
+  category: z.string().trim().min(1).max(100),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
+  description: z.string().trim().max(10_000).default('')
+});
+
+adminRouter.get('/support-tickets', asyncRoute(async (req, res) => {
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+  if (status && !['open', 'waiting', 'escalated', 'resolved'].includes(status)) {
+    throw new ApiError(400, 'Invalid support-ticket status');
+  }
+  const tickets = await AdminSupportTicket.find(status ? { status } : {})
+    .populate('assignee', 'name email')
+    .sort({ updatedAt: -1 })
+    .limit(500)
+    .lean();
+  res.json({ tickets: tickets.map((ticket) => ({
+    id: String(ticket._id),
+    ticketNo: ticket.ticketNo,
+    party: ticket.party,
+    name: ticket.name,
+    contact: ticket.contact ?? '',
+    booking: ticket.booking ?? '',
+    category: ticket.category,
+    priority: ticket.priority,
+    description: ticket.description,
+    status: ticket.status,
+    assignee: ticket.assignee && typeof ticket.assignee === 'object' && 'name' in ticket.assignee ? ticket.assignee.name : 'Unassigned',
+    updated: ticket.updatedAt,
+    createdAt: ticket.createdAt,
+    resolvedAt: ticket.resolvedAt ?? null
+  })) });
+}));
+
+adminRouter.post('/support-tickets', asyncRoute(async (req: AuthRequest, res) => {
+  const body = SupportTicketCreateSchema.parse(req.body);
+  const ticketNo = `TKT-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  const ticket = await AdminSupportTicket.create({ ...body, ticketNo, createdBy: req.auth!.userId });
+  res.status(201).json({ success: true, id: String(ticket._id), ticketNo });
+}));
+
+adminRouter.patch('/support-tickets/:id', asyncRoute(async (req: AuthRequest, res) => {
+  if (!isValidObjectId(req.params.id)) throw new ApiError(404, 'Support ticket not found');
+  const body = z.object({ status: z.enum(['open', 'waiting', 'escalated', 'resolved']) }).parse(req.body);
+  const ticket = await AdminSupportTicket.findById(req.params.id);
+  if (!ticket) throw new ApiError(404, 'Support ticket not found');
+  ticket.status = body.status;
+  if (!ticket.assignee && body.status !== 'open') ticket.assignee = req.auth!.userId as never;
+  ticket.resolvedAt = body.status === 'resolved' ? new Date() : undefined;
+  await ticket.save();
+  res.json({ success: true, id: String(ticket._id), status: ticket.status, resolvedAt: ticket.resolvedAt ?? null });
+}));
 
 const ACTIVE_ORDER_STATUSES = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];
 
@@ -278,7 +569,7 @@ async function loadOverviewMetrics() {
 
 async function loadOrders(filter: Record<string, unknown>, limit: number) {
   return Order.find(filter)
-    .select('orderNo customer b2bClient partner vehicle pickup drop goodsType weightKg distanceKm fare status paymentStatus paymentMode paymentReference customerCancellation cancellationReason partnerCancellationHistory createdAt updatedAt')
+    .select('orderNo customer b2bClient b2bInvoice partner vehicle pickup drop goodsType weightKg distanceKm fare status paymentStatus paymentMode paymentReference customerCancellation cancellationReason partnerCancellationHistory createdAt updatedAt')
     .sort({ updatedAt: -1 })
     .limit(limit)
     .populate('partner', 'name phone partnerProfile.vehicleNumber partnerProfile.currentLocation partnerProfile.online status')
@@ -456,6 +747,34 @@ adminRouter.get('/orders/:id', async (req: Request, res: Response, next: NextFun
 
     if (!order) throw new ApiError(404, 'Order not found');
     res.json({ order });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.get('/orders/:id/route', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const order = await Order.findById(req.params.id)
+      .select('pickup extraStops drop')
+      .lean();
+    if (!order) throw new ApiError(404, 'Order not found');
+
+    const route = await resolveRoutePath({
+      pickup: order.pickup.address || order.pickup.label,
+      pickupLat: order.pickup.lat ?? undefined,
+      pickupLng: order.pickup.lng ?? undefined,
+      extraStops: order.extraStops.map((stop) => ({
+        label: stop.label,
+        address: stop.address,
+        lat: stop.lat ?? undefined,
+        lng: stop.lng ?? undefined
+      })),
+      drop: order.drop.address || order.drop.label,
+      dropLat: order.drop.lat ?? undefined,
+      dropLng: order.drop.lng ?? undefined
+    });
+
+    res.json({ route });
   } catch (error) {
     next(error);
   }
@@ -1274,6 +1593,107 @@ adminRouter.post('/b2b/clients', async (req: Request, res: Response, next: NextF
     next(error);
   }
 });
+
+adminRouter.get('/b2b/invoices', asyncRoute(async (_req, res) => {
+  const invoices = await B2bInvoice.find({ status: { $ne: 'void' } })
+    .populate('client', 'companyName contactPerson phone email gstin address')
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .lean();
+  res.json({ invoices });
+}));
+
+adminRouter.post('/b2b/invoices', asyncRoute(async (req: AuthRequest, res) => {
+  const body = z.object({
+    clientId: z.string().refine(isValidObjectId, 'Invalid clientId'),
+    dueDate: z.coerce.date().optional()
+  }).parse(req.body);
+  const client = await B2bClient.findById(body.clientId);
+  if (!client) throw new ApiError(404, 'B2B client not found');
+
+  const orders = await Order.find({
+    b2bClient: client._id,
+    status: 'delivered',
+    paymentStatus: 'pending',
+    b2bInvoice: { $exists: false }
+  }).sort({ createdAt: 1 }).lean();
+  if (!orders.length) throw new ApiError(409, 'There are no uninvoiced delivered orders for this client.');
+
+  const ids = orders.map((order) => order._id);
+  const subtotal = Math.round(orders.reduce((sum, order) => sum + Number(order.fare?.total || 0), 0) * 100) / 100;
+  if (!Number.isFinite(subtotal) || subtotal <= 0) throw new ApiError(409, 'Selected orders do not have a valid invoice total.');
+  const year = new Date().getFullYear();
+  const counter = await Counter.findOneAndUpdate(
+    { key: `b2b-invoice-${year}` },
+    { $inc: { value: 1 } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  const invoiceNo = `INV-${year}-${String(counter.value).padStart(6, '0')}`;
+  const invoice = await B2bInvoice.create({
+    invoiceNo,
+    client: client._id,
+    companySnapshot: {
+      companyName: client.companyName,
+      address: client.address,
+      gstin: client.gstin,
+      contactPerson: client.contactPerson,
+      email: client.email,
+      phone: client.phone
+    },
+    lines: orders.map((order) => ({
+      order: order._id,
+      orderNo: order.orderNo,
+      description: `Delivery service${order.goodsType ? ` — ${order.goodsType}` : ''}`,
+      serviceDate: order.updatedAt,
+      amount: Number(order.fare.total)
+    })),
+    subtotal,
+    taxAmount: 0,
+    total: subtotal,
+    dueDate: body.dueDate,
+    createdBy: req.auth!.userId
+  });
+  const reserved = await Order.updateMany({ _id: { $in: ids }, b2bInvoice: { $exists: false } }, { $set: { b2bInvoice: invoice._id } });
+  if (reserved.modifiedCount !== ids.length) {
+    await Order.updateMany({ b2bInvoice: invoice._id }, { $unset: { b2bInvoice: 1 } });
+    await B2bInvoice.deleteOne({ _id: invoice._id });
+    throw new ApiError(409, 'Some orders were invoiced by another request. Refresh and try again.');
+  }
+  res.status(201).json({ success: true, invoice });
+}));
+
+adminRouter.post('/b2b/invoices/:id/payments', asyncRoute(async (req: AuthRequest, res) => {
+  if (!isValidObjectId(req.params.id)) throw new ApiError(404, 'Invoice not found');
+  const body = z.object({
+    amount: z.coerce.number().finite().gt(0),
+    reference: z.string().trim().min(1).max(160),
+    receivedAt: z.coerce.date().optional(),
+    note: z.string().trim().max(500).optional()
+  }).parse(req.body);
+  const invoice = await B2bInvoice.findOneAndUpdate(
+    {
+      _id: req.params.id,
+      status: { $in: ['issued', 'partially_paid'] },
+      $expr: { $lte: [{ $add: ['$paidAmount', body.amount] }, '$total'] }
+    },
+    {
+      $inc: { paidAmount: body.amount },
+      $push: { payments: { amount: body.amount, reference: body.reference, receivedAt: body.receivedAt || new Date(), note: body.note, recordedBy: req.auth!.userId } }
+    },
+    { new: true, runValidators: true }
+  );
+  if (!invoice) throw new ApiError(409, 'Invoice is already settled or this payment exceeds the remaining balance.');
+  invoice.status = invoice.paidAmount >= invoice.total ? 'paid' : 'partially_paid';
+  await invoice.save();
+  await B2bClient.updateOne(
+    { _id: invoice.client },
+    [{ $set: { outstandingBalance: { $max: [0, { $subtract: [{ $ifNull: ['$outstandingBalance', 0] }, body.amount] }] } } }]
+  );
+  if (invoice.status === 'paid') {
+    await Order.updateMany({ b2bInvoice: invoice._id, paymentStatus: 'pending' }, { $set: { paymentStatus: 'paid', paymentReference: invoice.invoiceNo } });
+  }
+  res.json({ success: true, invoice });
+}));
 
 // Create and manually assign order for B2B Client
 adminRouter.post('/orders/create-b2b', async (req: Request, res: Response, next: NextFunction) => {

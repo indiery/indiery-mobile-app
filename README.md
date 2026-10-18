@@ -101,6 +101,7 @@ The admin dashboard is intentionally excluded from this build.
 - CORS origins: `CORS_ORIGIN`, comma-separated if needed
 - Firebase Admin: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` or `FIREBASE_SERVICE_ACCOUNT_BASE64`
 - Google Maps distance: `GOOGLE_MAPS_API_KEY`
+- Google Maps JavaScript API for admin maps and public tracking: set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` for the website build and `GOOGLE_MAPS_BROWSER_API_KEY` for the backend-served tracking page. Use a browser key restricted by HTTP referrer and enabled for Maps JavaScript API; do not expose the server-side key.
 - Razorpay payments: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`
 - Expo push: `EXPO_ACCESS_TOKEN`
 - Cloudinary uploads: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_UPLOAD_FOLDER`

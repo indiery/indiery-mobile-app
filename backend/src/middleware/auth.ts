@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import { ApiError } from './error';
 import { User } from '../models/User';
+import { AdminIdentity } from '../models/AdminIdentity';
 
 export type AuthRole = 'customer' | 'partner' | 'admin';
 export const ADMIN_SESSION_COOKIE = 'indiery_admin_session';
@@ -11,6 +12,8 @@ export interface AuthRequest extends Request {
   auth?: {
     userId: string;
     role: AuthRole;
+    adminRoleKey?: string;
+    cityScope?: string[];
   };
 }
 
@@ -33,9 +36,18 @@ function readCookie(cookieHeader: string | undefined, name: string) {
 
 export async function verifyAuthToken(token: string) {
   const payload = jwt.verify(token, env.JWT_SECRET) as { sub: string; role: AuthRole };
-  const user = await User.findById(payload.sub).select('_id role status');
+  const user = await User.findById(payload.sub).select('_id role status email');
   if (!user || user.status !== 'active') throw new ApiError(401, 'Invalid user');
-  return { userId: String(user._id), role: user.role as AuthRole };
+  if (user.role !== 'admin') return { userId: String(user._id), role: user.role as AuthRole };
+
+  const identity = await AdminIdentity.findOne({ user: user._id }).select('roleKey cityScope status').lean();
+  if (!identity || identity.status !== 'active') throw new ApiError(401, 'Administrator access is no longer active');
+  return {
+    userId: String(user._id),
+    role: 'admin' as const,
+    adminRoleKey: identity.roleKey,
+    cityScope: identity.cityScope ?? []
+  };
 }
 
 export function requireAuth(roles?: AuthRole[]) {

@@ -12,6 +12,7 @@ const EnvSchema = z.object({
   ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_PASSWORD_HASH: z.string().min(50).optional(),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+  GOOGLE_MAPS_BROWSER_API_KEY: z.string().optional(),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
@@ -78,6 +79,9 @@ if (env.NODE_ENV === 'production') {
   }
   if (!env.GOOGLE_MAPS_API_KEY) {
     throw new Error('Production GOOGLE_MAPS_API_KEY is required for fare distance calculation');
+  }
+  if (!env.GOOGLE_MAPS_BROWSER_API_KEY) {
+    throw new Error('Production GOOGLE_MAPS_BROWSER_API_KEY is required for Google Maps on shared tracking pages');
   }
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET || !env.RAZORPAY_WEBHOOK_SECRET) {
     throw new Error('Production Razorpay keys and webhook secret are required for prepaid payments');

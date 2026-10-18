@@ -29,7 +29,9 @@ export interface RoutePathCoordinate {
 
 export interface RoutePathResult {
   coordinates: RoutePathCoordinate[];
-  source: 'google_directions' | 'fallback';
+  locations: RoutePathCoordinate[];
+  source: 'google_directions' | 'unavailable';
+  reason?: 'maps_api_not_configured' | 'location_not_found' | 'directions_unavailable';
 }
 
 export interface LocationSuggestionResult {
@@ -52,7 +54,14 @@ const ROUTE_METRICS_CACHE_MAX_ENTRIES = 300;
 const routeMetricsCache = new Map<string, { metrics: RouteMetrics; expiresAt: number }>();
 
 function coordinatePair(lat?: number, lng?: number) {
-  if (typeof lat !== 'number' || typeof lng !== 'number') return undefined;
+  if (
+    typeof lat !== 'number' ||
+    typeof lng !== 'number' ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 || lat > 90 ||
+    lng < -180 || lng > 180
+  ) return undefined;
   return `${lat},${lng}`;
 }
 
@@ -111,21 +120,6 @@ function rememberRouteMetrics(key: string, metrics: RouteMetrics) {
   });
 }
 
-function coordinateRoutePointsFor(input: DistanceInput): RoutePathCoordinate[] {
-  const stops = (input.extraStops ?? []).filter((stop) => stop.label.trim().length > 1);
-  return [
-    { latitude: input.pickupLat, longitude: input.pickupLng },
-    ...stops.map((stop) => ({ latitude: stop.lat, longitude: stop.lng })),
-    { latitude: input.dropLat, longitude: input.dropLng }
-  ].filter(
-    (point): point is RoutePathCoordinate =>
-      typeof point.latitude === 'number' &&
-      typeof point.longitude === 'number' &&
-      Number.isFinite(point.latitude) &&
-      Number.isFinite(point.longitude)
-  );
-}
-
 function decodeGooglePolyline(encoded: string): RoutePathCoordinate[] {
   const coordinates: RoutePathCoordinate[] = [];
   let index = 0;
@@ -158,43 +152,103 @@ function decodeGooglePolyline(encoded: string): RoutePathCoordinate[] {
   return coordinates;
 }
 
+async function geocodeRouteAddress(address: string): Promise<RoutePathCoordinate | undefined> {
+  const normalizedAddress = address.trim();
+  if (!normalizedAddress || !env.GOOGLE_MAPS_API_KEY) return undefined;
+
+  const params = new URLSearchParams({
+    address: normalizedAddress,
+    components: 'country:IN',
+    region: 'in',
+    key: env.GOOGLE_MAPS_API_KEY
+  });
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+    if (!response.ok) return undefined;
+    const payload = (await response.json()) as {
+      status?: string;
+      results?: Array<{
+        partial_match?: boolean;
+        geometry?: {
+          location?: { lat?: number; lng?: number };
+          location_type?: string;
+        };
+      }>;
+    };
+    const result = payload.results?.[0];
+    const lat = result?.geometry?.location?.lat;
+    const lng = result?.geometry?.location?.lng;
+    const locationType = result?.geometry?.location_type;
+    if (
+      payload.status !== 'OK' ||
+      result?.partial_match ||
+      locationType !== 'ROOFTOP' ||
+      typeof lat !== 'number' ||
+      typeof lng !== 'number' ||
+      !coordinatePair(lat, lng)
+    ) return undefined;
+    return { latitude: lat, longitude: lng };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function resolveRoutePath(input: DistanceInput): Promise<RoutePathResult> {
-  const fallbackCoordinates = coordinateRoutePointsFor(input);
-  const routePoints = routePointsFor(input);
-  const origin = routePoints[0];
-  const destination = routePoints[routePoints.length - 1];
-  if (!env.GOOGLE_MAPS_API_KEY || !origin || !destination) {
-    return { coordinates: fallbackCoordinates, source: 'fallback' };
+  if (!env.GOOGLE_MAPS_API_KEY) {
+    return { coordinates: [], locations: [], source: 'unavailable', reason: 'maps_api_not_configured' };
   }
 
-  const waypoints = routePoints.slice(1, -1).filter(Boolean);
+  const waypoints = (input.extraStops ?? []).filter((stop) => stop.label.trim().length > 1);
+  const routeLocations = [
+    { address: input.pickup, lat: input.pickupLat, lng: input.pickupLng },
+    ...waypoints.map((stop) => ({ address: stop.address || stop.label, lat: stop.lat, lng: stop.lng })),
+    { address: input.drop, lat: input.dropLat, lng: input.dropLng }
+  ];
+  if (routeLocations.length < 2) {
+    return { coordinates: [], locations: [], source: 'unavailable', reason: 'location_not_found' };
+  }
+
+  const resolvedLocations = await Promise.all(routeLocations.map(async (location) => {
+    if (coordinatePair(location.lat, location.lng)) {
+      return { latitude: location.lat!, longitude: location.lng! };
+    }
+    return geocodeRouteAddress(location.address);
+  }));
+  if (resolvedLocations.some((location) => !location)) {
+    return { coordinates: [], locations: [], source: 'unavailable', reason: 'location_not_found' };
+  }
+  const locations = resolvedLocations as RoutePathCoordinate[];
+
+  const routePoints = locations.map((point) => `${point.latitude},${point.longitude}`);
+  const origin = routePoints[0];
+  const destination = routePoints[routePoints.length - 1];
   const params = new URLSearchParams({
-    origin,
-    destination,
+    origin: origin!,
+    destination: destination!,
     mode: 'driving',
     units: 'metric',
     region: 'in',
     key: env.GOOGLE_MAPS_API_KEY,
-    ...(waypoints.length ? { waypoints: waypoints.join('|') } : {})
+    ...(routePoints.length > 2 ? { waypoints: routePoints.slice(1, -1).join('|') } : {})
   });
 
   try {
     const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`);
-    if (!response.ok) return { coordinates: fallbackCoordinates, source: 'fallback' };
+    if (!response.ok) return { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
     const payload = (await response.json()) as {
       status?: string;
       routes?: Array<{ overview_polyline?: { points?: string } }>;
     };
     const encodedPath = payload.routes?.[0]?.overview_polyline?.points;
     if (payload.status !== 'OK' || !encodedPath) {
-      return { coordinates: fallbackCoordinates, source: 'fallback' };
+      return { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
     }
     const coordinates = decodeGooglePolyline(encodedPath);
     return coordinates.length > 1
-      ? { coordinates, source: 'google_directions' }
-      : { coordinates: fallbackCoordinates, source: 'fallback' };
+      ? { coordinates, locations, source: 'google_directions' }
+      : { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
   } catch {
-    return { coordinates: fallbackCoordinates, source: 'fallback' };
+    return { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
   }
 }
 
@@ -271,7 +325,7 @@ export async function resolveLocationDetails(placeId: string, sessionToken?: str
     const result = payload.result;
     const lat = result?.geometry?.location?.lat;
     const lng = result?.geometry?.location?.lng;
-    if (payload.status !== 'OK' || !result?.place_id || typeof lat !== 'number' || typeof lng !== 'number') {
+    if (payload.status !== 'OK' || !result?.place_id || !coordinatePair(lat, lng)) {
       return undefined;
     }
     const address = result.formatted_address ?? result.name ?? '';
@@ -279,8 +333,8 @@ export async function resolveLocationDetails(placeId: string, sessionToken?: str
       placeId: result.place_id,
       label: result.name ?? address,
       address,
-      lat,
-      lng
+      lat: lat!,
+      lng: lng!
     };
   } catch {
     return undefined;
@@ -288,7 +342,7 @@ export async function resolveLocationDetails(placeId: string, sessionToken?: str
 }
 
 export async function reverseGeocodeLocation(lat: number, lng: number): Promise<LocationDetailsResult | undefined> {
-  if (!env.GOOGLE_MAPS_API_KEY || !Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+  if (!env.GOOGLE_MAPS_API_KEY || !coordinatePair(lat, lng)) return undefined;
 
   try {
     const response = await fetch(googleMapsUrl('geocode/json', { latlng: `${lat},${lng}`, language: 'en', region: 'in' }));

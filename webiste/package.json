@@ -8,10 +8,8 @@
     "start": "next start --hostname 127.0.0.1"
   },
   "dependencies": {
-    "leaflet": "^1.9.4",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest",
-    "react-leaflet": "^5.0.0"
+    "react-dom": "latest"
   }
 }

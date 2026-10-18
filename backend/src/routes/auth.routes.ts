@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import bcrypt from 'bcryptjs';
-import { createHash } from 'crypto';
+import { createHash, createHmac, randomBytes } from 'crypto';
+import { Types } from 'mongoose';
 import { z } from 'zod';
 import { User } from '../models/User';
 import { Vehicle } from '../models/Vehicle';
@@ -13,6 +14,8 @@ import { normalizePhone } from '../services/phone.service';
 import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
 import { submitAccountDeletionRequest } from '../services/account-deletion.service';
 import { env } from '../config/env';
+import { AdminIdentity } from '../models/AdminIdentity';
+import { AdminAuditEvent } from '../models/AdminAuditEvent';
 
 export const authRouter = Router();
 
@@ -42,10 +45,6 @@ function adminCookieOptions() {
 authRouter.post(
   '/admin-login',
   asyncRoute(async (req, res) => {
-    if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD_HASH) {
-      throw new ApiError(503, 'Admin login is not configured');
-    }
-
     const body = AdminLoginSchema.parse(req.body);
     const normalizedEmail = body.email.toLowerCase();
     const attemptKey = adminAttemptKey(req, normalizedEmail);
@@ -53,25 +52,45 @@ authRouter.post(
     const attempt = adminLoginAttempts.get(attemptKey);
     if (attempt?.blockedUntil && attempt.blockedUntil > now) {
       res.setHeader('Retry-After', String(Math.ceil((attempt.blockedUntil - now) / 1000)));
+      void AdminAuditEvent.create({ actorEmail: normalizedEmail, action: 'LOGIN_BLOCKED', path: '/api/auth/admin-login', statusCode: 429, outcome: 'failure', requestId: `login-${Date.now()}` })
+        .catch((error) => console.error('Unable to persist blocked admin login event', error));
       throw new ApiError(429, 'Too many failed sign-in attempts. Try again later.');
     }
 
-    // Always perform the password comparison before rejecting the email so login
-    // timing does not reveal which administrator address is configured.
-    const passwordMatches = await bcrypt.compare(body.password, env.ADMIN_PASSWORD_HASH);
-    const emailMatches = normalizedEmail === env.ADMIN_EMAIL.toLowerCase();
-    if (!passwordMatches || !emailMatches) {
+    const isBootstrapAdmin = Boolean(env.ADMIN_EMAIL && env.ADMIN_PASSWORD_HASH && normalizedEmail === env.ADMIN_EMAIL.toLowerCase());
+    let identity = isBootstrapAdmin
+      ? null
+      : await AdminIdentity.findOne({ email: normalizedEmail }).select('+passwordHash');
+    const passwordHash = isBootstrapAdmin ? env.ADMIN_PASSWORD_HASH! : identity?.passwordHash;
+    // Compare even for unknown emails to reduce account-enumeration timing leaks.
+    const passwordMatches = await bcrypt.compare(
+      body.password,
+      passwordHash || '$2a$10$C6UzMDM.H6dfI/f/IKcEe.7ljrNdNn4t.BqzTCp9jQzA5j3bEqhG2'
+    );
+    const activeIdentity = Boolean(identity && identity.status === 'active');
+    if (!passwordMatches || (!isBootstrapAdmin && !activeIdentity)) {
       const failures = (attempt?.blockedUntil && attempt.blockedUntil <= now ? 0 : attempt?.failures || 0) + 1;
       adminLoginAttempts.set(attemptKey, {
         failures,
         blockedUntil: failures >= ADMIN_LOGIN_MAX_FAILURES ? now + ADMIN_LOGIN_WINDOW_MS : 0
       });
+      void AdminAuditEvent.create({
+        actorId: identity?.user,
+        actorEmail: normalizedEmail,
+        action: 'LOGIN_FAILED',
+        path: '/api/auth/admin-login',
+        statusCode: 401,
+        outcome: 'failure',
+        requestId: `login-${Date.now()}`
+      }).catch((error) => console.error('Unable to persist failed admin login event', error));
       throw new ApiError(401, 'Invalid admin credentials');
     }
 
     adminLoginAttempts.delete(attemptKey);
-    let admin = await User.findOne({ role: 'admin', email: normalizedEmail });
-    if (!admin) {
+    let admin = identity
+      ? await User.findOne({ _id: identity.user, role: 'admin' })
+      : await User.findOne({ role: 'admin', email: normalizedEmail });
+    if (!admin && isBootstrapAdmin) {
       const internalPhone = `admin-${createHash('sha256').update(normalizedEmail).digest('hex').slice(0, 18)}`;
       admin = await User.create({
         role: 'admin',
@@ -82,16 +101,104 @@ authRouter.post(
         status: 'active'
       });
     }
+    if (!admin) throw new ApiError(401, 'Invalid admin credentials');
     if (admin.status !== 'active') throw new ApiError(403, 'Admin account is blocked');
+
+    if (isBootstrapAdmin) {
+      identity = await AdminIdentity.findOneAndUpdate(
+        { user: admin._id },
+        {
+          $set: {
+            email: normalizedEmail,
+            name: admin.name,
+            roleKey: 'super_admin',
+            status: 'active',
+            lastLoginAt: new Date()
+          },
+          $setOnInsert: { cityScope: [] }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } else if (identity) {
+      identity.lastLoginAt = new Date();
+      await identity.save();
+    }
+
+    void AdminAuditEvent.create({
+      actorId: admin._id,
+      actorEmail: normalizedEmail,
+      action: 'LOGIN',
+      path: '/api/auth/admin-login',
+      statusCode: 200,
+      outcome: 'success',
+      requestId: `login-${Date.now()}`
+    }).catch((error) => console.error('Unable to persist admin login event', error));
 
     const token = signToken(String(admin._id), 'admin');
     res.cookie(ADMIN_SESSION_COOKIE, token, adminCookieOptions());
     res.json({
       success: true,
-      admin: { id: String(admin._id), name: admin.name, email: admin.email, role: admin.role }
+      admin: {
+        id: String(admin._id),
+        name: admin.name,
+        email: admin.email,
+        role: 'admin',
+        roleKey: identity?.roleKey,
+        cityScope: identity?.cityScope ?? []
+      }
     });
   })
 );
+
+const AdminInviteAcceptSchema = z.object({
+  token: z.string().min(32).max(200),
+  password: z.string().min(12).max(256)
+});
+
+authRouter.post('/admin-accept-invite', asyncRoute(async (req, res) => {
+  const body = AdminInviteAcceptSchema.parse(req.body);
+  const tokenHash = createHmac('sha256', env.JWT_SECRET).update(body.token).digest('hex');
+  const invite = await AdminIdentity.findOne({
+    invitationTokenHash: tokenHash,
+    status: 'invited',
+    invitationExpiresAt: { $gt: new Date() }
+  }).select('+invitationTokenHash +invitationExpiresAt');
+  if (!invite) throw new ApiError(400, 'This administrator invitation is invalid or expired. Ask an administrator to create a new one.');
+
+  const passwordHash = await bcrypt.hash(body.password, 12);
+  const accepted = await AdminIdentity.findOneAndUpdate(
+    {
+      _id: invite._id,
+      invitationTokenHash: tokenHash,
+      status: 'invited',
+      invitationExpiresAt: { $gt: new Date() }
+    },
+    {
+      $set: { status: 'active', passwordHash },
+      $unset: { invitationTokenHash: 1, invitationExpiresAt: 1 }
+    },
+    { new: true }
+  );
+  if (!accepted) throw new ApiError(400, 'This administrator invitation has already been used or expired.');
+  const userUpdate = await User.updateOne({ _id: accepted.user, role: 'admin', status: 'blocked' }, { $set: { status: 'active' } });
+  if (userUpdate.modifiedCount !== 1) {
+    await AdminIdentity.updateOne({ _id: accepted._id, status: 'active' }, {
+      $set: { status: 'invited', invitationTokenHash: tokenHash, invitationExpiresAt: invite.invitationExpiresAt },
+      $unset: { passwordHash: 1 }
+    });
+    throw new ApiError(409, 'The invited account could not be activated. Ask an administrator to retry the invitation.');
+  }
+  void AdminAuditEvent.create({
+    actorId: accepted.user,
+    actorEmail: accepted.email,
+    action: 'INVITE_ACCEPTED',
+    path: '/api/auth/admin-accept-invite',
+    statusCode: 200,
+    outcome: 'success',
+    requestId: `invite-${Date.now()}`
+  }).catch((error) => console.error('Unable to persist administrator invitation event', error));
+  res.json({ success: true, email: accepted.email });
+}));
 
 authRouter.get(
   '/admin-session',
@@ -101,7 +208,9 @@ authRouter.get(
       .select('name email role')
       .lean();
     if (!admin) throw new ApiError(401, 'Admin session is no longer valid');
-    res.json({ admin });
+    const identity = await AdminIdentity.findOne({ user: admin._id, status: 'active' }).select('roleKey cityScope').lean();
+    if (!identity) throw new ApiError(401, 'Administrator access is no longer active');
+    res.json({ admin: { ...admin, roleKey: identity.roleKey, cityScope: identity.cityScope ?? [] } });
   })
 );
 

@@ -23,6 +23,8 @@ import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } fro
 import { createTrackingToken } from '../services/tracking-link.service';
 import { calculateCustomerCoinDebit, customerCanPlaceOrder } from '../services/customer-coins.service';
 import { calculateCancellationPayment, calculateCustomerCancellation } from '../services/cancellation.service';
+import { getRuntimeAdminPolicy } from '../services/admin-settings.service';
+import { assertOrderCovered } from '../services/service-area.service';
 
 export const customerRouter = Router();
 
@@ -215,7 +217,8 @@ async function debitCustomerCoinsToLimit(input: {
     const customer = await User.findById(input.userId).select('customerProfile.coins');
     if (!customer) throw new ApiError(404, 'Customer not found');
     const currentCoins = customer.customerProfile?.coins ?? 0;
-    const debit = calculateCustomerCoinDebit(currentCoins, input.amount);
+    const policy = await getRuntimeAdminPolicy();
+    const debit = calculateCustomerCoinDebit(currentCoins, input.amount, policy.customerCoinDebtLimit);
     if (debit.amount <= 0) return 0;
 
     const result = await User.updateOne(
@@ -374,7 +377,16 @@ customerRouter.delete(
 customerRouter.post(
   '/estimate',
   asyncRoute(async (req: AuthRequest, res) => {
+    const policy = await getRuntimeAdminPolicy();
+    if (policy.maintenanceMode) throw new ApiError(503, 'Bookings are temporarily unavailable while Indiery is under maintenance. Please try again shortly.');
     const body = EstimateSchema.parse(req.body);
+    await assertOrderCovered({
+      pickupLat: body.pickupLat,
+      pickupLng: body.pickupLng,
+      dropLat: body.dropLat,
+      dropLng: body.dropLng,
+      vehicleId: body.vehicleId
+    });
     const [user, vehicle, requiredVehicle, routeMetrics] = await Promise.all([
       User.findById(req.auth!.userId),
       Vehicle.findById(body.vehicleId),
@@ -382,7 +394,7 @@ customerRouter.post(
       resolveRouteMetrics(body)
     ]);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
-    if (!customerCanPlaceOrder(user.customerProfile?.coins ?? 0)) {
+    if (!customerCanPlaceOrder(user.customerProfile?.coins ?? 0, policy.customerCoinDebtLimit)) {
       throw new ApiError(403, 'Recharge Indiery Coins before placing another order');
     }
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);
@@ -404,7 +416,16 @@ customerRouter.post(
 customerRouter.post(
   '/orders',
   asyncRoute(async (req: AuthRequest, res) => {
+    const policy = await getRuntimeAdminPolicy();
+    if (policy.maintenanceMode) throw new ApiError(503, 'Bookings are temporarily unavailable while Indiery is under maintenance. Please try again shortly.');
     const body = CreateOrderSchema.parse(req.body);
+    await assertOrderCovered({
+      pickupLat: body.pickupLat,
+      pickupLng: body.pickupLng,
+      dropLat: body.dropLat,
+      dropLng: body.dropLng,
+      vehicleId: body.vehicleId
+    });
     const routeMetricsPromise = body.quoteId
       ? Promise.resolve(verifyFareQuote(body.quoteId, req.auth!.userId, body))
       : resolveRouteMetrics(body);
@@ -415,7 +436,7 @@ customerRouter.post(
       routeMetricsPromise
     ]);
     if (!user || !vehicle) throw new ApiError(404, 'Customer or vehicle not found');
-    if (!customerCanPlaceOrder(user.customerProfile?.coins ?? 0)) {
+    if (!customerCanPlaceOrder(user.customerProfile?.coins ?? 0, policy.customerCoinDebtLimit)) {
       throw new ApiError(403, 'Recharge Indiery Coins before placing another order');
     }
     assertVehicleMatchesWeight(vehicle, requiredVehicle, body.weightKg);

@@ -10,6 +10,10 @@ const LiveFleetMap = dynamic(() => import("./LiveFleetMap"), {
   ssr: false,
   loading: () => <div className={styles.mapLoading}>Loading live street map...</div>,
 });
+const OrderRouteMap = dynamic(() => import("./OrderRouteMap"), {
+  ssr: false,
+  loading: () => <div className={styles.routeMapMessage}>Loading driving route…</div>,
+});
 
 const API_BASE = "/api/admin";
 let redirectingToAdminLogin = false;
@@ -118,6 +122,12 @@ function SidebarIcon({ name }) {
       <>
         <path d="M12 3 4 7v5c0 4 3 7 8 9 5-2 8-5 8-9V7l-8-4Z" />
         <path d="M12 8v5M12 17h.01" />
+      </>
+    ),
+    deletion: (
+      <>
+        <path d="M6 3h8l4 4v14H6zM14 3v5h5" />
+        <path d="m9 12 6 6m0-6-6 6" />
       </>
     ),
     support: (
@@ -1153,6 +1163,24 @@ export default function AdminPage() {
             <span className={styles.navIcon}><SidebarIcon name="business" /></span>
             <span>B2B clients</span>
             <span className={styles.navBadge}>{b2bClients.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "enterpriseEnquiries" ? styles.active : ""}`}
+            onClick={() => setActiveTab("enterpriseEnquiries")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="business" /></span>
+            <span>Enterprise enquiries</span>
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.navItem} ${activeTab === "accountDeletionRequests" ? styles.active : ""}`}
+            onClick={() => setActiveTab("accountDeletionRequests")}
+          >
+            <span className={styles.navIcon}><SidebarIcon name="deletion" /></span>
+            <span>Account deletion</span>
           </button>
 
           <button
@@ -3093,6 +3121,8 @@ export default function AdminPage() {
                   Goods: {assignModalOrder.goodsType || "Not provided"} · Fare: {assignModalOrder.fare?.total != null ? `₹${assignModalOrder.fare.total}` : "Not provided"}
                 </div>
               </div>
+
+              <OrderRouteMap orderId={assignModalOrder._id} />
 
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Select Driver Partner:</label>

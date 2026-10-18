@@ -623,7 +623,9 @@
 .formGrid select { min-height: 40px; padding: 0 11px; }
 .formGrid textarea,
 .fullField textarea { min-height: 92px; padding: 11px; resize: vertical; }
+.fullField input { min-height: 40px; padding: 0 11px; }
 .spanTwo { grid-column: 1 / -1; }
+.errorBanner { border: 1px solid #fecdd3; border-radius: 10px; padding: 11px 14px; background: #fff1f2; color: #be123c; font-size: 12px; font-weight: 700; }
 
 .farePreview {
   display: flex;

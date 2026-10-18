@@ -1,3 +1,5 @@
+import { env } from '../config/env';
+
 export interface PublicTrackingPoint {
   label: string;
   lat?: number;
@@ -20,6 +22,7 @@ export interface PublicTrackingState {
   receiverName?: string;
   deliveryOtp?: string;
   routePath?: Array<{ lat: number; lng: number }>;
+  routeLocations?: Array<{ lat: number; lng: number }>;
   vehicle: {
     name: string;
   };
@@ -91,11 +94,11 @@ function routeRows(state: PublicTrackingState) {
 export function trackingContentSecurityPolicy(nonce: string) {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://unpkg.com`,
+    `script-src 'self' 'nonce-${nonce}' https://maps.googleapis.com https://maps.gstatic.com`,
     "script-src-attr 'none'",
-    "style-src 'self' 'unsafe-inline' https://unpkg.com",
-    "img-src 'self' data: blob: https://*.tile.openstreetmap.org https://unpkg.com",
-    "connect-src 'self'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com",
+    "connect-src 'self' https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com",
     "font-src 'self' data:",
     "object-src 'none'",
     "base-uri 'none'",
@@ -107,6 +110,7 @@ export function trackingContentSecurityPolicy(nonce: string) {
 
 export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string) {
   const initialState = safeJson(state);
+  const googleMapsApiKey = safeJson(env.GOOGLE_MAPS_BROWSER_API_KEY ?? '');
   const partnerName = state.partner?.name || 'Driver assignment pending';
   const vehicleNumber = state.partner?.vehicleNumber || 'Vehicle number will appear after assignment';
   const senderName = state.senderName || 'Sender name unavailable';
@@ -118,19 +122,12 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="referrer" content="no-referrer" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta name="theme-color" content="#6d28d9" />
   <meta name="robots" content="noindex,nofollow,noarchive" />
   <title>Live tracking ${escapeHtml(state.orderNo)}</title>
-  <link rel="preconnect" href="https://unpkg.com" crossorigin />
-  <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin=""
-    referrerpolicy="no-referrer"
-  />
+  <link rel="preconnect" href="https://maps.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://maps.gstatic.com" crossorigin />
   <style>
     :root{
       color-scheme:light;
@@ -438,9 +435,6 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
     }
     .privacy-note svg{flex:0 0 auto;width:17px;height:17px;margin-top:1px;fill:var(--brand)}
     footer{padding:18px 4px 8px;color:#94a3b8;font-size:10px;font-weight:700;text-align:center}
-    .leaflet-container{font-family:inherit;background:#e2e8f0}
-    .leaflet-control-attribution{font-size:9px!important}
-    .leaflet-tooltip{border:0!important;border-radius:9px!important;box-shadow:0 5px 18px rgba(15,23,42,.16)!important;font-size:10px!important;font-weight:800!important}
     @media (max-width:760px){
       .page{padding:0 0 18px}
       .hero{border-radius:0 0 24px 24px;padding-top:max(18px,env(safe-area-inset-top))}
@@ -570,23 +564,17 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         <span>Anyone with this link can see the sender and receiver names, driver and vehicle details, and the delivery OTP after pickup. Share it only with people involved in this delivery. Phone numbers and payment information stay hidden. Driver location is removed when the trip ends.</span>
       </section>
     </main>
-    <footer>Map data © OpenStreetMap contributors · Indiery shared tracking</footer>
+    <footer>Google Maps · Indiery shared tracking</footer>
   </div>
 
   <script id="tracking-state" type="application/json">${initialState}</script>
-  <script
-    nonce="${nonce}"
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-    referrerpolicy="no-referrer"
-  ></script>
   <script nonce="${nonce}">
     (function () {
       "use strict";
 
       var stateNode = document.getElementById("tracking-state");
       var state = JSON.parse(stateNode.textContent || "{}");
+      var googleMapsApiKey = ${googleMapsApiKey};
       var map = null;
       var routeLine = null;
       var routeMarkers = [];
@@ -634,20 +622,22 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
 
       function routeCoordinates() {
         var path = Array.isArray(state.routePath) ? state.routePath.filter(isCoordinate) : [];
-        if (path.length > 1) return path;
-        return [state.pickup].concat(state.extraStops || [], [state.drop]).filter(isCoordinate);
+        return path.length > 1 ? path : [];
       }
 
       function pickupCoordinate() {
         if (isCoordinate(state.pickup)) return state.pickup;
-        var path = routeCoordinates();
-        return path.length ? path[0] : null;
+        return isCoordinate(state.routeLocations && state.routeLocations[0])
+          ? state.routeLocations[0]
+          : null;
       }
 
       function dropCoordinate() {
         if (isCoordinate(state.drop)) return state.drop;
-        var path = routeCoordinates();
-        return path.length ? path[path.length - 1] : null;
+        var index = (state.extraStops || []).length + 1;
+        return isCoordinate(state.routeLocations && state.routeLocations[index])
+          ? state.routeLocations[index]
+          : null;
       }
 
       function tooltipContent(label) {
@@ -657,17 +647,18 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
       }
 
       function routeMarkerIcon(kind, text) {
-        return window.L.divIcon({
+        return window.google.maps.SymbolPath.CIRCLE;
+        /* return window.google.maps.SymbolPath.CIRCLE({
           className: "",
           html: '<div class="route-pin route-pin--' + kind + '"><span>' + text + "</span></div>",
           iconSize: [32, 32],
           iconAnchor: [16, 29],
           tooltipAnchor: [0, -24]
-        });
+        }); */
       }
 
       function driverMarkerIcon() {
-        return window.L.divIcon({
+        return window.google.maps.SymbolPath.CIRCLE({
           className: "",
           html:
             '<div class="driver-icon-shell">' +
@@ -684,16 +675,16 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         });
       }
 
-      function addRouteMarker(point, fallback, kind, text, label) {
-        var coordinate = isCoordinate(point) ? point : fallback;
+      function addRouteMarker(point, resolved, kind, text, label) {
+        var coordinate = isCoordinate(point) ? point : resolved;
         if (!coordinate) return;
-        var marker = window.L.marker([coordinate.lat, coordinate.lng], {
-          icon: routeMarkerIcon(kind, text),
-          keyboard: true,
+        var marker = new window.google.maps.Marker({
+          map: map,
+          position: coordinate,
+          label: { text: text, color: "#ffffff", fontWeight: "700" },
           title: label,
-          zIndexOffset: kind === "drop" ? 300 : 200
-        }).addTo(map);
-        marker.bindTooltip(tooltipContent(label), { direction: "top", offset: [0, -4] });
+          zIndex: kind === "drop" ? 300 : 200
+        });
         routeMarkers.push(marker);
       }
 
@@ -706,6 +697,9 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
 
       function allVisibleCoordinates() {
         var coordinates = routeCoordinates().slice();
+        (state.routeLocations || []).forEach(function (point) {
+          if (isCoordinate(point)) coordinates.push(point);
+        });
         var pickup = pickupCoordinate();
         var drop = dropCoordinate();
         if (pickup) coordinates.push(pickup);
@@ -721,20 +715,13 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         beginAutomaticMapMove();
         userMovedMap = false;
         if (coordinates.length === 1) {
-          map.setView([coordinates[0].lat, coordinates[0].lng], 15, { animate: true });
+          map.setCenter(coordinates[0]);
+          map.setZoom(15);
           return;
         }
-        var bounds = window.L.latLngBounds(
-          coordinates.map(function (point) {
-            return [point.lat, point.lng];
-          })
-        );
-        map.fitBounds(bounds, {
-          paddingTopLeft: [46, 46],
-          paddingBottomRight: [46, 72],
-          maxZoom: 15,
-          animate: true
-        });
+        var bounds = new window.google.maps.LatLngBounds();
+        coordinates.forEach(function (point) { bounds.extend(point); });
+        map.fitBounds(bounds, 48);
       }
 
       function showMapFallback(message) {
@@ -745,9 +732,36 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         byId("recenterButton").hidden = true;
       }
 
+      function loadGoogleMaps() {
+        if (!googleMapsApiKey) return Promise.reject(new Error("Google Maps is not configured for this tracking link."));
+        if (window.google && window.google.maps) return Promise.resolve(window.google.maps);
+        return new Promise(function (resolve, reject) {
+          var callbackName = "indieryGoogleMapsReady";
+          var script = document.createElement("script");
+          var timeout = window.setTimeout(function () {
+            delete window[callbackName];
+            reject(new Error("Google Maps did not finish loading."));
+          }, 15000);
+          window[callbackName] = function () {
+            window.clearTimeout(timeout);
+            delete window[callbackName];
+            resolve(window.google.maps);
+          };
+          script.nonce = "${nonce}";
+          script.async = true;
+          script.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(googleMapsApiKey) + "&callback=" + callbackName + "&v=weekly";
+          script.onerror = function () {
+            window.clearTimeout(timeout);
+            delete window[callbackName];
+            reject(new Error("Google Maps could not load."));
+          };
+          document.head.appendChild(script);
+        });
+      }
+
       function initializeMap() {
-        if (!window.L) {
-          showMapFallback("The map could not load. Delivery details will continue updating below.");
+        if (!window.google || !window.google.maps) {
+          showMapFallback(googleMapsApiKey ? "Google Maps could not load. Delivery details will continue updating below." : "Google Maps is not configured for this tracking link. Delivery details will continue updating below.");
           return;
         }
 
@@ -757,70 +771,71 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
           return;
         }
 
-        map = window.L.map("map", {
-          zoomControl: false,
-          attributionControl: true,
-          preferCanvas: true
+        map = new window.google.maps.Map(byId("map"), {
+          center: coordinates[0],
+          zoom: 13,
+          mapTypeControl: true,
+          streetViewControl: false,
+          fullscreenControl: true,
+          clickableIcons: false
         });
         byId("recenterButton").hidden = false;
-        map.setView([coordinates[0].lat, coordinates[0].lng], 13, { animate: false });
-        window.L.control.zoom({ position: "topright" }).addTo(map);
-        window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          maxZoom: 19,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
-        }).addTo(map);
 
         var path = routeCoordinates();
         if (path.length > 1) {
-          routeLine = window.L.polyline(
-            path.map(function (point) {
-              return [point.lat, point.lng];
-            }),
-            {
-              color: "#6d28d9",
-              weight: 5,
-              opacity: 0.85,
-              lineCap: "round",
-              lineJoin: "round"
-            }
-          ).addTo(map);
+          routeLine = new window.google.maps.Polyline({
+            map: map,
+            path: path,
+            geodesic: true,
+            strokeColor: "#6d28d9",
+            strokeWeight: 5,
+            strokeOpacity: 0.85
+          });
         }
 
         addRouteMarker(state.pickup, pickupCoordinate(), "pickup", "P", "Pickup: " + state.pickup.label);
         (state.extraStops || []).forEach(function (stop, index) {
-          addRouteMarker(stop, null, "stop", String(index + 1), "Stop " + String(index + 1) + ": " + stop.label);
+          var resolvedStop = state.routeLocations && state.routeLocations[index + 1];
+          addRouteMarker(stop, resolvedStop, "stop", String(index + 1), "Stop " + String(index + 1) + ": " + stop.label);
         });
         addRouteMarker(state.drop, dropCoordinate(), "drop", "D", "Drop: " + state.drop.label);
 
-        map.on("dragstart zoomstart", function () {
+        map.addListener("dragstart", function () {
+          if (!automaticMapMove) userMovedMap = true;
+        });
+        map.addListener("zoom_changed", function () {
           if (!automaticMapMove) userMovedMap = true;
         });
         byId("recenterButton").addEventListener("click", fitFullRoute);
         byId("mapLoading").classList.add("is-hidden");
         updateDriverMarker();
         window.setTimeout(function () {
-          map.invalidateSize();
+          window.google.maps.event.trigger(map, "resize");
           fitFullRoute();
         }, 50);
       }
 
       function rotateDriverMarker() {
         if (!driverMarker) return;
-        var element = driverMarker.getElement();
-        if (!element) return;
-        var arrow = element.querySelector(".driver-arrow");
-        if (!arrow) return;
         var heading =
           state.driverLocation && typeof state.driverLocation.heading === "number"
             ? state.driverLocation.heading
             : 0;
-        arrow.style.transform = "rotate(" + String(heading) + "deg)";
+        driverMarker.setIcon({
+          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 6,
+          rotation: heading,
+          fillColor: "#6d28d9",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2
+        });
       }
 
       function animateDriverMarker(target) {
         if (!driverMarker) return;
         if (driverAnimationFrame) window.cancelAnimationFrame(driverAnimationFrame);
-        var start = driverMarker.getLatLng();
+        var start = driverMarker.getPosition();
         var startedAt = null;
         var duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 900;
 
@@ -828,10 +843,10 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
           if (startedAt === null) startedAt = timestamp;
           var progress = duration === 0 ? 1 : Math.min(1, (timestamp - startedAt) / duration);
           var eased = 1 - Math.pow(1 - progress, 3);
-          driverMarker.setLatLng([
-            start.lat + (target.lat - start.lat) * eased,
-            start.lng + (target.lng - start.lng) * eased
-          ]);
+          driverMarker.setPosition({
+            lat: start.lat() + (target.lat - start.lat()) * eased,
+            lng: start.lng() + (target.lng - start.lng()) * eased
+          });
           if (progress < 1) {
             driverAnimationFrame = window.requestAnimationFrame(step);
           } else {
@@ -845,37 +860,36 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
       function updateDriverMarker() {
         if (!map) return;
         if (!isCoordinate(state.driverLocation)) {
-          if (driverMarker) {
-            map.removeLayer(driverMarker);
-            driverMarker = null;
-          }
+          if (driverMarker) driverMarker.setMap(null);
+          driverMarker = null;
           return;
         }
 
         var target = state.driverLocation;
         if (!driverMarker) {
-          driverMarker = window.L.marker([target.lat, target.lng], {
-            icon: driverMarkerIcon(),
-            keyboard: true,
+          driverMarker = new window.google.maps.Marker({
+            map: map,
+            position: target,
             title: "Live driver location",
-            zIndexOffset: 1000
-          }).addTo(map);
-          driverMarker.bindTooltip(tooltipContent("Live driver location"), {
-            direction: "top",
-            offset: [0, -8]
+            zIndex: 1000,
+            icon: {
+              path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 6,
+              rotation: typeof target.heading === "number" ? target.heading : 0,
+              fillColor: "#6d28d9",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 2
+            }
           });
         } else {
           animateDriverMarker(target);
         }
         window.setTimeout(rotateDriverMarker, 0);
 
-        if (!userMovedMap && !map.getBounds().pad(-0.15).contains([target.lat, target.lng])) {
+        if (!userMovedMap && (!map.getBounds() || !map.getBounds().contains(target))) {
           beginAutomaticMapMove();
-          map.panInside([target.lat, target.lng], {
-            paddingTopLeft: [64, 64],
-            paddingBottomRight: [64, 82],
-            animate: true
-          });
+          map.panTo(target);
         }
       }
 
@@ -990,7 +1004,7 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
         );
         renderFreshness();
         renderEta();
-        if (!map && window.L && allVisibleCoordinates().length) {
+        if (!map && window.google && window.google.maps && allVisibleCoordinates().length) {
           initializeMap();
         } else {
           updateDriverMarker();
@@ -1033,9 +1047,11 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
           })
           .then(function (nextState) {
             var existingRoutePath = state.routePath;
+            var existingRouteLocations = state.routeLocations;
             syncServerClock(nextState.serverTime);
             state = Object.assign({}, state, nextState);
             state.routePath = existingRoutePath;
+            state.routeLocations = existingRouteLocations;
             setConnectionState(true);
             renderState();
           })
@@ -1058,7 +1074,9 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
       }
 
       syncServerClock(state.serverTime);
-      initializeMap();
+      loadGoogleMaps().then(initializeMap).catch(function (error) {
+        showMapFallback(error && error.message ? error.message : "Google Maps could not load.");
+      });
       renderState();
       schedulePoll(6000);
       window.setInterval(function () {
@@ -1081,7 +1099,7 @@ export function renderLiveTrackingPage(state: PublicTrackingState, nonce: string
       window.addEventListener("resize", function () {
         if (map) {
           window.setTimeout(function () {
-            map.invalidateSize();
+            window.google.maps.event.trigger(map, "resize");
           }, 80);
         }
       });

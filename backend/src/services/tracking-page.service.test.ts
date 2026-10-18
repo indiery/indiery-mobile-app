@@ -38,5 +38,7 @@ test('shared tracking page shows delivery details without a Google Maps route li
   assert.match(html, /Receiver &amp; Co/);
   assert.match(html, /UP 12 AB 1234/);
   assert.match(html, /123456/);
+  assert.match(html, /maps\.googleapis\.com\/maps\/api\/js/);
+  assert.doesNotMatch(html, /OpenStreetMap|openstreetmap|tile\.openstreetmap|leaflet/i);
   assert.doesNotMatch(html, /Open route in Google Maps|google\.com\/maps\/dir|routeLink/);
 });

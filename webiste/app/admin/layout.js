@@ -1,5 +1,3 @@
-import "leaflet/dist/leaflet.css";
-
 export const metadata = {
   title: "Admin | Indiery",
   robots: {

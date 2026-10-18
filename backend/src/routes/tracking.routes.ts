@@ -9,6 +9,7 @@ import {
   type PublicTrackingState
 } from '../services/tracking-page.service';
 import { verifyTrackingToken } from '../services/tracking-link.service';
+import { resolveRoutePath } from '../services/maps.service';
 
 export const trackingRouter = Router();
 
@@ -50,7 +51,10 @@ function publicPoint(point: {
   };
 }
 
-function publicTrackingState(order: OrderDocument, routePath?: PublicTrackingState['routePath']): PublicTrackingState {
+function publicTrackingState(
+  order: OrderDocument,
+  route?: Pick<PublicTrackingState, 'routePath' | 'routeLocations'>
+): PublicTrackingState {
   const vehicle = order.vehicle as unknown as { shortName?: string; name?: string };
   const partner = order.partner as unknown as {
     name?: string;
@@ -80,7 +84,8 @@ function publicTrackingState(order: OrderDocument, routePath?: PublicTrackingSta
     senderName: order.pickup.contactName?.trim() || undefined,
     receiverName: order.drop.contactName?.trim() || undefined,
     deliveryOtp,
-    routePath,
+    routePath: route?.routePath,
+    routeLocations: route?.routeLocations,
     vehicle: {
       name: vehicle?.shortName || vehicle?.name || 'Vehicle'
     },
@@ -127,14 +132,27 @@ async function loadSharedTrackingOrder(token: string) {
   return order ?? undefined;
 }
 
-function routePathFor(order: OrderDocument): PublicTrackingState['routePath'] {
-  return [order.pickup, ...(order.extraStops ?? []), order.drop]
-    .map(publicPoint)
-    .filter(
-      (point): point is PublicTrackingState['pickup'] & { lat: number; lng: number } =>
-        point.lat !== undefined && point.lng !== undefined
-    )
-    .map((point) => ({ lat: point.lat, lng: point.lng }));
+async function routePathFor(order: OrderDocument): Promise<Pick<PublicTrackingState, 'routePath' | 'routeLocations'>> {
+  const route = await resolveRoutePath({
+    pickup: order.pickup.address || order.pickup.label,
+    pickupLat: order.pickup.lat ?? undefined,
+    pickupLng: order.pickup.lng ?? undefined,
+    extraStops: (order.extraStops ?? []).map((stop) => ({
+      label: stop.label,
+      address: stop.address,
+      lat: stop.lat ?? undefined,
+      lng: stop.lng ?? undefined
+    })),
+    drop: order.drop.address || order.drop.label,
+    dropLat: order.drop.lat ?? undefined,
+    dropLng: order.drop.lng ?? undefined
+  });
+  return {
+    routePath: route.source === 'google_directions'
+      ? route.coordinates.map((point) => ({ lat: point.latitude, lng: point.longitude }))
+      : undefined,
+    routeLocations: route.locations.map((point) => ({ lat: point.latitude, lng: point.longitude }))
+  };
 }
 
 trackingRouter.get(
@@ -162,7 +180,7 @@ trackingRouter.get(
       );
     }
 
-    const state = publicTrackingState(order, routePathFor(order));
+    const state = publicTrackingState(order, await routePathFor(order));
     const nonce = crypto.randomBytes(18).toString('base64');
     res.setHeader('Content-Security-Policy', trackingContentSecurityPolicy(nonce));
     return res.send(renderLiveTrackingPage(state, nonce));

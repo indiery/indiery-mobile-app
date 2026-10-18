@@ -6,6 +6,11 @@ import { Vehicle } from '../models/Vehicle';
 import { WalletLedger } from '../models/WalletLedger';
 import { AccountDeletionRequest } from '../models/AccountDeletionRequest';
 import { AdminWorkspace } from '../models/AdminWorkspace';
+import { AdminAuditEvent } from '../models/AdminAuditEvent';
+import { AdminIdentity } from '../models/AdminIdentity';
+import { AdminSupportTicket } from '../models/AdminSupportTicket';
+import { AdminNotificationCampaign } from '../models/AdminNotificationCampaign';
+import { B2bInvoice } from '../models/B2bInvoice';
 
 export async function connectMongo() {
   mongoose.set('strictQuery', true);
@@ -34,6 +39,11 @@ export async function ensureDatabaseIndexes() {
     Order.createIndexes(),
     WalletLedger.createIndexes(),
     AccountDeletionRequest.createIndexes(),
-    AdminWorkspace.createIndexes()
+    AdminWorkspace.createIndexes(),
+    AdminAuditEvent.createIndexes(),
+    AdminIdentity.createIndexes(),
+    AdminSupportTicket.createIndexes(),
+    AdminNotificationCampaign.createIndexes(),
+    B2bInvoice.createIndexes()
   ]);
 }

@@ -5,6 +5,7 @@ import { serializeOrder } from './serialize.service';
 import { sendPush } from './notification.service';
 import { setOrderStatusTimeline } from './timeline.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
+import { getRuntimeAdminPolicy } from './admin-settings.service';
 
 export const DRIVER_OFFER_BATCH_SIZE = 3;
 export const DRIVER_OFFER_TIMEOUT_MS = 45_000;
@@ -70,7 +71,7 @@ function canDispatchOrder(order: OrderDocument) {
   );
 }
 
-async function eligiblePartnersForOrder(order: OrderDocument) {
+async function eligiblePartnersForOrder(order: OrderDocument, maxPickupRadiusKm?: number) {
   const vehicleId = orderVehicleId(order);
   if (!vehicleId) return [];
 
@@ -103,6 +104,7 @@ async function eligiblePartnersForOrder(order: OrderDocument) {
       partner,
       distance: distanceKm(pickup, partner.partnerProfile?.currentLocation)
     }))
+    .filter((item) => maxPickupRadiusKm == null || item.distance <= maxPickupRadiusKm)
     .sort((left, right) => left.distance - right.distance)
     .map((item) => item.partner);
 }
@@ -186,6 +188,8 @@ export async function offerOrderToNextDrivers(
   // A refresh, timeout and rejection can all reach this function together. Retry
   // once if another caller wins the atomic update, then observe its fresh batch.
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const policy = await getRuntimeAdminPolicy();
+    if (!policy.autoAssign) return undefined;
     const order = await Order.findById(orderId);
     if (!order || !canDispatchOrder(order)) return undefined;
 
@@ -198,7 +202,7 @@ export async function offerOrderToNextDrivers(
       return emitOfferUpdates(String(order._id), currentBatchIds);
     }
 
-    const eligiblePartners = await eligiblePartnersForOrder(order);
+    const eligiblePartners = await eligiblePartnersForOrder(order, policy.maxPickupRadiusKm);
     const nextPartners = eligiblePartners.slice(0, DRIVER_OFFER_BATCH_SIZE);
     const nextPartnerIds = nextPartners.map((partner) => String(partner._id));
     const notifiedIds = Array.from(new Set([

@@ -40,3 +40,11 @@ test('customers must recharge when their coin balance reaches minus 50', () => {
   assert.equal(customerCanPlaceOrder(-50), false);
   assert.equal(customerCanPlaceOrder(-75), false);
 });
+
+test('an admin-configured coin debt floor is used consistently for placement and debits', () => {
+  assert.equal(customerCanPlaceOrder(-100, -100), false);
+  assert.deepEqual(calculateCustomerCoinDebit(-95, 20, -100), {
+    amount: 5,
+    balanceAfter: -100
+  });
+});

@@ -1643,29 +1643,12 @@ function regionsAreClose(a: Region, b: Region) {
   );
 }
 
-function formatReverseAddress(place?: Location.LocationGeocodedAddress) {
-  if (!place) return '';
-  return [
-    place.name,
-    place.street,
-    place.district,
-    place.city,
-    place.region,
-    place.postalCode
-  ]
-    .filter(Boolean)
-    .join(', ');
-}
-
 async function resolvePinnedLocation(api: IndieryApi, lat: number, lng: number): Promise<LocationDetails> {
   let nearbyAddress = '';
   try {
     const result = await withLocationTimeout(api.reverseGeocodeLocation(lat, lng), 2500, 'Address lookup timed out');
     nearbyAddress = result.location.address;
-  } catch {
-    const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }).catch(() => []);
-    nearbyAddress = formatReverseAddress(places[0]);
-  }
+  } catch {}
 
   const address = nearbyAddress ? `Pin near ${nearbyAddress}` : 'Pinned map location';
   return {
@@ -1778,12 +1761,15 @@ async function readDeviceLocation(language: AppLanguage = 'en') {
   }
 }
 
-async function readCurrentLocationDetails(language: AppLanguage = 'en'): Promise<LocationDetails> {
+async function readCurrentLocationDetails(api: IndieryApi, language: AppLanguage = 'en'): Promise<LocationDetails> {
   const current = await readDeviceLocation(language);
   const lat = current.coords.latitude;
   const lng = current.coords.longitude;
-  const reverse = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }).catch(() => []);
-  const address = formatReverseAddress(reverse[0]) || copyFor(language, 'currentLocation');
+  let address = copyFor(language, 'currentLocation');
+  try {
+    const result = await withLocationTimeout(api.reverseGeocodeLocation(lat, lng), 2500, 'Address lookup timed out');
+    address = result.location.address || address;
+  } catch {}
   return {
     placeId: `current-${lat.toFixed(6)}-${lng.toFixed(6)}`,
     label: address,
@@ -4410,7 +4396,7 @@ function HomeScreen({
     async function setCurrentPickup() {
       setAutoPickupLoading(true);
       try {
-        const location = await readCurrentLocationDetails(language);
+        const location = await readCurrentLocationDetails(api, language);
         if (cancelled) return;
         setBooking((current) => (
           current.pickup
@@ -4646,7 +4632,7 @@ function PickupSearchModal({
     setLocating(true);
     setLocalError('');
     try {
-      const location = await readCurrentLocationDetails(language);
+      const location = await readCurrentLocationDetails(api, language);
       onUseCurrentLocation(location);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Could not read current location');
@@ -5437,6 +5423,30 @@ function BookScreen({
   function continueFromRouteDetails(nextBooking = booking) {
     if (!nextBooking.pickup.trim() || !nextBooking.drop.trim()) {
       setContactError(copy.selectLocationFirst);
+      return;
+    }
+    if (!hasValidCoordinates(nextBooking.pickupLat, nextBooking.pickupLng)) {
+      setContactError(copy.selectLocationFirst);
+      setMapPickerTarget({
+        kind: 'pickup',
+        title: copy.pickup,
+        value: nextBooking.pickup,
+        lat: nextBooking.pickupLat,
+        lng: nextBooking.pickupLng,
+        openContact: false
+      });
+      return;
+    }
+    if (!hasValidCoordinates(nextBooking.dropLat, nextBooking.dropLng)) {
+      setContactError(copy.selectLocationFirst);
+      setMapPickerTarget({
+        kind: 'drop',
+        title: copy.drop,
+        value: nextBooking.drop,
+        lat: nextBooking.dropLat,
+        lng: nextBooking.dropLng,
+        openContact: false
+      });
       return;
     }
     if (!hasConfirmedPickupDetails(nextBooking)) {
@@ -6310,7 +6320,7 @@ function InlineExactLocationPicker({
   const userAdjustedMapRef = useRef(false);
   const programmaticMoveRef = useRef(false);
   const mapSelectionSeqRef = useRef(0);
-  const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
+  const canRenderNativeMap = Boolean(googleMapsApiKey);
   const pinColor = target === 'pickup' ? colors.green : colors.red;
   const hasExactPin = pinSelected && hasValidCoordinates(region.latitude, region.longitude);
   const displayLabel = query || pinLabel || value || copy.selectedLocation;
@@ -6471,7 +6481,7 @@ function InlineExactLocationPicker({
           <>
             <MapView
               ref={mapRef}
-              provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+              provider={PROVIDER_GOOGLE}
               userInterfaceStyle="light"
               style={styles.contactMapRealMap}
               initialRegion={initialRegion}
@@ -7074,6 +7084,7 @@ function MapLocationPicker({
   const regionRef = useRef(initialRegion);
   const pinLabelRef = useRef(initialValue || 'Pinned location');
   const resolvedPinRef = useRef<LocationDetails | null>(null);
+  const pinSelectedRef = useRef(hasValidCoordinates(initialLat, initialLng));
   const confirmingRef = useRef(false);
   const [confirming, setConfirming] = useState(false);
   const reverseGeocodeSeqRef = useRef(0);
@@ -7082,7 +7093,7 @@ function MapLocationPicker({
   const sessionTokenRef = useRef(`map-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const lat = region.latitude;
   const lng = region.longitude;
-  const canRenderNativeMap = Platform.OS !== 'android' || Boolean(googleMapsApiKey);
+  const canRenderNativeMap = Boolean(googleMapsApiKey);
   const mapCanvasMinHeight = 220;
 
   useEffect(() => {
@@ -7128,6 +7139,7 @@ function MapLocationPicker({
       moveMapToRegion(nextRegion);
       pinLabelRef.current = result.location.address || result.location.label;
       resolvedPinRef.current = result.location;
+      pinSelectedRef.current = true;
       setPinLabel(pinLabelRef.current);
       setQuery(result.location.address || result.location.label);
       setSuggestions([]);
@@ -7155,6 +7167,7 @@ function MapLocationPicker({
       moveMapToRegion(nextRegion);
       pinLabelRef.current = location.address;
       resolvedPinRef.current = location;
+      pinSelectedRef.current = true;
       setPinLabel(location.address);
       setQuery(location.address);
       setSuggestions([]);
@@ -7188,6 +7201,7 @@ function MapLocationPicker({
       return;
     }
     programmaticRegionRef.current = null;
+    pinSelectedRef.current = true;
     const requestId = ++reverseGeocodeSeqRef.current;
     resolvedPinRef.current = null;
     pinLabelRef.current = '';
@@ -7209,6 +7223,10 @@ function MapLocationPicker({
 
   async function confirmPin() {
     if (confirmingRef.current) return;
+    if (!pinSelectedRef.current) {
+      setLocalError(copy.selectLocationFirst);
+      return;
+    }
     const { latitude: lat, longitude: lng } = regionRef.current;
     if (!hasValidCoordinates(lat, lng)) {
       setLocalError(copy.selectValidLocationFirst);
@@ -7298,7 +7316,7 @@ function MapLocationPicker({
               <>
                 <MapView
                   ref={mapRef}
-                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                  provider={PROVIDER_GOOGLE}
                   userInterfaceStyle="light"
                   mapType="standard"
                   style={styles.mapPickerRealMap}
@@ -9355,7 +9373,7 @@ function MapPreview({
     : routePoints.map((item) => item.coordinate);
   const fitCoordinates = partnerCoordinate ? [...baseFitCoordinates, partnerCoordinate] : baseFitCoordinates;
   const firstCoordinate = fitCoordinates[0];
-  const canRenderNativeMap = (Platform.OS !== 'android' || Boolean(googleMapsApiKey)) && Boolean(firstCoordinate);
+  const canRenderNativeMap = Boolean(googleMapsApiKey) && Boolean(firstCoordinate);
   const initialRegion: Region = {
     latitude: firstCoordinate?.latitude ?? defaultMapCenter.lat,
     longitude: firstCoordinate?.longitude ?? defaultMapCenter.lng,
@@ -9422,7 +9440,7 @@ function MapPreview({
       {canRenderNativeMap ? (
         <MapView
           ref={mapRef}
-          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+          provider={PROVIDER_GOOGLE}
           userInterfaceStyle="light"
           style={styles.mapNativeView}
           initialRegion={initialRegion}
@@ -9583,7 +9601,7 @@ function OrderRouteFullScreenMap({
         </View>
         <MapView
           ref={mapRef}
-          provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+          provider={PROVIDER_GOOGLE}
           userInterfaceStyle="light"
           style={styles.fullOrderMap}
           initialRegion={{ ...firstCoordinate, latitudeDelta: 0.05, longitudeDelta: 0.05 }}

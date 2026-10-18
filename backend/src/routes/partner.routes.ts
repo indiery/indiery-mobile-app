@@ -27,6 +27,7 @@ import {
   rejectDriverOffer
 } from '../services/order-offers.service';
 import { calculateWaitingCoinDebit } from '../services/customer-coins.service';
+import { getRuntimeAdminPolicy } from '../services/admin-settings.service';
 
 export const partnerRouter = Router();
 
@@ -141,7 +142,8 @@ async function debitPrepaidWaitingChargeFromCoins(input: {
     const customer = await User.findById(input.customerId).select('customerProfile.coins');
     if (!customer) throw new ApiError(404, 'Customer not found');
     const currentCoins = customer.customerProfile?.coins ?? 0;
-    const debit = calculateWaitingCoinDebit(currentCoins, input.amount);
+    const policy = await getRuntimeAdminPolicy();
+    const debit = calculateWaitingCoinDebit(currentCoins, input.amount, policy.customerCoinDebtLimit);
     if (debit.amount <= 0) return 0;
 
     const result = await User.updateOne(

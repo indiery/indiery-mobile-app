@@ -260,16 +260,22 @@ function googleMapsUrl(path: string, params: Record<string, string>) {
   return `https://maps.googleapis.com/maps/api/${path}?${search.toString()}`;
 }
 
-export async function autocompleteLocations(input: string, sessionToken?: string): Promise<LocationSuggestionResult[]> {
+export async function autocompleteLocations(
+  input: string,
+  sessionToken?: string,
+  bias?: { lat: number; lng: number }
+): Promise<LocationSuggestionResult[]> {
   const query = input.trim();
   if (!env.GOOGLE_MAPS_API_KEY || query.length < 2) return [];
+
+  const validBias = coordinatePair(bias?.lat, bias?.lng);
 
   try {
     const response = await fetch(
       googleMapsUrl('place/autocomplete/json', {
         input: query,
         components: 'country:in',
-        types: 'geocode',
+        ...(validBias ? { location: validBias, radius: '50000' } : {}),
         ...(sessionToken ? { sessiontoken: sessionToken } : {})
       })
     );

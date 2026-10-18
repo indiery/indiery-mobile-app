@@ -206,9 +206,13 @@ export class IndieryApi {
     return this.request<{ vehicles: Vehicle[] }>('/meta/vehicles');
   }
 
-  autocompleteLocations(input: string, sessionToken?: string) {
+  autocompleteLocations(input: string, sessionToken?: string, bias?: { lat: number; lng: number }) {
     const params = new URLSearchParams({ input });
     if (sessionToken) params.set('sessionToken', sessionToken);
+    if (bias) {
+      params.set('lat', String(bias.lat));
+      params.set('lng', String(bias.lng));
+    }
     return this.request<{ suggestions: LocationSuggestion[] }>(`/maps/autocomplete?${params.toString()}`);
   }
 

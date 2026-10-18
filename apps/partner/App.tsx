@@ -86,6 +86,7 @@ const androidStatusBarInset = Platform.OS === 'android' ? StatusBar.currentHeigh
 const appSafeAreaEdges: Edge[] = Platform.OS === 'android'
   ? ['left', 'right', 'bottom']
   : ['top', 'right', 'bottom', 'left'];
+const loginSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'top');
 const incomingOrderAlert = NativeModules.OrderAlert as
   | {
       start: () => void;
@@ -108,7 +109,6 @@ Notifications.setNotificationHandler({
     priority: Notifications.AndroidNotificationPriority.MAX
   })
 });
-
 type Tab = 'dashboard' | 'active' | 'earnings' | 'profile';
 type KycDoc = 'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc';
 type BankDetailsInput = { accountHolder: string; accountNumber: string; ifsc: string };
@@ -1112,7 +1112,7 @@ async function requestPartnerAppPermissions(api: IndieryApi, onMessage: (message
         vibrationPattern: [0, 250, 250, 250],
         lightColor: colors.partner
       });
-      await Notifications.setNotificationChannelAsync('driver-order-alerts-v3', {
+      await Notifications.setNotificationChannelAsync('driver-order-alerts-v4', {
         name: 'Incoming delivery requests',
         description: 'Chime and vibration for new delivery offers and urgent driver updates',
         importance: Notifications.AndroidImportance.MAX,
@@ -1251,6 +1251,7 @@ export default function App() {
   } | null>(null);
   const activeOrderIds = (data?.activeOrders ?? []).map((order) => order.id).join('|');
   const availableOrderIds = (data?.availableOrders ?? []).map((order) => order.id).join('|');
+
 
   useEffect(() => {
     boot();
@@ -2259,6 +2260,7 @@ function LoginScreen({
 }) {
   const copy = useCopy();
   const loginViewport = useWindowDimensions();
+  const { top: loginTopInset } = useSafeAreaInsets();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [confirmation, setConfirmation] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
@@ -2270,6 +2272,9 @@ function LoginScreen({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const loginScrollRef = useRef<ScrollView | null>(null);
   const verificationInFlightRef = useRef<Promise<void> | null>(null);
+  const otpVerificationInFlightRef = useRef(false);
+  const autoSendPhoneRef = useRef<string | null>(null);
+  const autoVerifyCodeRef = useRef<string | null>(null);
   const fullLoginViewportRef = useRef({
     width: loginViewport.width,
     height: loginViewport.height
@@ -2320,6 +2325,12 @@ function LoginScreen({
   }, [confirmation, resendSeconds]);
 
   useEffect(() => {
+    if (!phoneReady || confirmation || busy || autoSendPhoneRef.current === expectedFirebasePhone) return;
+    autoSendPhoneRef.current = expectedFirebasePhone;
+    void sendOtp();
+  }, [phoneReady, confirmation, busy, expectedFirebasePhone]);
+
+  useEffect(() => {
     if (!confirmation) return undefined;
     const timer = setTimeout(() => loginScrollRef.current?.scrollTo({ y: 0, animated: false }), 100);
     return () => clearTimeout(timer);
@@ -2344,6 +2355,8 @@ function LoginScreen({
 
   function changePhoneNumber() {
     Keyboard.dismiss();
+    autoSendPhoneRef.current = null;
+    autoVerifyCodeRef.current = null;
     setConfirmation(null);
     setCode('');
     setError('');
@@ -2401,7 +2414,8 @@ function LoginScreen({
   }
 
   async function verifyOtp() {
-    if (!confirmation || !otpReady || busy) return;
+    if (!confirmation || !otpReady || busy || otpVerificationInFlightRef.current) return;
+    otpVerificationInFlightRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -2437,9 +2451,20 @@ function LoginScreen({
               : copy.invalidOtp
       );
     } finally {
+      otpVerificationInFlightRef.current = false;
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!otpReady) {
+      autoVerifyCodeRef.current = null;
+      return;
+    }
+    if (!confirmation || busy || autoVerifyCodeRef.current === code.trim()) return;
+    autoVerifyCodeRef.current = code.trim();
+    void verifyOtp();
+  }, [confirmation, code, otpReady, busy]);
 
   if (confirmation) {
     return (
@@ -2477,8 +2502,8 @@ function LoginScreen({
 
   return (
     <>
-    <SafeAreaView edges={appSafeAreaEdges} style={styles.loginShell}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.white} translucent={false} />
+    <SafeAreaView edges={loginSafeAreaEdges} style={[styles.loginShell, styles.loginFullBleedShell]}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <KeyboardAvoidingView
         style={[
           styles.authKeyboard,
@@ -2502,6 +2527,7 @@ function LoginScreen({
             onContinue={sendOtp}
             onOpenPolicy={openLoginPolicy}
             onKeyboardFocus={() => setKeyboardVisible(true)}
+            topInset={loginTopInset}
           />
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -2578,7 +2604,8 @@ function PartnerLoginPhoneStep({
   onChangeLanguage,
   onContinue,
   onOpenPolicy,
-  onKeyboardFocus
+  onKeyboardFocus,
+  topInset
 }: {
   phone: string;
   error: string;
@@ -2593,6 +2620,7 @@ function PartnerLoginPhoneStep({
   onContinue: () => void;
   onOpenPolicy: (policyId: LegalPolicy['id']) => void;
   onKeyboardFocus: () => void;
+  topInset: number;
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
@@ -2635,6 +2663,7 @@ function PartnerLoginPhoneStep({
             caption={copy.loginHeroCaption}
             height={heroHeight}
             visibleHeight={heroVisibleHeight}
+            topInset={topInset}
           />
           <View
             style={[
@@ -2940,12 +2969,14 @@ function LoginHero({
   title,
   caption,
   height,
-  visibleHeight
+  visibleHeight,
+  topInset
 }: {
   title: string;
   caption: string;
   height: number;
   visibleHeight: number;
+  topInset: number;
 }) {
   return (
     <View
@@ -2960,7 +2991,7 @@ function LoginHero({
         resizeMode="contain"
       />
       <View style={styles.loginHeroWash} />
-      <View style={styles.loginBrandPanel}>
+      <View style={[styles.loginBrandPanel, { paddingTop: topInset + 14 }]}>
         <Image source={indieryLogoImage} style={styles.loginBrandLogo} resizeMode="contain" accessibilityLabel={title} />
         <Text style={styles.loginHeroCaption}>{caption}</Text>
       </View>
@@ -4457,15 +4488,17 @@ function ActiveScreen({
       scrollEventThrottle={16}
     >
       <PartnerScrollingHeader header={header} horizontalInset={responsive.horizontalPadding} topInset={responsive.isSmall ? 10 : responsive.isCompact ? 12 : 16} />
-      <View style={[styles.activeOverviewCard, responsive.isCompact && styles.activeOverviewCardCompact]}>
-        <View style={[styles.activeOverviewIcon, responsive.isCompact && styles.activeOverviewIconCompact]}>
-          <Ionicons name="navigate-outline" size={responsive.isCompact ? 18 : 21} color="#2563EB" />
+      {orders.length > 0 ? (
+        <View style={[styles.activeOverviewCard, responsive.isCompact && styles.activeOverviewCardCompact]}>
+          <View style={[styles.activeOverviewIcon, responsive.isCompact && styles.activeOverviewIconCompact]}>
+            <Ionicons name="navigate-outline" size={responsive.isCompact ? 18 : 21} color="#2563EB" />
+          </View>
+          <Text style={[styles.activeOverviewTitle, responsive.isCompact && styles.activeOverviewTitleCompact]}>{copy.activeOrders}</Text>
+          <View style={styles.activeOverviewCount}>
+            <Text style={styles.activeOverviewCountText}>{orders.length}</Text>
+          </View>
         </View>
-        <Text style={[styles.activeOverviewTitle, responsive.isCompact && styles.activeOverviewTitleCompact]}>{copy.activeOrders}</Text>
-        <View style={styles.activeOverviewCount}>
-          <Text style={styles.activeOverviewCountText}>{orders.length}</Text>
-        </View>
-      </View>
+      ) : null}
       {!order ? (
         <>
           <Empty icon="navigate-outline" title={copy.noActiveDelivery} subtitle={copy.acceptOrderFromHome} />
@@ -6227,6 +6260,7 @@ const styles = StyleSheet.create({
   tabShell: { paddingTop: 0, backgroundColor: '#F8FAFC' },
   partnerHeaderShell: { backgroundColor: '#F8FAFC' },
   loginShell: { flex: 1, backgroundColor: colors.white, paddingTop: androidStatusBarInset },
+  loginFullBleedShell: { paddingTop: 0 },
   authKeyboard: { flex: 1 },
   androidKeyboardFooter: {
     position: 'absolute',
@@ -7455,3 +7489,4 @@ const styles = StyleSheet.create({
   emptyTitleSmall: { fontSize: 13 },
   errorTitle: { color: colors.red, fontSize: 18, fontWeight: '900', marginBottom: 6 }
 });
+

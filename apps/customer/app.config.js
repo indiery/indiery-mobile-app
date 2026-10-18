@@ -5,6 +5,11 @@ const googleMapsApiKey =
   process.env.GOOGLE_MAPS_API_KEY ||
   appJson.expo.extra?.googleMapsApiKey ||
   '';
+const publicWebBaseUrl = (
+  process.env.EXPO_PUBLIC_WEB_URL ||
+  appJson.expo.extra?.publicWebBaseUrl ||
+  'https://www.indiery.com'
+).replace(/\/$/, '');
 
 module.exports = () => ({
   ...appJson.expo,
@@ -24,6 +29,7 @@ module.exports = () => ({
   },
   extra: {
     ...appJson.expo.extra,
-    googleMapsApiKey
+    googleMapsApiKey,
+    publicWebBaseUrl
   }
 });

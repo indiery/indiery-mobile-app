@@ -149,6 +149,54 @@ android {
     }
 }
 
+// Generate the small chime as a packaged Android raw resource so it is available
+// both to the foreground alert and to system notification channels while the app
+// is backgrounded or closed.
+def orderAlertResDir = layout.buildDirectory.dir('generated/res/orderAlert/main')
+android.sourceSets.main.res.srcDir(orderAlertResDir)
+tasks.register('generateOrderAlertSound') {
+    def outputFile = orderAlertResDir.map { it.file('raw/order_alert_chime.wav') }
+    outputs.file(outputFile)
+    doLast {
+        def wav = outputFile.get().asFile
+        wav.parentFile.mkdirs()
+        int sampleRate = 22050
+        int[][] notes = [[523, 150], [659, 150], [784, 330]]
+        int gapMs = 35
+        int tailSilenceMs = 1000
+        int sampleCount = notes.sum { (int) (sampleRate * it[1] / 1000) } +
+                (notes.size() - 1) * (int) (sampleRate * gapMs / 1000) +
+                (int) (sampleRate * tailSilenceMs / 1000)
+        int dataSize = sampleCount * 2
+        wav.withOutputStream { stream ->
+            def writeAscii = { String value -> stream.write(value.getBytes('US-ASCII')) }
+            def writeIntLE = { int value ->
+                stream.write(value & 0xff); stream.write((value >> 8) & 0xff)
+                stream.write((value >> 16) & 0xff); stream.write((value >> 24) & 0xff)
+            }
+            def writeShortLE = { int value -> stream.write(value & 0xff); stream.write((value >> 8) & 0xff) }
+            writeAscii('RIFF'); writeIntLE(36 + dataSize); writeAscii('WAVEfmt ')
+            writeIntLE(16); writeShortLE(1); writeShortLE(1); writeIntLE(sampleRate)
+            writeIntLE(sampleRate * 2); writeShortLE(2); writeShortLE(16)
+            writeAscii('data'); writeIntLE(dataSize)
+            notes.eachWithIndex { note, noteIndex ->
+                int frequency = note[0]
+                int count = (int) (sampleRate * note[1] / 1000)
+                for (int sample = 0; sample < count; sample++) {
+                    double envelope = Math.min(1.0d, sample / 350.0d) * Math.min(1.0d, (count - sample) / 900.0d)
+                    int value = (int) (Math.sin(2 * Math.PI * frequency * sample / sampleRate) * 0.22d * envelope * 32767)
+                    writeShortLE(value)
+                }
+                if (noteIndex < notes.size() - 1) {
+                    for (int sample = 0; sample < (int) (sampleRate * gapMs / 1000); sample++) writeShortLE(0)
+                }
+            }
+            for (int sample = 0; sample < (int) (sampleRate * tailSilenceMs / 1000); sample++) writeShortLE(0)
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn('generateOrderAlertSound') }
+
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
 // Accepts values in comma delimited lists, example:
 // android.packagingOptions.pickFirsts=/LICENSE,**/picasa.ini

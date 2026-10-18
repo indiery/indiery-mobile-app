@@ -104,6 +104,9 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 }
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
+const publicWebBaseUrl = (
+  Constants.expoConfig?.extra?.publicWebBaseUrl as string | undefined
+) || 'https://www.indiery.com';
 const appSafeAreaEdges: Edge[] = ['top', 'right', 'bottom', 'left'];
 const loginSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'top');
 const tabScreenSafeAreaEdges: Edge[] = appSafeAreaEdges.filter((edge) => edge !== 'top' && edge !== 'bottom');
@@ -1738,6 +1741,46 @@ function requestCustomerLocationPermission(language: AppLanguage) {
   return request;
 }
 
+type LocationSearchBias = { lat: number; lng: number };
+let locationSearchBiasCache: { expiresAt: number; bias?: LocationSearchBias } | undefined;
+
+async function readLocationSearchBias(): Promise<LocationSearchBias | undefined> {
+  if (locationSearchBiasCache && locationSearchBiasCache.expiresAt > Date.now()) {
+    return locationSearchBiasCache.bias;
+  }
+
+  try {
+    // Use a recent device location only when permission was already granted;
+    // typing in the search field must never trigger a permission prompt.
+    const permission = await Location.getForegroundPermissionsAsync();
+    if (permission.status !== 'granted') {
+      locationSearchBiasCache = { expiresAt: Date.now() + 30_000 };
+      return undefined;
+    }
+
+    const position = await Location.getLastKnownPositionAsync({ maxAge: 5 * 60_000, requiredAccuracy: 1_000 });
+    const lat = position?.coords.latitude;
+    const lng = position?.coords.longitude;
+    const bias = typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng)
+      ? { lat, lng }
+      : undefined;
+    locationSearchBiasCache = { expiresAt: Date.now() + 60_000, bias };
+    return bias;
+  } catch {
+    locationSearchBiasCache = { expiresAt: Date.now() + 30_000 };
+    return undefined;
+  }
+}
+
+async function autocompleteNearCustomer(
+  api: IndieryApi,
+  input: string,
+  sessionToken: string
+) {
+  const bias = await readLocationSearchBias();
+  return api.autocompleteLocations(input, sessionToken, bias);
+}
+
 async function readDeviceLocation(language: AppLanguage = 'en') {
   const permission = await requestCustomerLocationPermission(language);
   if (permission.status !== 'granted') {
@@ -2476,7 +2519,7 @@ export default function App() {
   async function shareActiveOrder(order: Order) {
     try {
       const { trackingPath } = await api.createTrackingLink(order.id);
-      const trackingUrl = `${socketUrl}${trackingPath}`;
+      const trackingUrl = `${publicWebBaseUrl}${trackingPath}`;
       await Share.share({
         title: `Track ${order.orderNo}`,
         message: `Track your Indiery delivery ${order.orderNo}: ${trackingUrl}\nAfter pickup, this link shows the delivery OTP. Share it only with the receiver.`,
@@ -4586,7 +4629,7 @@ function PickupSearchModal({
 
   useEffect(() => {
     const search = query.trim();
-    if (search.length < 3) {
+    if (search.length < 2) {
       setSuggestions([]);
       setLocalError('');
       return;
@@ -4596,7 +4639,7 @@ function PickupSearchModal({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const result = await api.autocompleteLocations(search, sessionTokenRef.current);
+        const result = await autocompleteNearCustomer(api, search, sessionTokenRef.current);
         if (requestId === requestSeqRef.current) {
           setSuggestions(result.suggestions);
           setLocalError('');
@@ -4801,7 +4844,7 @@ function LocationPickerField({
 
   useEffect(() => {
     const query = value.trim();
-    if (!focused || query.length < 3) {
+    if (!focused || query.length < 2) {
       requestSeqRef.current += 1;
       setSuggestions([]);
       setLoading(false);
@@ -4813,7 +4856,7 @@ function LocationPickerField({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const result = await api.autocompleteLocations(query, sessionTokenRef.current);
+        const result = await autocompleteNearCustomer(api, query, sessionTokenRef.current);
         if (requestId === requestSeqRef.current) {
           setSuggestions(result.suggestions);
           setLocalError('');
@@ -6342,7 +6385,7 @@ function InlineExactLocationPicker({
 
   useEffect(() => {
     const search = query.trim();
-    if (search.length < 3 || search === pinLabel) {
+    if (search.length < 2 || search === pinLabel) {
       setSuggestions([]);
       return;
     }
@@ -6351,7 +6394,7 @@ function InlineExactLocationPicker({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const result = await api.autocompleteLocations(search, sessionTokenRef.current);
+        const result = await autocompleteNearCustomer(api, search, sessionTokenRef.current);
         if (requestId === requestSeqRef.current) {
           setSuggestions(result.suggestions);
           setLocalError('');
@@ -7099,7 +7142,7 @@ function MapLocationPicker({
 
   useEffect(() => {
     const search = query.trim();
-    if (search.length < 3 || search === pinLabel) {
+    if (search.length < 2 || search === pinLabel) {
       setSuggestions([]);
       return;
     }
@@ -7108,7 +7151,7 @@ function MapLocationPicker({
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const result = await api.autocompleteLocations(search, sessionTokenRef.current);
+        const result = await autocompleteNearCustomer(api, search, sessionTokenRef.current);
         if (requestId === requestSeqRef.current) {
           setSuggestions(result.suggestions);
           setLocalError('');

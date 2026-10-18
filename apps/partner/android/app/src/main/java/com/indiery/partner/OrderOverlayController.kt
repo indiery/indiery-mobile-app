@@ -55,7 +55,18 @@ object OrderOverlayController {
     val overlayPermission = canDrawOverlays(context)
     val foreground = isAppForeground(context)
     Log.i("OrderOverlay", "show requested permission=$overlayPermission foreground=$foreground allowForeground=$allowForeground")
-    if (!overlayPermission || (!allowForeground && foreground)) return
+    if (!overlayPermission) {
+      Log.w("OrderOverlay", "overlay skipped: draw-over-other-apps permission is disabled")
+      return
+    }
+    if (!allowForeground && foreground) {
+      Log.i("OrderOverlay", "overlay skipped because Indiery Partner is already in the foreground")
+      return
+    }
+    if (payload.offerExpiresAtMs <= System.currentTimeMillis()) {
+      Log.w("OrderOverlay", "overlay skipped because order ${payload.orderId} offer has expired")
+      return
+    }
     handler.post {
       // We're already on the main thread. Calling hide() here posts another
       // runnable which could remove this newly-added card after it is attached.
@@ -88,6 +99,8 @@ object OrderOverlayController {
         manager.addView(card, params)
         Log.i("OrderOverlay", "sample/order card attached")
       } catch (error: Exception) {
+        overlayView = null
+        windowManager = null
         Log.e("OrderOverlay", "could not attach order card", error)
         return@post
       }

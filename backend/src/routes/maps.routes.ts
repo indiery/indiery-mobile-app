@@ -13,9 +13,14 @@ mapsRouter.get(
   asyncRoute(async (req, res) => {
     const query = z.object({
       input: z.string().trim().min(2).max(160),
-      sessionToken: z.string().trim().max(120).optional()
+      sessionToken: z.string().trim().max(120).optional(),
+      lat: z.coerce.number().min(-90).max(90).optional(),
+      lng: z.coerce.number().min(-180).max(180).optional()
     }).parse(req.query);
-    const suggestions = await autocompleteLocations(query.input, query.sessionToken);
+    const bias = query.lat !== undefined && query.lng !== undefined
+      ? { lat: query.lat, lng: query.lng }
+      : undefined;
+    const suggestions = await autocompleteLocations(query.input, query.sessionToken, bias);
     res.json({ suggestions });
   })
 );

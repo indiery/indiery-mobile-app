@@ -8,6 +8,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Linking,
   Modal,
   NativeModules,
@@ -30,9 +31,9 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import RazorpayCheckout from 'react-native-razorpay';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import MapView, { AnimatedRegion, Marker, Polyline, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import { io, Socket } from 'socket.io-client';
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import indieryLogoImage from './assets/indiery-logo.png';
 import indierySplashMark from './assets/app-icon.png';
 import customerLoginBackgroundImage from './assets/bg1.png';
@@ -7865,6 +7866,7 @@ function OrderDetailsPanel({
           extraStops={order.extraStops}
           eta={order.etaMinutes}
           liveTracking={orderActive}
+          hidePickupPin={['picked_up', 'in_transit'].includes(order.status)}
           partnerLocation={orderActive ? order.partnerLocation : undefined}
         />
 
@@ -8344,7 +8346,7 @@ function AccountScreen({
   }
 
   if (page === 'enterprise') {
-    return <EnterpriseInfoScreen api={api} user={data.user} header={header} onBack={() => openPage('overview')} />;
+    return <EnterpriseInfoScreen api={api} user={data.user} hasEnterpriseEnquiry={Boolean(data.hasEnterpriseEnquiry)} header={header} onBack={() => openPage('overview')} />;
   }
 
   if (openPolicy) {
@@ -8582,7 +8584,7 @@ function AccountDetailHeader({ title, subtitle, onBack }: { title: string; subti
   );
 }
 
-function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; user: UserProfile; header: React.ReactNode; onBack: () => void }) {
+function EnterpriseInfoScreen({ api, user, hasEnterpriseEnquiry, header, onBack }: { api: IndieryApi; user: UserProfile; hasEnterpriseEnquiry: boolean; header: React.ReactNode; onBack: () => void }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
   const { bottom: bottomInset } = useSafeAreaInsets();
@@ -8593,17 +8595,102 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
   const [email, setEmail] = useState(user.email || '');
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [draftRestored, setDraftRestored] = useState(false);
+  const [sent, setSent] = useState(hasEnterpriseEnquiry);
+  const [draftRestored, setDraftRestored] = useState(hasEnterpriseEnquiry);
+  const submittedRef = useRef(hasEnterpriseEnquiry);
+  const draftWriteRef = useRef<Promise<void>>(Promise.resolve());
   const formScrollRef = useRef<ScrollView>(null);
+  const formOverlayRef = useRef<View>(null);
+  const formKeyboardTopRef = useRef<number | null>(null);
+  const [formKeyboardInset, setFormKeyboardInset] = useState(0);
+  const formFocusedFieldRef = useRef(0);
+  const formFieldBoundsRef = useRef<Array<{ y: number; height: number }>>([]);
+  const formScrollHeightRef = useRef(0);
+  const formScrollOffsetRef = useRef(0);
+  const formKeyboardVisibleRef = useRef(false);
+  const formKeyboardHiddenAtRef = useRef(0);
   const draftKey = `@indiery/customer/enterprise-enquiry/${user.id}`;
+  const sentKey = `@indiery/customer/enterprise-enquiry-sent/${user.id}`;
+
+  useEffect(() => {
+    if (!formOpen) return undefined;
+    if (Platform.OS !== 'android') return undefined;
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      formKeyboardVisibleRef.current = true;
+      formKeyboardHiddenAtRef.current = 0;
+      formKeyboardTopRef.current = event.endCoordinates.screenY;
+      measureFormKeyboardInset();
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      formKeyboardVisibleRef.current = false;
+      formKeyboardHiddenAtRef.current = Date.now();
+      formKeyboardTopRef.current = null;
+      LayoutAnimation.configureNext({ duration: 200, update: { type: 'easeInEaseOut' } });
+      setFormKeyboardInset(0);
+      formScrollOffsetRef.current = 0;
+      formScrollRef.current?.scrollTo({ y: 0, animated: false });
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+      formKeyboardVisibleRef.current = false;
+      formKeyboardHiddenAtRef.current = 0;
+      formKeyboardTopRef.current = null;
+      setFormKeyboardInset(0);
+    };
+  }, [formOpen]);
+
+  const closeFormOnBack = () => {
+    if (submitting) return;
+    if (formKeyboardVisibleRef.current || Date.now() - formKeyboardHiddenAtRef.current < 350) {
+      Keyboard.dismiss();
+      return;
+    }
+    setFormOpen(false);
+  };
+
+  // Measure the modal itself: Android may already resize its window for the IME.
+  // Subtract only the remaining overlap so native resizing is never counted twice.
+  function measureFormKeyboardInset() {
+    formOverlayRef.current?.measureInWindow((_x, y, _width, height) => {
+      const keyboardTop = formKeyboardTopRef.current;
+      setFormKeyboardInset(keyboardTop === null ? 0 : Math.max(0, y + height - keyboardTop));
+    });
+  }
+
+  function revealFocusedFormField() {
+    const bounds = formFieldBoundsRef.current[formFocusedFieldRef.current];
+    const viewportHeight = formScrollHeightRef.current;
+    if (!bounds || !viewportHeight) return;
+    const offset = formScrollOffsetRef.current;
+    const nextOffset = bounds.y < offset
+      ? bounds.y
+      : bounds.y + bounds.height > offset + viewportHeight
+        ? Math.max(0, bounds.y + bounds.height - viewportHeight)
+        : offset;
+    if (nextOffset !== offset) {
+      formScrollOffsetRef.current = nextOffset;
+      formScrollRef.current?.scrollTo({ y: nextOffset, animated: false });
+    }
+  }
+
+  function focusFormField(index: number) {
+    formFocusedFieldRef.current = index;
+    revealFocusedFormField();
+  }
 
   useEffect(() => {
     let cancelled = false;
-    setDraftRestored(false);
-    AsyncStorage.getItem(draftKey)
-      .then((savedDraft) => {
+    setDraftRestored(hasEnterpriseEnquiry);
+    AsyncStorage.multiGet([sentKey, draftKey])
+      .then(([[, savedSent], [, savedDraft]]) => {
         if (cancelled) return;
+        if (hasEnterpriseEnquiry || savedSent === 'true') {
+          submittedRef.current = true;
+          setSent(true);
+          if (savedDraft) void AsyncStorage.removeItem(draftKey).catch(() => undefined);
+          return;
+        }
         if (savedDraft) {
           try {
             const draft = JSON.parse(savedDraft) as Partial<Record<'companyName' | 'contactName' | 'mobileNumber' | 'email', unknown>>;
@@ -8623,19 +8710,19 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
     return () => {
       cancelled = true;
     };
-  }, [draftKey]);
+  }, [draftKey, sentKey, hasEnterpriseEnquiry]);
 
   useEffect(() => {
     if (!draftRestored || sent) return undefined;
     const timer = setTimeout(() => {
-      void AsyncStorage.setItem(draftKey, JSON.stringify({ companyName, contactName, mobileNumber, email })).catch(() => undefined);
+      if (submittedRef.current) return;
+      const draft = JSON.stringify({ companyName, contactName, mobileNumber, email });
+      draftWriteRef.current = draftWriteRef.current
+        .then(() => AsyncStorage.setItem(draftKey, draft))
+        .catch(() => undefined);
     }, 250);
     return () => clearTimeout(timer);
   }, [companyName, contactName, mobileNumber, email, draftKey, draftRestored, sent]);
-
-  function keepLastFieldsVisible() {
-    setTimeout(() => formScrollRef.current?.scrollToEnd({ animated: true }), 220);
-  }
 
   async function submitEnquiry() {
     if (submitting) return;
@@ -8661,20 +8748,23 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
     setSubmitting(true);
     try {
       await api.submitEnterpriseEnquiry(input);
+      submittedRef.current = true;
+      await draftWriteRef.current;
+      await AsyncStorage.setItem(sentKey, 'true').catch(() => undefined);
       await AsyncStorage.removeItem(draftKey).catch(() => undefined);
-      setFormOpen(false);
       setSent(true);
+      setFormOpen(false);
     } catch {
       setFormError(copy.enterpriseSubmitFailed);
     } finally {
       setSubmitting(false);
     }
   }
-  const businessFeatures: Array<{
+  const businessFeatures = useMemo((): Array<{
     icon: keyof typeof Ionicons.glyphMap;
     title: string;
     subtitle: string;
-  }> = [
+  }> => [
       {
         icon: 'repeat-outline',
         title: copy.recurringRoutes,
@@ -8695,11 +8785,10 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
         title: copy.prioritySupport,
         subtitle: copy.prioritySupportText
       }
-    ];
-  const businessTypes = [copy.retailStores, copy.wholesalers, copy.restaurants, copy.manufacturers, copy.offices, copy.ecommerceSellers];
+    ], [copy]);
+  const businessTypes = useMemo(() => [copy.retailStores, copy.wholesalers, copy.restaurants, copy.manufacturers, copy.offices, copy.ecommerceSellers], [copy]);
 
-  return (
-    <>
+  const content = useMemo(() => (
     <ScrollView
       contentContainerStyle={[styles.scroll, responsive.isCompact && styles.scrollCompact]}
       showsVerticalScrollIndicator={false}
@@ -8756,8 +8845,8 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
       <View style={[styles.enterpriseContactCard, responsive.isCompact && styles.enterpriseContactCardCompact]}>
         <Text style={[styles.enterpriseFeatureTitle, responsive.isCompact && styles.enterpriseFeatureTitleCompact]}>{copy.talkEnterprises}</Text>
         <Text style={[styles.enterpriseFeatureText, responsive.isCompact && styles.enterpriseFeatureTextCompact]}>{copy.shareBusinessRoutes}</Text>
-        {sent ? <Text style={styles.enterpriseSuccess}>{copy.enterpriseSent}</Text> : (
-          <Pressable style={styles.enterpriseGetInTouch} onPress={() => setFormOpen(true)} accessibilityRole="button">
+        {!draftRestored ? <ActivityIndicator color={colors.customer} /> : sent ? <Text style={styles.enterpriseSuccess}>{copy.enterpriseSent}</Text> : (
+          <Pressable style={styles.enterpriseGetInTouch} onPress={() => { setFormError(''); setFormOpen(true); }} accessibilityRole="button">
             <Text style={styles.enterpriseGetInTouchText}>{copy.getInTouch}</Text>
             <Ionicons name="arrow-forward" size={18} color={colors.white} />
           </Pressable>
@@ -8768,10 +8857,16 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
         </View>
       </View>
     </ScrollView>
-    <Modal visible={formOpen} transparent animationType="slide" onRequestClose={() => !submitting && setFormOpen(false)}>
-      <KeyboardAvoidingView style={styles.contactSheetOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+  ), [header, responsive.isCompact, copy, onBack, draftRestored, sent, businessFeatures, businessTypes]);
+
+  return (
+    <>
+    {content}
+    <Modal visible={formOpen} transparent statusBarTranslucent animationType="slide" onRequestClose={closeFormOnBack}>
+      <View ref={formOverlayRef} collapsable={false} style={styles.contactSheetOverlay} onLayout={measureFormKeyboardInset}>
         <Pressable style={styles.contactSheetBackdrop} onPress={() => !submitting && setFormOpen(false)} />
-        <View style={[styles.contactSheet, { paddingBottom: Math.max(20, bottomInset + 12) }]}>
+        <KeyboardAvoidingView style={[styles.enterpriseFormViewport, { marginBottom: formKeyboardInset }]} behavior="padding" enabled={Platform.OS === 'ios'} pointerEvents="box-none">
+        <View style={[styles.contactSheet, styles.enterpriseFormSheet, { paddingBottom: Platform.OS === 'android' ? 20 : Math.max(20, bottomInset + 12) }]}>
           <View style={styles.contactSheetHandle} />
           <View style={styles.contactSheetHeader}>
             <Text style={styles.contactSheetTitle}>{copy.getInTouch}</Text>
@@ -8779,19 +8874,30 @@ function EnterpriseInfoScreen({ api, user, header, onBack }: { api: IndieryApi; 
               <Ionicons name="close" size={20} color={colors.ink} />
             </Pressable>
           </View>
-          <ScrollView ref={formScrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Field label={copy.companyName} value={companyName} onChangeText={setCompanyName} editable={draftRestored && !submitting} />
-            <Field label={copy.contactName} value={contactName} onChangeText={setContactName} editable={draftRestored && !submitting} />
-            <Field label={copy.mobileNumber} value={mobileNumber} onChangeText={setMobileNumber} onFocus={keepLastFieldsVisible} keyboardType="phone-pad" editable={draftRestored && !submitting} />
-            <Field label={copy.email} value={email} onChangeText={setEmail} onFocus={keepLastFieldsVisible} keyboardType="email-address" editable={draftRestored && !submitting} />
+          <ScrollView ref={formScrollRef} style={styles.enterpriseFormScroll} contentContainerStyle={styles.enterpriseFormScrollContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}
+            onLayout={(event) => { formScrollHeightRef.current = event.nativeEvent.layout.height; revealFocusedFormField(); }}
+            onScroll={(event) => { formScrollOffsetRef.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}>
+            <View onLayout={(event) => { formFieldBoundsRef.current[0] = event.nativeEvent.layout; }}>
+              <Field label={copy.companyName} value={companyName} onChangeText={(value) => { setCompanyName(value); setFormError(''); }} onFocus={() => focusFormField(0)} editable={draftRestored && !submitting} />
+            </View>
+            <View onLayout={(event) => { formFieldBoundsRef.current[1] = event.nativeEvent.layout; }}>
+              <Field label={copy.contactName} value={contactName} onChangeText={(value) => { setContactName(value); setFormError(''); }} onFocus={() => focusFormField(1)} editable={draftRestored && !submitting} />
+            </View>
+            <View onLayout={(event) => { formFieldBoundsRef.current[2] = event.nativeEvent.layout; }}>
+              <Field label={copy.mobileNumber} value={mobileNumber} onChangeText={(value) => { setMobileNumber(value); setFormError(''); }} onFocus={() => focusFormField(2)} keyboardType="phone-pad" editable={draftRestored && !submitting} />
+            </View>
+            <View onLayout={(event) => { formFieldBoundsRef.current[3] = event.nativeEvent.layout; }}>
+              <Field label={copy.email} value={email} onChangeText={(value) => { setEmail(value); setFormError(''); }} onFocus={() => focusFormField(3)} keyboardType="email-address" editable={draftRestored && !submitting} />
+            </View>
             {formError ? <Text style={styles.accountEditError}>{formError}</Text> : null}
+          </ScrollView>
             <Pressable style={styles.enterpriseGetInTouch} onPress={submitEnquiry} disabled={submitting} accessibilityRole="button">
               {submitting ? <ActivityIndicator color={colors.white} /> : <Text style={styles.enterpriseGetInTouchText}>{copy.getInTouch}</Text>}
               {!submitting && <Ionicons name="arrow-forward" size={18} color={colors.white} />}
             </Pressable>
-          </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
     </>
   );
@@ -9391,18 +9497,83 @@ function OrderActionButton({
 }
 
 function TrackingVehicleMarker({ vehicle }: { vehicle: Vehicle }) {
-  const source = vehicleArtSources[vehicle.code];
+  const icon: React.ComponentProps<typeof FontAwesome5>['name'] =
+    vehicle.code === 'bike' ? 'motorcycle' :
+    vehicle.code === 'loader90' ? 'truck-pickup' :
+    vehicle.code === 'mini500' ? 'truck-moving' : 'truck';
   return (
     <View style={styles.mapPartnerMarker} collapsable={false}>
-      <View style={styles.mapPartnerMarkerTip} />
-      <View style={styles.mapPartnerMarkerCard}>
-        {source ? (
-          <Image source={source} style={styles.mapPartnerMarkerImage} resizeMode="contain" />
-        ) : (
-          <Ionicons name="car-sport" size={32} color={colors.customer} />
-        )}
+      <View style={styles.mapPartnerMarkerBody} collapsable={false}>
+        <FontAwesome5 name={icon} solid size={23} color={colors.ink} />
       </View>
+      <View style={styles.mapPartnerMarkerPoint} />
     </View>
+  );
+}
+
+function RouteStopMarker({ color }: { color: string }) {
+  return (
+    <View style={styles.mapRouteStopMarker} collapsable={false}>
+      <View style={[styles.mapRouteStopMarkerCenter, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+function mapCoordinateDistanceMeters(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number }
+) {
+  const latitudeMeters = (to.latitude - from.latitude) * 111_000;
+  const longitudeMeters = (to.longitude - from.longitude) * 111_000 * Math.cos(to.latitude * Math.PI / 180);
+  return Math.hypot(latitudeMeters, longitudeMeters);
+}
+
+function TrackingVehicleMapMarker({
+  vehicle,
+  coordinate,
+  title
+}: {
+  vehicle: Vehicle;
+  coordinate: { latitude: number; longitude: number };
+  title: string;
+}) {
+  const initialCoordinate = useRef(coordinate).current;
+  const previousCoordinate = useRef(coordinate);
+  const lastUpdate = useRef(Date.now());
+  const markerRef = useRef<React.ElementRef<typeof Marker> | null>(null);
+  const animatedCoordinate = useRef(new AnimatedRegion({ ...coordinate, latitudeDelta: 0, longitudeDelta: 0 })).current;
+
+  useEffect(() => {
+    const previous = previousCoordinate.current;
+    if (previous.latitude === coordinate.latitude && previous.longitude === coordinate.longitude) return;
+    const now = Date.now();
+    const distanceMeters = mapCoordinateDistanceMeters(previous, coordinate);
+    const duration = Math.min(5000, Math.max(900, now - lastUpdate.current));
+    previousCoordinate.current = coordinate;
+    lastUpdate.current = now;
+
+    if (Platform.OS === 'android') {
+      if (distanceMeters > 1000) markerRef.current?.setCoordinates(coordinate);
+      else markerRef.current?.animateMarkerToCoordinate(coordinate, duration);
+    } else if (distanceMeters > 1000) {
+      animatedCoordinate.setValue({ ...coordinate, latitudeDelta: 0, longitudeDelta: 0 });
+    } else {
+      animatedCoordinate.timing({ ...coordinate, latitudeDelta: 0, longitudeDelta: 0, duration, toValue: 0, useNativeDriver: false }).start();
+    }
+  }, [coordinate.latitude, coordinate.longitude]);
+
+  const markerProps = { title, anchor: { x: 0.5, y: 1 }, zIndex: 10, tracksViewChanges: true };
+  if (Platform.OS === 'android') {
+    return (
+      <Marker ref={markerRef} coordinate={initialCoordinate} {...markerProps}>
+        <TrackingVehicleMarker vehicle={vehicle} />
+      </Marker>
+    );
+  }
+  return (
+    <Marker.Animated coordinate={animatedCoordinate as unknown as React.ComponentProps<typeof Marker.Animated>['coordinate']} {...markerProps}>
+      <TrackingVehicleMarker vehicle={vehicle} />
+    </Marker.Animated>
   );
 }
 
@@ -9415,6 +9586,7 @@ function MapPreview({
   extraStops = [],
   eta,
   liveTracking = true,
+  hidePickupPin = false,
   partnerLocation
 }: {
   api?: IndieryApi;
@@ -9425,6 +9597,7 @@ function MapPreview({
   extraStops?: LocationPoint[];
   eta: number;
   liveTracking?: boolean;
+  hidePickupPin?: boolean;
   partnerLocation?: Order['partnerLocation'];
 }) {
   const copy = useCopy();
@@ -9465,7 +9638,7 @@ function MapPreview({
   const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
   const mapReadyRef = useRef(false);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
-  const fitKey = fitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|');
+  const fitKey = `${baseFitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|')}|partner:${Boolean(partnerCoordinate)}`;
 
   useEffect(() => {
     if (!api || !orderId) {
@@ -9496,7 +9669,7 @@ function MapPreview({
       return;
     }
     mapRef.current.fitToCoordinates(fitCoordinates, {
-      edgePadding: { top: 58, right: 38, bottom: 58, left: 38 },
+      edgePadding: { top: 58, right: 82, bottom: 58, left: 48 },
       animated: true
     });
   }
@@ -9544,6 +9717,8 @@ function MapPreview({
           ) : null}
           {routePoints.map((item) => {
             const isPickup = item.index === 0;
+            if (isPickup && hidePickupPin) return null;
+            if (partnerCoordinate && mapCoordinateDistanceMeters(item.coordinate, partnerCoordinate) < (isPickup ? 500 : 80)) return null;
             const isDrop = item.index === extraStops.length + 1;
             const pinColor = isPickup ? colors.green : isDrop ? colors.red : colors.amber;
             const label = isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`;
@@ -9553,15 +9728,16 @@ function MapPreview({
                 coordinate={item.coordinate}
                 title={label}
                 description={item.point.label}
-                pinColor={pinColor}
+                anchor={{ x: 0.5, y: 0.5 }}
+                zIndex={2}
                 tracksViewChanges={false}
-              />
+              >
+                <RouteStopMarker color={pinColor} />
+              </Marker>
             );
           })}
           {liveTracking && partnerCoordinate ? (
-            <Marker coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} anchor={{ x: 0.5, y: 1 }}>
-              <TrackingVehicleMarker vehicle={vehicle} />
-            </Marker>
+            <TrackingVehicleMapMarker key={orderId ?? vehicle.code} vehicle={vehicle} coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} />
           ) : null}
         </MapView>
       ) : (
@@ -9609,6 +9785,7 @@ function MapPreview({
         pickup={pickup}
         drop={drop}
         extraStops={extraStops}
+        hidePickupPin={hidePickupPin}
         partnerCoordinate={partnerCoordinate}
         routeCoordinates={roadRouteCoordinates}
         routeLoading={routeLoading}
@@ -9624,6 +9801,7 @@ function OrderRouteFullScreenMap({
   pickup,
   drop,
   extraStops,
+  hidePickupPin,
   partnerCoordinate,
   routeCoordinates,
   routeLoading,
@@ -9634,6 +9812,7 @@ function OrderRouteFullScreenMap({
   pickup: LocationPoint;
   drop: LocationPoint;
   extraStops: LocationPoint[];
+  hidePickupPin: boolean;
   partnerCoordinate?: { latitude: number; longitude: number };
   routeCoordinates: Array<{ latitude: number; longitude: number }>;
   routeLoading: boolean;
@@ -9695,6 +9874,8 @@ function OrderRouteFullScreenMap({
           ) : null}
           {points.map((item) => {
             const isPickup = item.index === 0;
+            if (isPickup && hidePickupPin) return null;
+            if (partnerCoordinate && mapCoordinateDistanceMeters(item.coordinate, partnerCoordinate) < (isPickup ? 500 : 80)) return null;
             const isDrop = item.index === extraStops.length + 1;
             return (
               <Marker
@@ -9702,14 +9883,16 @@ function OrderRouteFullScreenMap({
                 coordinate={item.coordinate}
                 title={isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`}
                 description={item.point.label}
-                pinColor={isPickup ? colors.green : isDrop ? colors.red : colors.amber}
-              />
+                anchor={{ x: 0.5, y: 0.5 }}
+                zIndex={2}
+                tracksViewChanges={false}
+              >
+                <RouteStopMarker color={isPickup ? colors.green : isDrop ? colors.red : colors.amber} />
+              </Marker>
             );
           })}
           {partnerCoordinate ? (
-            <Marker coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} anchor={{ x: 0.5, y: 1 }}>
-              <TrackingVehicleMarker vehicle={vehicle} />
-            </Marker>
+            <TrackingVehicleMapMarker vehicle={vehicle} coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} />
           ) : null}
         </MapView>
         {!routeLoading && routeCoordinates.length < 2 ? (
@@ -10843,6 +11026,10 @@ const styles = StyleSheet.create({
   contactSheetOverlay: { flex: 1, justifyContent: 'flex-end' },
   contactSheetBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
   contactSheet: { width: '100%', maxWidth: 640, maxHeight: '92%', alignSelf: 'center', backgroundColor: colors.white, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 16, paddingBottom: Platform.OS === 'android' ? 20 : 18 },
+  enterpriseFormSheet: { flexShrink: 1 },
+  enterpriseFormViewport: { flex: 1, justifyContent: 'flex-end' },
+  enterpriseFormScroll: { flexShrink: 1 },
+  enterpriseFormScrollContent: { paddingBottom: 8 },
   contactSheetScroll: { paddingBottom: 2 },
   contactSheetHandle: { width: 44, height: 4, borderRadius: 4, backgroundColor: colors.line, alignSelf: 'center', marginBottom: 12 },
   contactSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
@@ -11120,10 +11307,11 @@ const styles = StyleSheet.create({
   liveDotOn: { backgroundColor: colors.green },
   liveText: { flexShrink: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
   liveTextCompact: { fontSize: 9 },
-  mapPartnerMarker: { width: 68, height: 64, alignItems: 'center' },
-  mapPartnerMarkerTip: { position: 'absolute', top: 48, width: 13, height: 13, backgroundColor: colors.white, borderRightWidth: 2, borderBottomWidth: 2, borderColor: colors.customer, borderRadius: 2, transform: [{ rotate: '45deg' }] },
-  mapPartnerMarkerCard: { width: 66, height: 54, borderRadius: 15, backgroundColor: colors.white, borderWidth: 2, borderColor: colors.customer, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
-  mapPartnerMarkerImage: { width: 61, height: 49 },
+  mapPartnerMarker: { width: 52, height: 46, alignItems: 'center' },
+  mapPartnerMarkerBody: { width: 48, height: 38, borderRadius: 19, backgroundColor: colors.white, borderWidth: 2, borderColor: colors.customer, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 3 }, elevation: 5, zIndex: 1 },
+  mapPartnerMarkerPoint: { position: 'absolute', top: 31, width: 12, height: 12, borderRadius: 2, backgroundColor: colors.white, borderRightWidth: 2, borderBottomWidth: 2, borderColor: colors.customer, transform: [{ rotate: '45deg' }] },
+  mapRouteStopMarker: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 3, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  mapRouteStopMarkerCenter: { width: 14, height: 14, borderRadius: 7 },
   mapExpandButton: { position: 'absolute', right: 12, bottom: 50, width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
   mapExpandButtonCompact: { right: 8, bottom: 42, width: 32, height: 32, borderRadius: 10 },
   mapText: { position: 'absolute', left: 12, bottom: 12, right: 12, color: colors.ink, fontSize: 12, fontWeight: '600', backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, overflow: 'hidden' },

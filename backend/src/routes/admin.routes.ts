@@ -27,6 +27,11 @@ import { AdminSettingsSchema } from '../services/admin-settings.service';
 import { assertAdminPermission } from '../middleware/admin-permissions';
 import { createHmac, createHash, randomBytes } from 'crypto';
 import { env } from '../config/env';
+import {
+  activatePartnerWalletIfFunded,
+  canReceivePartnerOrders,
+  INITIAL_PARTNER_WALLET_BALANCE
+} from '../services/partner-wallet-eligibility.service';
 
 export const adminRouter = Router();
 
@@ -477,6 +482,15 @@ async function loadAssignableDriver(driverId: string) {
   if (driver.partnerProfile?.kycStatus !== 'verified') {
     throw new ApiError(409, 'Driver KYC must be verified before assignment');
   }
+  if (!canReceivePartnerOrders(
+    driver.partnerProfile?.walletBalance ?? 0,
+    driver.partnerProfile?.walletActivated === true
+  )) {
+    throw new ApiError(409, 'Driver wallet must be activated and have a positive balance before assignment');
+  }
+  if (!driver.partnerProfile?.walletActivated) {
+    await activatePartnerWalletIfFunded(driver._id);
+  }
 
   const activeOrder = await Order.exists({ partner: driver._id, status: { $in: ACTIVE_ORDER_STATUSES } });
   if (activeOrder) throw new ApiError(409, 'Driver already has an active order');
@@ -918,7 +932,11 @@ adminRouter.post('/orders/:id/status', async (req: Request, res: Response, next:
             customerTotal: order.fare.total,
             partnerCredit: settlement.partnerCredit
           });
-          partner.partnerProfile.walletBalance = (partner.partnerProfile.walletBalance || 0) + walletSettlement.walletDelta;
+          const previousBalance = partner.partnerProfile.walletBalance || 0;
+          partner.partnerProfile.walletBalance = previousBalance + walletSettlement.walletDelta;
+          if (previousBalance >= INITIAL_PARTNER_WALLET_BALANCE || partner.partnerProfile.walletBalance >= INITIAL_PARTNER_WALLET_BALANCE) {
+            partner.partnerProfile.walletActivated = true;
+          }
           partner.partnerProfile.weeklyOrders = (partner.partnerProfile.weeklyOrders || 0) + 1;
           await partner.save();
 
@@ -1392,6 +1410,9 @@ adminRouter.post('/finance/disburse', async (req: Request, res: Response, next: 
       throw new ApiError(400, 'Bank account and IFSC details are required for NEFT payout');
     }
 
+    if (!driver.partnerProfile?.walletActivated && (driver.partnerProfile?.walletBalance ?? 0) >= INITIAL_PARTNER_WALLET_BALANCE) {
+      await activatePartnerWalletIfFunded(driver._id);
+    }
     const updatedDriver = await User.findOneAndUpdate(
       {
         _id: driver._id,
@@ -1422,6 +1443,7 @@ adminRouter.post('/finance/disburse', async (req: Request, res: Response, next: 
         { _id: driver._id },
         { $inc: { 'partnerProfile.walletBalance': amountNumber } }
       );
+      await activatePartnerWalletIfFunded(driver._id);
       throw ledgerError;
     }
 

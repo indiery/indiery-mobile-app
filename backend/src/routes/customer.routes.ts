@@ -19,6 +19,7 @@ import { serializeOrder, serializeUser, serializeVehicle } from '../services/ser
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { initialsFromName } from '../services/profile.service';
 import { offerOrderToNextDrivers } from '../services/order-offers.service';
+import { activatePartnerWalletIfFunded } from '../services/partner-wallet-eligibility.service';
 import { isExpoPushToken, registerPushToken, sendPush, unregisterPushToken } from '../services/notification.service';
 import { createTrackingToken } from '../services/tracking-link.service';
 import { calculateCustomerCoinDebit, customerCanPlaceOrder } from '../services/customer-coins.service';
@@ -295,7 +296,7 @@ function assertVehicleMatchesWeight(vehicle: VehicleDocument | null, requiredVeh
 customerRouter.get(
   '/bootstrap',
   asyncRoute(async (req: AuthRequest, res) => {
-    const [user, vehicles, orders, wallet] = await Promise.all([
+    const [user, vehicles, orders, wallet, enterpriseEnquiry] = await Promise.all([
       User.findById(req.auth!.userId),
       Vehicle.find({ active: true, code: { $in: customerVehicleCodes } }).sort({ capacityKg: 1 }),
       Order.find({ customer: req.auth!.userId })
@@ -303,7 +304,8 @@ customerRouter.get(
         .limit(40)
         .populate('vehicle')
         .populate('partner'),
-      getCustomerWallet(req.auth!.userId)
+      getCustomerWallet(req.auth!.userId),
+      EnterpriseEnquiry.exists({ customer: req.auth!.userId })
     ]);
     if (!user) throw new ApiError(404, 'Customer not found');
     const activeOrders = orders.filter((order) => !['delivered', 'cancelled'].includes(order.status));
@@ -311,6 +313,7 @@ customerRouter.get(
     res.json({
       user: serializeUser(user),
       wallet,
+      hasEnterpriseEnquiry: Boolean(enterpriseEnquiry),
       vehicles: vehicles.map(serializeVehicle),
       activeOrder: activeOrder ? serializeOrder(activeOrder, { includeTripOtp: true }) : undefined,
       activeOrders: activeOrders.map((order) => serializeOrder(order, { includeTripOtp: true })),
@@ -778,6 +781,7 @@ customerRouter.post(
         { _id: order.partner },
         { $inc: { 'partnerProfile.walletBalance': cancellation.partnerCredit } }
       );
+      await activatePartnerWalletIfFunded(order.partner);
       await WalletLedger.create({
         user: order.partner,
         order: order._id,

@@ -43,6 +43,7 @@ export interface UserProfile {
     rating: number;
     online: boolean;
     walletBalance: number;
+    walletActivated?: boolean;
     weeklyOrders: number;
     kycStatus: 'not_started' | 'pending' | 'verified' | 'rejected';
     docs: Record<'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc' | 'insurance' | 'bank', boolean>;
@@ -267,6 +268,7 @@ export interface PartnerStats {
 export interface CustomerBootstrap {
   user: UserProfile;
   wallet: CustomerWallet;
+  hasEnterpriseEnquiry?: boolean;
   vehicles: Vehicle[];
   activeOrder?: Order;
   activeOrders: Order[];

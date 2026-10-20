@@ -6,10 +6,13 @@ import { sendPush } from './notification.service';
 import { setOrderStatusTimeline } from './timeline.service';
 import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { getRuntimeAdminPolicy } from './admin-settings.service';
+import {
+  INITIAL_PARTNER_WALLET_BALANCE,
+  MIN_POSITIVE_PARTNER_WALLET_BALANCE
+} from './partner-wallet-eligibility.service';
 
 export const DRIVER_OFFER_BATCH_SIZE = 3;
 export const DRIVER_OFFER_TIMEOUT_MS = 45_000;
-export const MIN_PARTNER_WALLET_BALANCE = 200;
 
 const activePartnerStatuses = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];
 const offerTimers = new Map<string, NodeJS.Timeout>();
@@ -84,7 +87,13 @@ async function eligiblePartnersForOrder(order: OrderDocument, maxPickupRadiusKm?
       role: 'partner',
       'partnerProfile.online': true,
       'partnerProfile.kycStatus': 'verified',
-      'partnerProfile.walletBalance': { $gte: MIN_PARTNER_WALLET_BALANCE },
+      $or: [
+        {
+          'partnerProfile.walletActivated': true,
+          'partnerProfile.walletBalance': { $gte: MIN_POSITIVE_PARTNER_WALLET_BALANCE }
+        },
+        { 'partnerProfile.walletBalance': { $gte: INITIAL_PARTNER_WALLET_BALANCE } }
+      ],
       'partnerProfile.vehicleId': vehicleId,
       'partnerProfile.currentLocation.lat': { $type: 'number' },
       'partnerProfile.currentLocation.lng': { $type: 'number' }

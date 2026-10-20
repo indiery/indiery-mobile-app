@@ -79,6 +79,13 @@ if (!__DEV__ && !apiBaseUrl.startsWith('https://') && !allowInsecureApiBaseUrl) 
 
 const socketUrl = apiBaseUrl.replace(/\/api\/?$/, '');
 const minPartnerWalletBalance = 200;
+function partnerWalletReady(balance: number, activated: boolean) {
+  return balance >= 0.01 && (activated || balance >= minPartnerWalletBalance);
+}
+
+function partnerWalletRechargeAmount(balance: number, activated: boolean) {
+  return Math.min(20_000, Math.max(50, Math.ceil((activated ? 0.01 : minPartnerWalletBalance) - balance)));
+}
 const expoProjectId =
   (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
   (Constants.easConfig as { projectId?: string } | null)?.projectId;
@@ -198,7 +205,8 @@ const enCopy = {
   opening: 'Opening',
   capture: 'Capture',
   rechargeDriverWallet: 'Recharge driver wallet',
-  minimumBalanceRequired: 'Minimum {amount} balance is required to receive new orders.',
+  minimumBalanceRequired: 'First-time order activation requires {amount} in your wallet.',
+  positiveBalanceRequired: 'Recharge your wallet above zero to receive new orders.',
   currentBalance: 'Current balance',
   recharge: 'Recharge',
   syncing: 'SYNCING',
@@ -210,7 +218,7 @@ const enCopy = {
   rechargeStatus: 'RECHARGE',
   receivingNearbyOrders: 'Receiving nearby orders',
   tapToStartReceivingOrders: 'Tap to start receiving orders',
-  walletBelowMinimum: 'Wallet below minimum',
+  walletBelowMinimum: 'Recharge wallet to receive orders',
   today: 'Today',
   rating: 'Rating',
   availableJobs: 'Available Jobs',
@@ -416,7 +424,7 @@ const enCopy = {
   requestFailed: 'Request failed',
   youAreOnline: 'You are online',
   youAreOffline: 'You are offline',
-  overlayPermissionPrompt: 'Allow Display over other apps to receive Rapido-style order cards outside Indiery Partner.',
+  overlayPermissionPrompt: 'Allow Display over other apps to see new Indiery order cards while using other apps.',
   orderAccepted: 'Order accepted',
   orderSkipped: 'Order skipped',
   otpVerified: 'OTP verified',
@@ -536,7 +544,8 @@ const hiCopy: Partial<Record<keyof typeof enCopy, string>> = {
   opening: 'खुल रहा है',
   capture: 'कैप्चर',
   rechargeDriverWallet: 'ड्राइवर वॉलेट रिचार्ज करें',
-  minimumBalanceRequired: 'नए ऑर्डर पाने के लिए कम से कम {amount} बैलेंस जरूरी है.',
+  minimumBalanceRequired: 'पहली बार ऑर्डर पाने के लिए वॉलेट में कम से कम {amount} जरूरी है।',
+  positiveBalanceRequired: 'नए ऑर्डर पाने के लिए वॉलेट बैलेंस शून्य से अधिक रखें।',
   currentBalance: 'मौजूदा बैलेंस',
   recharge: 'रिचार्ज',
   syncing: 'सिंक हो रहा है',
@@ -3859,6 +3868,9 @@ function AvailabilitySlider({
   onDisabledPress: () => void;
 }) {
   const thumbPosition = useRef(new Animated.Value(0)).current;
+  const onSlideRef = useRef(onSlide);
+  const dragStartX = useRef(0);
+  onSlideRef.current = onSlide;
   const [trackWidth, setTrackWidth] = useState(0);
   const thumbSize = compact ? 42 : 50;
   const trackInset = 4;
@@ -3876,21 +3888,29 @@ function AvailabilitySlider({
     Animated.spring(thumbPosition, {
       toValue: 0,
       useNativeDriver: true,
-      speed: 24,
-      bounciness: 5
+      tension: 180,
+      friction: 20
     }).start();
   }
 
   useEffect(() => {
     thumbPosition.setValue(0);
-  }, [disabled, online, thumbPosition, travelDistance]);
+  }, [disabled, thumbPosition, travelDistance]);
 
   const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => !busy && !disabled && travelDistance > 0,
+    onStartShouldSetPanResponder: (event) => {
+      dragStartX.current = event.nativeEvent.locationX;
+      return false;
+    },
     onMoveShouldSetPanResponder: (_, gesture) => (
-      !busy && !disabled && travelDistance > 0 && gesture.dx > 3 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+      !busy && !disabled && travelDistance > 0 &&
+      dragStartX.current <= thumbSize + 20 &&
+      gesture.dx > 5 && gesture.dx > Math.abs(gesture.dy) * 1.2
     ),
-    onPanResponderGrant: () => thumbPosition.stopAnimation(),
+    onPanResponderGrant: (_, gesture) => {
+      thumbPosition.stopAnimation();
+      thumbPosition.setValue(Math.max(0, Math.min(travelDistance, gesture.dx)));
+    },
     onPanResponderMove: (_, gesture) => {
       thumbPosition.setValue(Math.max(0, Math.min(travelDistance, gesture.dx)));
     },
@@ -3904,23 +3924,25 @@ function AvailabilitySlider({
         toValue: travelDistance,
         duration: 120,
         useNativeDriver: true
-      }).start(() => {
-        onSlide();
+      }).start(({ finished }) => {
+        if (finished) onSlideRef.current();
         setTimeout(resetThumb, 260);
       });
     },
     onPanResponderTerminationRequest: () => false,
     onPanResponderTerminate: resetThumb
-  }), [busy, disabled, onSlide, thumbPosition, travelDistance]);
+  }), [busy, disabled, thumbPosition, thumbSize, travelDistance]);
+  const SliderContainer = disabled ? Pressable : View;
 
   return (
-    <Pressable
+    <SliderContainer
       style={[
         styles.availabilitySlider,
         compact && styles.availabilitySliderCompact,
         { borderColor: actionColor },
         disabled && styles.availabilitySliderDisabled
       ]}
+      {...(disabled ? {} : panResponder.panHandlers)}
       onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
       onPress={disabled ? onDisabledPress : undefined}
       accessibilityRole="adjustable"
@@ -3946,7 +3968,7 @@ function AvailabilitySlider({
         ) : null}
       </View>
       <Animated.View
-        {...panResponder.panHandlers}
+        pointerEvents="none"
         style={[
           styles.availabilitySliderThumb,
           compact && styles.availabilitySliderThumbCompact,
@@ -3955,7 +3977,7 @@ function AvailabilitySlider({
       >
         <Ionicons name={disabled ? 'wallet-outline' : 'power'} size={compact ? 20 : 23} color={colors.white} />
       </Animated.View>
-    </Pressable>
+    </SliderContainer>
   );
 }
 
@@ -3971,6 +3993,9 @@ function AcceptOrderSlider({
   onAccept: () => void;
 }) {
   const thumbPosition = useRef(new Animated.Value(0)).current;
+  const onAcceptRef = useRef(onAccept);
+  const dragStartX = useRef(0);
+  onAcceptRef.current = onAccept;
   const [trackWidth, setTrackWidth] = useState(0);
   const thumbSize = compact ? 42 : 48;
   const trackInset = 4;
@@ -3980,21 +4005,33 @@ function AcceptOrderSlider({
     Animated.spring(thumbPosition, {
       toValue: 0,
       useNativeDriver: true,
-      speed: 24,
-      bounciness: 5
+      tension: 180,
+      friction: 20
     }).start();
   }
 
   useEffect(() => {
     thumbPosition.setValue(0);
-  }, [busy, thumbPosition, travelDistance]);
+  }, [thumbPosition, travelDistance]);
+
+  useEffect(() => {
+    if (busy) resetThumb();
+  }, [busy]);
 
   const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => !busy && travelDistance > 0,
+    onStartShouldSetPanResponder: (event) => {
+      dragStartX.current = event.nativeEvent.locationX;
+      return false;
+    },
     onMoveShouldSetPanResponder: (_, gesture) => (
-      !busy && travelDistance > 0 && gesture.dx > 3 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+      !busy && travelDistance > 0 &&
+      dragStartX.current <= thumbSize + 20 &&
+      gesture.dx > 5 && gesture.dx > Math.abs(gesture.dy) * 1.2
     ),
-    onPanResponderGrant: () => thumbPosition.stopAnimation(),
+    onPanResponderGrant: (_, gesture) => {
+      thumbPosition.stopAnimation();
+      thumbPosition.setValue(Math.max(0, Math.min(travelDistance, gesture.dx)));
+    },
     onPanResponderMove: (_, gesture) => {
       thumbPosition.setValue(Math.max(0, Math.min(travelDistance, gesture.dx)));
     },
@@ -4007,15 +4044,18 @@ function AcceptOrderSlider({
         toValue: travelDistance,
         duration: 120,
         useNativeDriver: true
-      }).start(onAccept);
+      }).start(({ finished }) => {
+        if (finished) onAcceptRef.current();
+      });
     },
     onPanResponderTerminationRequest: () => false,
     onPanResponderTerminate: resetThumb
-  }), [busy, onAccept, thumbPosition, travelDistance]);
+  }), [busy, thumbPosition, thumbSize, travelDistance]);
 
   return (
     <View
       style={[styles.acceptOrderSlider, compact && styles.acceptOrderSliderCompact, busy && styles.acceptOrderSliderBusy]}
+      {...panResponder.panHandlers}
       onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
       accessibilityRole="adjustable"
       accessibilityLabel={label}
@@ -4038,7 +4078,7 @@ function AcceptOrderSlider({
         ) : null}
       </View>
       <Animated.View
-        {...panResponder.panHandlers}
+        pointerEvents="none"
         style={[
           styles.acceptOrderSliderThumb,
           compact && styles.acceptOrderSliderThumbCompact,
@@ -4202,8 +4242,9 @@ function DashboardScreen({
   const profile = data.user.partnerProfile;
   const online = Boolean(profile?.online);
   const balance = profile?.walletBalance ?? 0;
-  const walletReady = balance >= minPartnerWalletBalance;
-  const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
+  const walletActivated = profile?.walletActivated === true;
+  const walletReady = partnerWalletReady(balance, walletActivated);
+  const rechargeAmount = partnerWalletRechargeAmount(balance, walletActivated);
   return (
     <View style={styles.dashboardScreen}>
       <ScrollView
@@ -4259,7 +4300,11 @@ function DashboardScreen({
             <Ionicons name="wallet-outline" size={responsive.isCompact ? 19 : 22} color={colors.amber} />
             <View style={styles.flex}>
               <Text style={[styles.cardTitle, responsive.isCompact && styles.cardTitleCompact]}>{copy.rechargeDriverWallet}</Text>
-              <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>{fillCopy(copy.minimumBalanceRequired, { amount: money(minPartnerWalletBalance) })}</Text>
+              <Text style={[styles.mutedSmall, responsive.isCompact && styles.mutedSmallCompact]}>
+                {walletActivated
+                  ? copy.positiveBalanceRequired
+                  : fillCopy(copy.minimumBalanceRequired, { amount: money(minPartnerWalletBalance) })}
+              </Text>
             </View>
           </View>
           <Text style={[styles.walletBlockBalance, responsive.isCompact && styles.walletBlockBalanceCompact]}>{copy.currentBalance}: {money(balance)}</Text>
@@ -4277,9 +4322,9 @@ function DashboardScreen({
         <SecondaryButton title={copy.activeTrip} icon="navigate" onPress={onActive} />
       </View>
 
-      <SectionTitle title={`${copy.availableOrders} (${data.availableOrders.length})`} />
+      <SectionTitle title={`${copy.availableOrders} (${walletReady ? data.availableOrders.length : 0})`} />
       <AvailableOrdersList
-        orders={data.availableOrders}
+        orders={walletReady ? data.availableOrders : []}
         driverLocation={profile?.currentLocation}
         busy={busy}
         onAccept={onAccept}
@@ -4309,7 +4354,7 @@ function DashboardScreen({
               online && styles.availabilityStatusTextOnline,
               !walletReady && styles.availabilityStatusTextBlocked
             ]}>
-              {online ? copy.online : walletReady ? copy.offline : copy.rechargeStatus}
+              {!walletReady ? copy.rechargeStatus : online ? copy.online : copy.offline}
             </Text>
             <Text style={[styles.availabilityStatusMessage, responsive.isCompact && styles.availabilityStatusMessageCompact]} numberOfLines={1}>
               {walletReady ? (online ? copy.receivingNearbyOrders : copy.tapToStartReceivingOrders) : copy.walletBelowMinimum}
@@ -4318,7 +4363,7 @@ function DashboardScreen({
           <AvailabilitySlider
             online={online}
             busy={busy}
-            disabled={!walletReady}
+            disabled={!walletReady && !online}
             compact={responsive.isCompact}
             onlineActionLabel={copy.goOnline}
             offlineActionLabel={copy.goOffline}
@@ -4739,8 +4784,8 @@ function EarningsScreen({
   const payoutAmountInputRef = useRef<TextInput | null>(null);
   const requestedAmount = Number(payoutAmount);
   const payoutAmountValid = Number.isFinite(requestedAmount) && requestedAmount > 0 && requestedAmount <= balance;
-  const walletReady = balance >= minPartnerWalletBalance;
-  const rechargeAmount = Math.max(50, Math.ceil(minPartnerWalletBalance - balance));
+  const walletReady = partnerWalletReady(balance, profile?.walletActivated === true);
+  const rechargeAmount = partnerWalletRechargeAmount(balance, profile?.walletActivated === true);
   const closePayoutSheet = () => {
     Keyboard.dismiss();
     setPayoutSheetOpen(false);

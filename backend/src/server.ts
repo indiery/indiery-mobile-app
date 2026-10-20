@@ -5,9 +5,11 @@ import { connectMongo, ensureDatabaseIndexes } from './db/mongoose';
 import { initSocket } from './realtime/socket';
 import { seedCoreData } from './services/seed.service';
 import { startPushReceiptWorker } from './services/notification.service';
+import { backfillPartnerWalletActivation } from './services/partner-wallet-eligibility.service';
 
 async function main() {
   await connectMongo();
+  await backfillPartnerWalletActivation();
   if (env.NODE_ENV !== 'production') {
     await seedCoreData();
   }

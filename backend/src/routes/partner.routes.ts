@@ -22,10 +22,14 @@ import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
 import { initialsFromName } from '../services/profile.service';
 import {
   advanceExpiredOrderOffers,
-  MIN_PARTNER_WALLET_BALANCE,
   offerOrderToNextDrivers,
   rejectDriverOffer
 } from '../services/order-offers.service';
+import {
+  activatePartnerWalletIfFunded,
+  canReceivePartnerOrders,
+  INITIAL_PARTNER_WALLET_BALANCE
+} from '../services/partner-wallet-eligibility.service';
 import { calculateWaitingCoinDebit } from '../services/customer-coins.service';
 import { getRuntimeAdminPolicy } from '../services/admin-settings.service';
 
@@ -112,6 +116,10 @@ const RazorpayVerifySchema = z.object({
 async function loadPartner(userId: string) {
   const partner = await User.findById(userId).populate('partnerProfile.vehicleId');
   if (!partner || partner.role !== 'partner') throw new ApiError(404, 'Partner not found');
+  if (!partner.partnerProfile?.walletActivated && (partner.partnerProfile?.walletBalance ?? 0) >= INITIAL_PARTNER_WALLET_BALANCE) {
+    await activatePartnerWalletIfFunded(partner._id);
+    partner.set('partnerProfile.walletActivated', true);
+  }
   return partner;
 }
 
@@ -177,14 +185,16 @@ function partnerWalletBalance(partner: Awaited<ReturnType<typeof loadPartner>>) 
   return partner.partnerProfile?.walletBalance ?? 0;
 }
 
-function hasMinimumPartnerWallet(partner: Awaited<ReturnType<typeof loadPartner>>) {
-  return partnerWalletBalance(partner) >= MIN_PARTNER_WALLET_BALANCE;
+function hasPartnerWalletAccess(partner: Awaited<ReturnType<typeof loadPartner>>) {
+  return canReceivePartnerOrders(partnerWalletBalance(partner), partner.partnerProfile?.walletActivated === true);
 }
 
-function assertMinimumPartnerWallet(partner: Awaited<ReturnType<typeof loadPartner>>) {
+function assertPartnerWalletAccess(partner: Awaited<ReturnType<typeof loadPartner>>) {
   const balance = partnerWalletBalance(partner);
-  if (balance < MIN_PARTNER_WALLET_BALANCE) {
-    throw new ApiError(402, `Recharge wallet to at least INR ${MIN_PARTNER_WALLET_BALANCE} to receive orders`);
+  if (!hasPartnerWalletAccess(partner)) {
+    throw new ApiError(402, partner.partnerProfile?.walletActivated
+      ? 'Recharge wallet to a positive balance to receive orders'
+      : `Recharge wallet to at least INR ${INITIAL_PARTNER_WALLET_BALANCE} to activate order offers`);
   }
 }
 
@@ -238,7 +248,7 @@ partnerRouter.get(
   asyncRoute(async (req: AuthRequest, res) => {
     const partner = await loadPartner(req.auth!.userId);
     const vehicleId = partnerVehicleId(partner);
-    const canReceiveOrders = partner.partnerProfile?.kycStatus === 'verified' && hasMinimumPartnerWallet(partner);
+    const canReceiveOrders = partner.partnerProfile?.kycStatus === 'verified' && hasPartnerWalletAccess(partner);
     if (canReceiveOrders && vehicleId) {
       void advanceExpiredOrderOffers(vehicleId).catch((error) => {
         console.error('Unable to advance expired order offers during partner refresh', error);
@@ -329,7 +339,7 @@ partnerRouter.post(
       if (partner.partnerProfile?.kycStatus !== 'verified') {
         throw new ApiError(403, 'KYC verification is required before going online');
       }
-      assertMinimumPartnerWallet(partner);
+      assertPartnerWalletAccess(partner);
     }
     const partner = await User.findByIdAndUpdate(
       req.auth!.userId,
@@ -412,7 +422,7 @@ partnerRouter.post(
     if (partner.partnerProfile?.kycStatus !== 'verified') {
       throw new ApiError(403, 'KYC verification is required before accepting orders');
     }
-    assertMinimumPartnerWallet(partner);
+    assertPartnerWalletAccess(partner);
     const vehicleId = partnerVehicleId(partner);
     if (!partner.partnerProfile?.online) throw new ApiError(400, 'Go online before accepting orders');
     const order = await Order.findById(String(req.params.orderId));
@@ -733,6 +743,9 @@ partnerRouter.post(
           }
         }
       );
+      if (walletSettlement.walletDelta > 0) {
+        await activatePartnerWalletIfFunded(req.auth!.userId);
+      }
       if (walletSettlement.ledgerKind) {
         const isCashCollection = walletSettlement.cashCollected > 0;
         const title = isCashCollection
@@ -904,6 +917,7 @@ partnerRouter.post(
       });
       if (!ledger) throw new ApiError(404, 'Partner wallet top-up not found');
     }
+    await activatePartnerWalletIfFunded(req.auth!.userId);
     const partner = await loadPartner(req.auth!.userId);
     res.json({ user: serializeUser(partner) });
   })

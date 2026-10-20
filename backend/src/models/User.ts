@@ -7,6 +7,7 @@ const PartnerProfileSchema = new Schema(
     rating: { type: Number },
     online: { type: Boolean, default: false },
     walletBalance: { type: Number, default: 0 },
+    walletActivated: { type: Boolean, default: false },
     weeklyOrders: { type: Number, default: 0 },
     cancellationDay: { type: String },
     cancellationsToday: { type: Number, default: 0 },

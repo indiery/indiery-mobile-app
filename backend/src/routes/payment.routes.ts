@@ -8,6 +8,7 @@ import { verifyRazorpayWebhookSignature } from '../services/payment.service';
 import { emitOrderChanged } from '../realtime/socket';
 import { offerOrderToNextDrivers } from '../services/order-offers.service';
 import { sendPush } from '../services/notification.service';
+import { activatePartnerWalletIfFunded } from '../services/partner-wallet-eligibility.service';
 
 export const paymentRouter = Router();
 
@@ -34,6 +35,7 @@ async function settleWalletTopup(razorpayOrderId: string) {
     ledger.title = 'Partner wallet top-up';
     await ledger.save();
     await User.updateOne({ _id: ledger.user }, { $inc: { 'partnerProfile.walletBalance': ledger.amount } });
+    await activatePartnerWalletIfFunded(ledger.user);
   } else if (ledger.bucket === 'coins') {
     ledger.title = 'Indiery Coins recharge';
     await ledger.save();

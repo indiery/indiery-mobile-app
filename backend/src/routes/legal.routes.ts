@@ -433,7 +433,7 @@ const partnerTermsPolicy: LegalPolicy = {
       heading: 'COD, Partner Wallet, top-ups, and payouts',
       body: [
         'For prepaid, Wallet, or Coin-funded amounts, the Driver Partner entitlement is credited to the Partner Wallet when settlement is completed. For COD, the Driver Partner collects the authorized customer cash and the Wallet is adjusted by Partner entitlement minus cash collected.',
-        'Because a COD Driver Partner may collect more cash than the Partner entitlement, the Wallet adjustment may be a debit and the Wallet may become negative. A Driver Partner must maintain at least INR 200 in the Partner Wallet to receive new offers and must top up to at least that amount when the balance is lower.',
+        'Because a COD Driver Partner may collect more cash than the Partner entitlement, the Wallet adjustment may be a debit and the Wallet may become negative. A Driver Partner needs INR 200 in the Partner Wallet to activate order offers for the first time. After activation, new offers require a positive Wallet balance; a zero or negative balance must be topped up before receiving another offer.',
         'Wallet top-ups and payouts use the payment or bank method supported in the app. Payout availability, processing time, verification, minimums, deductions, bank delays, taxes, holds, and corrections are subject to the displayed workflow and applicable law.',
         'You must keep payout details accurate and must never provide a UPI PIN, card PIN, CVV, password, OTP, or similar secret to Indiery support.'
       ]

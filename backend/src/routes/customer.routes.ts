@@ -1039,7 +1039,6 @@ customerRouter.post(
     const body = z.object({ code: z.string().min(3) }).parse(req.body);
     const code = body.code.trim().toUpperCase();
     const coinsByCode: Record<string, number> = {
-      FIRST50: 50,
       INDIERY100: 100
     };
     const coins = coinsByCode[code];

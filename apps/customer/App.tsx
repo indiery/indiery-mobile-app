@@ -437,15 +437,7 @@ const enCopy = {
   indieryCoins: 'INDIERY COINS',
   useCoinsDiscount: 'All available coins are applied automatically up to the order amount.',
   coinDiscountNextOrders: 'available for order payment',
-  enterCoupon: 'Enter Coupon',
   applying: 'Applying',
-  applyCoupon: 'Apply coupon',
-  couponCode: 'Coupon code',
-  couponSheetTitle: 'Apply coupon',
-  couponSheetText: 'New customers can use FIRST50 to claim 50 Indiery coins.',
-  invalidCoupon: 'Invalid coupon code',
-  couponAlreadyClaimed: 'FIRST50 already claimed',
-  couponApplied: 'FIRST50 applied. 50 coins added.',
   rechargeCoins: 'Recharge Indiery Coins',
   rechargeCoinsToOrder: 'Your Indiery Coins balance reached -50. Recharge before placing another order.',
   coinDebtNotice: 'Waiting and cancellation charges may use Coins down to -50. Recharge is required at that limit.',
@@ -890,9 +882,7 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
   indieryCoins: 'INDIERY कॉइन',
   useCoinsDiscount: 'ऑर्डर राशि तक सभी उपलब्ध कॉइन अपने आप लागू होते हैं.',
   coinDiscountNextOrders: 'ऑर्डर पेमेंट के लिए उपलब्ध',
-  enterCoupon: 'कूपन डालें',
   applying: 'अप्लाई हो रहा है',
-  applyCoupon: 'कूपन लगाएं',
   coinRules: 'कॉइन नियम',
   coinRuleEarn: 'सफल डिलीवरी पर कॉइन कमाएं',
   coinRuleUse: 'ऑर्डर राशि तक पेमेंट में कॉइन उपयोग करें',
@@ -1046,12 +1036,6 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
   yesUseMine: 'हाँ, मेरा उपयोग करें',
   noEnterManually: 'नहीं, जानकारी खुद डालें',
   pricedAfterRoute: 'किराया इस रूट और वजन से तय होता है।',
-  couponCode: 'कूपन कोड',
-  couponSheetTitle: 'कूपन लगाएँ',
-  couponSheetText: 'नए ग्राहक FIRST50 का उपयोग करके 50 Indiery कॉइन पा सकते हैं।',
-  invalidCoupon: 'कूपन कोड मान्य नहीं है',
-  couponAlreadyClaimed: 'FIRST50 पहले ही लिया जा चुका है',
-  couponApplied: 'FIRST50 लागू हुआ। 50 कॉइन जुड़ गए।',
   rechargeCoins: 'Indiery कॉइन रिचार्ज करें',
   rechargeCoinsToOrder: 'आपका Indiery कॉइन बैलेंस -50 पर पहुँच गया है। अगला ऑर्डर करने से पहले रिचार्ज करें।',
   coinDebtNotice: 'वेटिंग और कैंसलेशन शुल्क में कॉइन -50 तक जा सकते हैं। इस सीमा पर रिचार्ज जरूरी है।',
@@ -2874,23 +2858,6 @@ export default function App() {
               }
               busy={busy}
               onTopup={topUpCoins}
-              onCoupon={async () => {
-                setBusy(true);
-                try {
-                  const result = await api.applyCoupon('FIRST50');
-                  setData((current) => current ? {
-                    ...current,
-                    user: result.user,
-                    wallet: {
-                      ...current.wallet,
-                      coins: result.user.customerProfile?.coins ?? current.wallet.coins
-                    }
-                  } : current);
-                  return result;
-                } finally {
-                  setBusy(false);
-                }
-              }}
             />
           )}
           {tab === 'account' && (
@@ -8054,20 +8021,16 @@ function WalletScreen({
   onPageScroll,
   wallet,
   busy,
-  onTopup,
-  onCoupon
+  onTopup
 }: {
   header: React.ReactNode;
   onPageScroll: PageScrollHandler;
   wallet: CustomerWallet;
   busy: boolean;
   onTopup: (amount: number) => Promise<boolean>;
-  onCoupon: () => Promise<{ addedCoins: number; alreadyApplied?: boolean }>;
 }) {
   const copy = useCopy();
   const responsive = useResponsiveLayout();
-  const [couponMessage, setCouponMessage] = useState('');
-  const [couponMessageKind, setCouponMessageKind] = useState<'success' | 'error'>('success');
   const [rechargeAmountInput, setRechargeAmountInput] = useState('');
   const recentCoinLedger = wallet.coinLedger.slice(0, 7);
   const nextOrderDiscount = automaticCoinDiscount(undefined, wallet);
@@ -8085,23 +8048,6 @@ function WalletScreen({
     if (!rechargeAmountValid) return;
     const recharged = await onTopup(rechargeAmount);
     if (recharged) setRechargeAmountInput('');
-  }
-
-  async function applyFirst50() {
-    setCouponMessage('');
-    try {
-      const result = await onCoupon();
-      if (result.alreadyApplied || result.addedCoins <= 0) {
-        setCouponMessage(copy.couponAlreadyClaimed);
-        setCouponMessageKind('error');
-        return;
-      }
-      setCouponMessage(copy.couponApplied);
-      setCouponMessageKind('success');
-    } catch (err) {
-      setCouponMessage(err instanceof Error ? err.message : copy.invalidCoupon);
-      setCouponMessageKind('error');
-    }
   }
 
   return (
@@ -8158,7 +8104,7 @@ function WalletScreen({
         <Pressable
           style={[
             styles.walletRechargeButton,
-            (!rechargeAmountValid || busy) && styles.walletCouponButtonBusy
+            (!rechargeAmountValid || busy) && styles.walletRechargeButtonBusy
           ]}
           onPress={() => void rechargeCoins()}
           disabled={!rechargeAmountValid || busy}
@@ -8166,25 +8112,6 @@ function WalletScreen({
           {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="add-circle-outline" size={18} color={colors.white} />}
           <Text style={styles.walletRechargeButtonText}>{copy.rechargeCoins}</Text>
         </Pressable>
-
-        <Pressable
-          style={[
-            styles.walletCouponButton,
-            responsive.isCompact && styles.walletCouponButtonCompact,
-            busy && styles.walletCouponButtonBusy
-          ]}
-          onPress={applyFirst50}
-          disabled={busy}
-        >
-          {busy ? <ActivityIndicator size="small" color={colors.customer} /> : <Ionicons name="gift-outline" size={17} color={colors.customer} />}
-          <Text style={[styles.walletCouponText, responsive.isCompact && styles.walletCouponTextCompact]}>{busy ? copy.applying : `${copy.applyCoupon} FIRST50`}</Text>
-        </Pressable>
-        {couponMessage ? (
-          <Text style={couponMessageKind === 'success' ? styles.walletCouponSuccess : styles.walletCouponError}>
-            {couponMessage}
-          </Text>
-        ) : null}
-
       </View>
 
       <SectionTitle title={copy.coinActivity} />
@@ -11403,53 +11330,14 @@ const styles = StyleSheet.create({
   walletCoinsDiscountValueCompact: { fontSize: 12 },
   walletCoinsDiscount: { color: colors.green, fontSize: 10, fontWeight: '600', lineHeight: 14, marginTop: 1 },
   walletCoinsDiscountCompact: { fontSize: 9, lineHeight: 12 },
-  walletCouponButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
-  walletCouponButtonCompact: { minHeight: 38, borderRadius: 12, gap: 6, paddingHorizontal: 11 },
-  walletCouponButtonBusy: { opacity: 0.65 },
   walletDebtNotice: { borderRadius: 12, backgroundColor: colors.customerLight, flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingHorizontal: 11, paddingVertical: 9, marginBottom: 10 },
   walletDebtNoticeText: { flex: 1, color: colors.ink, fontSize: 10, fontWeight: '500', lineHeight: 14 },
   walletRechargeInputShell: { minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: 14, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, marginBottom: 8 },
   walletRechargeCurrency: { color: colors.ink, fontSize: 16, fontWeight: '700', marginRight: 6 },
   walletRechargeInput: { flex: 1, minHeight: 42, color: colors.ink, fontSize: 14, fontWeight: '600', paddingVertical: 0 },
-  walletRechargeButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14, marginBottom: 10 },
+  walletRechargeButton: { minHeight: 44, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 14 },
   walletRechargeButtonText: { color: colors.white, fontSize: 13, fontWeight: '700' },
-  walletCouponText: { color: colors.customer, fontSize: 13, fontWeight: '600' },
-  walletCouponTextCompact: { fontSize: 11 },
-  walletCouponOverlay: { flex: 1, justifyContent: 'flex-end' },
-  walletCouponBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.42)' },
-  walletCouponSheet: {
-    width: '100%',
-    maxWidth: 640,
-    alignSelf: 'center',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    backgroundColor: colors.white,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === 'android' ? 22 : 28
-  },
-  walletCouponSheetContent: { paddingBottom: Platform.OS === 'android' ? 12 : 0 },
-  walletCouponSheetHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 16 },
-  walletCouponSheetTitle: { color: colors.ink, fontSize: 18, fontWeight: '700' },
-  walletCouponSheetText: { color: colors.muted, fontSize: 12, fontWeight: '500', lineHeight: 17, marginTop: 3 },
-  walletCouponInputShell: {
-    minHeight: 50,
-    borderWidth: 1.5,
-    borderColor: colors.customer,
-    borderRadius: 13,
-    backgroundColor: colors.white,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    marginBottom: 10
-  },
-  walletCouponInput: { color: colors.ink, fontSize: 16, fontWeight: '700', letterSpacing: 1, paddingVertical: 11 },
-  walletCouponSuccess: { color: colors.green, fontSize: 12, fontWeight: '600', marginBottom: 12 },
-  walletCouponError: { color: colors.red, fontSize: 12, fontWeight: '600', marginBottom: 12 },
-  walletCouponActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 2 },
-  walletCouponCancelButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
-  walletCouponCancelText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
-  walletCouponApplyButton: { flex: 1, minHeight: 46, borderRadius: 14, backgroundColor: colors.customer, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  walletCouponApplyText: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  walletRechargeButtonBusy: { opacity: 0.65 },
   coinActivityCard: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 14 },
   coinActivityCardCompact: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 2, marginBottom: 10 },
   coinActivityRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10 },

@@ -63,6 +63,10 @@ import {
   PartnerRoutePath,
   SavedAddress,
   TripOtp,
+  trackingAnimationMs,
+  trackingDistanceMeters,
+  trackingHeading,
+  snapTrackingCoordinate,
   UserProfile,
   Vehicle,
   withTransientRetry
@@ -7827,6 +7831,7 @@ function OrderDetailsPanel({
         <MapPreview
           api={api}
           orderId={order.id}
+          orderStatus={order.status}
           vehicle={order.vehicle}
           pickup={order.pickup}
           drop={order.drop}
@@ -9423,17 +9428,10 @@ function OrderActionButton({
   );
 }
 
-function TrackingVehicleMarker({ vehicle }: { vehicle: Vehicle }) {
-  const icon: React.ComponentProps<typeof FontAwesome5>['name'] =
-    vehicle.code === 'bike' ? 'motorcycle' :
-    vehicle.code === 'loader90' ? 'truck-pickup' :
-    vehicle.code === 'mini500' ? 'truck-moving' : 'truck';
+function TrackingVehicleMarker() {
   return (
     <View style={styles.mapPartnerMarker} collapsable={false}>
-      <View style={styles.mapPartnerMarkerBody} collapsable={false}>
-        <FontAwesome5 name={icon} solid size={23} color={colors.ink} />
-      </View>
-      <View style={styles.mapPartnerMarkerPoint} />
+      <Ionicons name="navigate" size={24} color={colors.white} style={{ transform: [{ rotate: '-45deg' }] }} />
     </View>
   );
 }
@@ -9446,60 +9444,54 @@ function RouteStopMarker({ color }: { color: string }) {
   );
 }
 
-function mapCoordinateDistanceMeters(
-  from: { latitude: number; longitude: number },
-  to: { latitude: number; longitude: number }
-) {
-  const latitudeMeters = (to.latitude - from.latitude) * 111_000;
-  const longitudeMeters = (to.longitude - from.longitude) * 111_000 * Math.cos(to.latitude * Math.PI / 180);
-  return Math.hypot(latitudeMeters, longitudeMeters);
-}
-
 function TrackingVehicleMapMarker({
-  vehicle,
+  location,
   coordinate,
   title
 }: {
-  vehicle: Vehicle;
+  location?: Order['partnerLocation'];
   coordinate: { latitude: number; longitude: number };
   title: string;
 }) {
   const initialCoordinate = useRef(coordinate).current;
   const previousCoordinate = useRef(coordinate);
   const lastUpdate = useRef(Date.now());
+  const previousHeading = useRef(0);
   const markerRef = useRef<React.ElementRef<typeof Marker> | null>(null);
   const animatedCoordinate = useRef(new AnimatedRegion({ ...coordinate, latitudeDelta: 0, longitudeDelta: 0 })).current;
+  const heading = trackingHeading(location, previousCoordinate.current, coordinate, previousHeading.current);
 
   useEffect(() => {
+    previousHeading.current = heading;
     const previous = previousCoordinate.current;
     if (previous.latitude === coordinate.latitude && previous.longitude === coordinate.longitude) return;
     const now = Date.now();
-    const distanceMeters = mapCoordinateDistanceMeters(previous, coordinate);
-    const duration = Math.min(5000, Math.max(900, now - lastUpdate.current));
+    const distanceMeters = trackingDistanceMeters(previous, coordinate);
+    const duration = trackingAnimationMs(now - lastUpdate.current, distanceMeters);
     previousCoordinate.current = coordinate;
     lastUpdate.current = now;
 
     if (Platform.OS === 'android') {
-      if (distanceMeters > 1000) markerRef.current?.setCoordinates(coordinate);
+      if (!duration) markerRef.current?.setCoordinates(coordinate);
       else markerRef.current?.animateMarkerToCoordinate(coordinate, duration);
-    } else if (distanceMeters > 1000) {
+    } else if (!duration) {
       animatedCoordinate.setValue({ ...coordinate, latitudeDelta: 0, longitudeDelta: 0 });
     } else {
       animatedCoordinate.timing({ ...coordinate, latitudeDelta: 0, longitudeDelta: 0, duration, toValue: 0, useNativeDriver: false }).start();
     }
-  }, [coordinate.latitude, coordinate.longitude]);
+  }, [coordinate.latitude, coordinate.longitude, heading]);
 
-  const markerProps = { title, anchor: { x: 0.5, y: 1 }, zIndex: 10, tracksViewChanges: true };
+  const markerProps = { title, anchor: { x: 0.5, y: 0.5 }, zIndex: 10, rotation: heading, flat: true, tracksViewChanges: false };
   if (Platform.OS === 'android') {
     return (
       <Marker ref={markerRef} coordinate={initialCoordinate} {...markerProps}>
-        <TrackingVehicleMarker vehicle={vehicle} />
+        <TrackingVehicleMarker />
       </Marker>
     );
   }
   return (
     <Marker.Animated coordinate={animatedCoordinate as unknown as React.ComponentProps<typeof Marker.Animated>['coordinate']} {...markerProps}>
-      <TrackingVehicleMarker vehicle={vehicle} />
+      <TrackingVehicleMarker />
     </Marker.Animated>
   );
 }
@@ -9507,6 +9499,7 @@ function TrackingVehicleMapMarker({
 function MapPreview({
   api,
   orderId,
+  orderStatus,
   vehicle,
   pickup,
   drop,
@@ -9518,6 +9511,7 @@ function MapPreview({
 }: {
   api?: IndieryApi;
   orderId?: string;
+  orderStatus?: Order['status'];
   vehicle: Vehicle;
   pickup: LocationPoint;
   drop: LocationPoint;
@@ -9532,6 +9526,8 @@ function MapPreview({
   const [fullMapOpen, setFullMapOpen] = useState(false);
   const [routePath, setRoutePath] = useState<PartnerRoutePath | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
+  const routeFetchAt = useRef(0);
+  const routeGeneration = useRef(0);
   const mapHeight = responsive.isSmall ? 158 : responsive.isCompact ? 172 : 218;
   const hasLiveLocation = liveTracking && typeof partnerLocation?.lat === 'number' && typeof partnerLocation?.lng === 'number';
   const stopLabel = routeStopSummary(extraStops);
@@ -9544,12 +9540,15 @@ function MapPreview({
         : undefined
     }))
     .filter((item): item is { point: LocationPoint; index: number; coordinate: { latitude: number; longitude: number } } => Boolean(item.coordinate));
-  const partnerCoordinate = liveTracking && hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng)
+  const rawPartnerCoordinate = liveTracking && hasValidCoordinates(partnerLocation?.lat, partnerLocation?.lng)
     ? { latitude: partnerLocation?.lat as number, longitude: partnerLocation?.lng as number }
     : undefined;
   const roadRouteCoordinates = routePath?.source === 'google_directions'
     ? routePath.coordinates.filter((coordinate) => hasValidCoordinates(coordinate.latitude, coordinate.longitude))
     : [];
+  const partnerCoordinate = rawPartnerCoordinate
+    ? snapTrackingCoordinate(rawPartnerCoordinate, roadRouteCoordinates)
+    : undefined;
   const baseFitCoordinates = roadRouteCoordinates.length > 1
     ? roadRouteCoordinates
     : routePoints.map((item) => item.coordinate);
@@ -9564,6 +9563,7 @@ function MapPreview({
   };
   const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
   const mapReadyRef = useRef(false);
+  const lastTrackedCoordinate = useRef(partnerCoordinate);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const fitKey = `${baseFitCoordinates.map((coordinate) => `${coordinate.latitude.toFixed(5)},${coordinate.longitude.toFixed(5)}`).join('|')}|partner:${Boolean(partnerCoordinate)}`;
 
@@ -9573,24 +9573,44 @@ function MapPreview({
       return undefined;
     }
     let active = true;
+    const generation = ++routeGeneration.current;
+    routeFetchAt.current = Date.now();
+    setRoutePath(null);
     setRouteLoading(true);
     void api.customerOrderRoute(orderId)
       .then((route) => {
-        if (active) setRoutePath(route);
+        if (active && routeGeneration.current === generation) setRoutePath(route);
       })
       .catch(() => {
-        if (active) setRoutePath(null);
+        if (active && routeGeneration.current === generation) setRoutePath(null);
       })
       .finally(() => {
-        if (active) setRouteLoading(false);
+        if (active && routeGeneration.current === generation) setRouteLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [api, orderId]);
+  }, [api, orderId, orderStatus, hidePickupPin, orderStatus === 'accepted' && Boolean(rawPartnerCoordinate)]);
+
+  useEffect(() => {
+    if (!api || !orderId || !rawPartnerCoordinate || roadRouteCoordinates.length < 2) return;
+    const nearest = snapTrackingCoordinate(rawPartnerCoordinate, roadRouteCoordinates, Number.POSITIVE_INFINITY);
+    if (trackingDistanceMeters(rawPartnerCoordinate, nearest) < 70 || Date.now() - routeFetchAt.current < 30_000) return;
+    routeFetchAt.current = Date.now();
+    const generation = ++routeGeneration.current;
+    setRouteLoading(true);
+    void api.customerOrderRoute(orderId)
+      .then((route) => { if (routeGeneration.current === generation) setRoutePath(route); })
+      .catch(() => undefined)
+      .finally(() => { if (routeGeneration.current === generation) setRouteLoading(false); });
+  }, [api, orderId, rawPartnerCoordinate?.latitude, rawPartnerCoordinate?.longitude, routePath]);
 
   function fitMapToRoute() {
     if (!canRenderNativeMap || !mapReadyRef.current || !mapRef.current || !fitCoordinates.length) return;
+    if (partnerCoordinate) {
+      mapRef.current.animateCamera({ center: partnerCoordinate, zoom: 15.5 }, { duration: 350 });
+      return;
+    }
     if (fitCoordinates.length === 1) {
       mapRef.current.animateToRegion({ ...initialRegion, ...fitCoordinates[0] }, 250);
       return;
@@ -9606,6 +9626,15 @@ function MapPreview({
     const frame = requestAnimationFrame(fitMapToRoute);
     return () => cancelAnimationFrame(frame);
   }, [canRenderNativeMap, fitKey, mapHeight, mapSize.height, mapSize.width, responsive.width]);
+
+  useEffect(() => {
+    if (!partnerCoordinate || !mapReadyRef.current) return;
+    const previous = lastTrackedCoordinate.current;
+    lastTrackedCoordinate.current = partnerCoordinate;
+    if (previous && trackingDistanceMeters(previous, partnerCoordinate) >= 2) {
+      mapRef.current?.animateCamera({ center: partnerCoordinate }, { duration: 700 });
+    }
+  }, [partnerCoordinate?.latitude, partnerCoordinate?.longitude]);
 
   return (
     <View
@@ -9645,7 +9674,7 @@ function MapPreview({
           {routePoints.map((item) => {
             const isPickup = item.index === 0;
             if (isPickup && hidePickupPin) return null;
-            if (partnerCoordinate && mapCoordinateDistanceMeters(item.coordinate, partnerCoordinate) < (isPickup ? 500 : 80)) return null;
+            if (partnerCoordinate && trackingDistanceMeters(item.coordinate, partnerCoordinate) < (isPickup ? 500 : 80)) return null;
             const isDrop = item.index === extraStops.length + 1;
             const pinColor = isPickup ? colors.green : isDrop ? colors.red : colors.amber;
             const label = isPickup ? copy.pickup : isDrop ? copy.drop : `${copy.stop} ${item.index}`;
@@ -9664,7 +9693,7 @@ function MapPreview({
             );
           })}
           {liveTracking && partnerCoordinate ? (
-            <TrackingVehicleMapMarker key={orderId ?? vehicle.code} vehicle={vehicle} coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} />
+            <TrackingVehicleMapMarker key={orderId ?? vehicle.code} location={partnerLocation} coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} />
           ) : null}
         </MapView>
       ) : (
@@ -9713,6 +9742,7 @@ function MapPreview({
         drop={drop}
         extraStops={extraStops}
         hidePickupPin={hidePickupPin}
+        partnerLocation={partnerLocation}
         partnerCoordinate={partnerCoordinate}
         routeCoordinates={roadRouteCoordinates}
         routeLoading={routeLoading}
@@ -9729,6 +9759,7 @@ function OrderRouteFullScreenMap({
   drop,
   extraStops,
   hidePickupPin,
+  partnerLocation,
   partnerCoordinate,
   routeCoordinates,
   routeLoading,
@@ -9740,6 +9771,7 @@ function OrderRouteFullScreenMap({
   drop: LocationPoint;
   extraStops: LocationPoint[];
   hidePickupPin: boolean;
+  partnerLocation?: Order['partnerLocation'];
   partnerCoordinate?: { latitude: number; longitude: number };
   routeCoordinates: Array<{ latitude: number; longitude: number }>;
   routeLoading: boolean;
@@ -9747,6 +9779,8 @@ function OrderRouteFullScreenMap({
 }) {
   const copy = useCopy();
   const mapRef = useRef<React.ElementRef<typeof MapView> | null>(null);
+  const [following, setFollowing] = useState(true);
+  useEffect(() => { if (visible) setFollowing(true); }, [visible]);
   const points = [pickup, ...extraStops, drop]
     .map((point, index) => ({
       point,
@@ -9773,6 +9807,11 @@ function OrderRouteFullScreenMap({
     });
   }
 
+  useEffect(() => {
+    if (!visible || !following || !partnerCoordinate || !mapRef.current) return;
+    mapRef.current.animateCamera({ center: partnerCoordinate }, { duration: 750 });
+  }, [visible, following, partnerCoordinate?.latitude, partnerCoordinate?.longitude]);
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
       <SafeAreaView edges={appSafeAreaEdges} style={styles.fullOrderMapShell}>
@@ -9793,7 +9832,11 @@ function OrderRouteFullScreenMap({
           userInterfaceStyle="light"
           style={styles.fullOrderMap}
           initialRegion={{ ...firstCoordinate, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
-          onMapReady={() => requestAnimationFrame(fitFullMap)}
+          onMapReady={() => requestAnimationFrame(() => {
+            if (partnerCoordinate) mapRef.current?.animateCamera({ center: partnerCoordinate, zoom: 16 }, { duration: 350 });
+            else fitFullMap();
+          })}
+          onPanDrag={() => setFollowing(false)}
           toolbarEnabled={false}
         >
           {routeCoordinates.length > 1 ? (
@@ -9802,7 +9845,7 @@ function OrderRouteFullScreenMap({
           {points.map((item) => {
             const isPickup = item.index === 0;
             if (isPickup && hidePickupPin) return null;
-            if (partnerCoordinate && mapCoordinateDistanceMeters(item.coordinate, partnerCoordinate) < (isPickup ? 500 : 80)) return null;
+            if (partnerCoordinate && trackingDistanceMeters(item.coordinate, partnerCoordinate) < (isPickup ? 500 : 80)) return null;
             const isDrop = item.index === extraStops.length + 1;
             return (
               <Marker
@@ -9819,9 +9862,17 @@ function OrderRouteFullScreenMap({
             );
           })}
           {partnerCoordinate ? (
-            <TrackingVehicleMapMarker vehicle={vehicle} coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} />
+            <TrackingVehicleMapMarker location={partnerLocation} coordinate={partnerCoordinate} title={`${vehicle.name} · ${copy.liveGps}`} />
           ) : null}
         </MapView>
+        {partnerCoordinate ? (
+          <Pressable style={styles.fullOrderMapFollowButton} onPress={() => {
+            setFollowing(true);
+            mapRef.current?.animateCamera({ center: partnerCoordinate }, { duration: 350 });
+          }} accessibilityRole="button" accessibilityLabel="Follow driver location">
+            <Ionicons name="locate" size={23} color={colors.customer} />
+          </Pressable>
+        ) : null}
         {!routeLoading && routeCoordinates.length < 2 ? (
           <View style={styles.fullOrderMapRouteNotice}>
             <Ionicons name="information-circle-outline" size={17} color={colors.muted} />
@@ -11234,9 +11285,7 @@ const styles = StyleSheet.create({
   liveDotOn: { backgroundColor: colors.green },
   liveText: { flexShrink: 1, color: colors.ink, fontSize: 11, fontWeight: '600' },
   liveTextCompact: { fontSize: 9 },
-  mapPartnerMarker: { width: 52, height: 46, alignItems: 'center' },
-  mapPartnerMarkerBody: { width: 48, height: 38, borderRadius: 19, backgroundColor: colors.white, borderWidth: 2, borderColor: colors.customer, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 3 }, elevation: 5, zIndex: 1 },
-  mapPartnerMarkerPoint: { position: 'absolute', top: 31, width: 12, height: 12, borderRadius: 2, backgroundColor: colors.white, borderRightWidth: 2, borderBottomWidth: 2, borderColor: colors.customer, transform: [{ rotate: '45deg' }] },
+  mapPartnerMarker: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.customer, borderWidth: 3, borderColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.22, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 },
   mapRouteStopMarker: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.18, shadowRadius: 3, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   mapRouteStopMarkerCenter: { width: 14, height: 14, borderRadius: 7 },
   mapExpandButton: { position: 'absolute', right: 12, bottom: 50, width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.96)', alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
@@ -11249,6 +11298,7 @@ const styles = StyleSheet.create({
   fullOrderMapTitle: { color: colors.ink, fontSize: 16, fontWeight: '800' },
   fullOrderMapSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
   fullOrderMap: { flex: 1 },
+  fullOrderMapFollowButton: { position: 'absolute', right: 16, bottom: 84, width: 48, height: 48, borderRadius: 24, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#0F172A', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 5 },
   fullOrderMapRouteNotice: { position: 'absolute', left: 18, right: 18, bottom: 22, minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.96)', paddingHorizontal: 14, shadowColor: '#0F172A', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   fullOrderMapRouteNoticeText: { flexShrink: 1, color: colors.muted, fontSize: 12, fontWeight: '600' },
   card: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 14, backgroundColor: colors.white, marginBottom: 12 },

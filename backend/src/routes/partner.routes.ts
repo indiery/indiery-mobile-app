@@ -294,14 +294,18 @@ partnerRouter.get(
     if (!order) throw new ApiError(404, 'Order not found');
     if (idOf(order.partner) !== req.auth!.userId) throw new ApiError(403, 'This order is not assigned to you');
 
+    const driverToPickup = order.status === 'accepted';
+    const liveRouteStart = (driverToPickup || (['picked_up', 'in_transit'].includes(order.status) && !order.extraStops.length)) &&
+      typeof order.partnerLocation?.lat === 'number' && typeof order.partnerLocation?.lng === 'number';
+    const routeStart = liveRouteStart ? order.partnerLocation ?? order.pickup : order.pickup;
     const route = await resolveRoutePath({
-      pickup: order.pickup.address || order.pickup.label,
+      pickup: liveRouteStart ? 'Driver location' : order.pickup.address || order.pickup.label,
       drop: order.drop.address || order.drop.label,
-      pickupLat: order.pickup.lat ?? undefined,
-      pickupLng: order.pickup.lng ?? undefined,
+      pickupLat: routeStart.lat ?? undefined,
+      pickupLng: routeStart.lng ?? undefined,
       dropLat: order.drop.lat ?? undefined,
       dropLng: order.drop.lng ?? undefined,
-      extraStops: order.extraStops.map((stop) => ({
+      extraStops: [...(liveRouteStart && driverToPickup ? [order.pickup] : []), ...order.extraStops].map((stop) => ({
         label: stop.label,
         address: stop.address,
         lat: stop.lat ?? undefined,

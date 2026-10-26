@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Indiery",
+    "slug": "indiery-customer",
+    "owner": "indiery1235",
+    "scheme": "indierycustomer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/app-icon.png",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-notifications",
+        {
+          "color": "#7C3AED",
+          "defaultChannel": "orders"
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://indiery-mobile-app-1.onrender.com/api",
+      "allowInsecureApiBaseUrl": false,
+      "privacyPolicyUrl": "https://www.indiery.com/privacy",
+      "accountDeletionUrl": "https://www.indiery.com/account-deletion",
+      "googleMapsApiKey": "AIzaSyAY5D6K2WhkSGAzQnjuQPdnJ8lF0H6uszE",
+      "eas": {
+        "projectId": "8e398475-9619-4d97-b306-d72c1187dd3d"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.indiery.customer",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Indiery uses your location to set accurate pickup and drop points for deliveries."
+      }
+    },
+    "android": {
+      "package": "com.indeiry",
+      "allowBackup": false,
+      "softwareKeyboardLayoutMode": "resize",
+      "googleServicesFile": "./google-services.json",
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "READ_CONTACTS"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#002B49"
+      }
+    }
+  }
+}

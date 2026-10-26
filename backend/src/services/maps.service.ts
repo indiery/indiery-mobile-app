@@ -1,0 +1,497 @@
+import { env } from '../config/env';
+import { stableDistanceKm } from './fare.service';
+
+export interface DistanceInput {
+  pickup: string;
+  drop: string;
+  extraStops?: Array<{
+    label: string;
+    address?: string;
+    lat?: number;
+    lng?: number;
+  }>;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropLat?: number;
+  dropLng?: number;
+}
+
+export interface RouteMetrics {
+  distanceKm: number;
+  durationMinutes?: number;
+  source: 'google_directions' | 'google_distance_matrix' | 'fallback';
+}
+
+export interface RoutePathCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+export interface RoutePathResult {
+  coordinates: RoutePathCoordinate[];
+  locations: RoutePathCoordinate[];
+  source: 'google_directions' | 'unavailable';
+  reason?: 'maps_api_not_configured' | 'location_not_found' | 'directions_unavailable';
+}
+
+export interface LocationSuggestionResult {
+  placeId: string;
+  description: string;
+  mainText: string;
+  secondaryText?: string;
+}
+
+export interface LocationDetailsResult {
+  placeId: string;
+  label: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
+const ROUTE_METRICS_CACHE_TTL_MS = 2 * 60_000;
+const ROUTE_METRICS_CACHE_MAX_ENTRIES = 300;
+const routeMetricsCache = new Map<string, { metrics: RouteMetrics; expiresAt: number }>();
+
+function coordinatePair(lat?: number, lng?: number) {
+  if (
+    typeof lat !== 'number' ||
+    typeof lng !== 'number' ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 || lat > 90 ||
+    lng < -180 || lng > 180
+  ) return undefined;
+  return `${lat},${lng}`;
+}
+
+function routePointValue(point: { label: string; address?: string; lat?: number; lng?: number }) {
+  return coordinatePair(point.lat, point.lng) ?? point.address ?? point.label;
+}
+
+function routePointLabel(point: { label: string; address?: string }) {
+  return point.address ?? point.label;
+}
+
+function fallbackDistanceKm(input: DistanceInput) {
+  const stops = (input.extraStops ?? []).filter((stop) => stop.label.trim().length > 1);
+  const fallbackPoints = [input.pickup, ...stops.map(routePointLabel), input.drop];
+  if (fallbackPoints.length <= 2) return stableDistanceKm(input.pickup, input.drop);
+  return Number(
+    fallbackPoints
+      .slice(0, -1)
+      .reduce((total, point, index) => total + stableDistanceKm(point, fallbackPoints[index + 1] ?? point), 0)
+      .toFixed(1)
+  );
+}
+
+function routePointsFor(input: DistanceInput) {
+  const stops = (input.extraStops ?? []).filter((stop) => stop.label.trim().length > 1);
+  return [
+    coordinatePair(input.pickupLat, input.pickupLng) ?? input.pickup,
+    ...stops.map(routePointValue),
+    coordinatePair(input.dropLat, input.dropLng) ?? input.drop
+  ];
+}
+
+function routeMetricsCacheKey(input: DistanceInput) {
+  return JSON.stringify(routePointsFor(input).map((point) => point.trim().toLowerCase()));
+}
+
+function cachedRouteMetrics(input: DistanceInput) {
+  const key = routeMetricsCacheKey(input);
+  const cached = routeMetricsCache.get(key);
+  if (!cached) return { key };
+  if (cached.expiresAt <= Date.now()) {
+    routeMetricsCache.delete(key);
+    return { key };
+  }
+  return { key, metrics: cached.metrics };
+}
+
+function rememberRouteMetrics(key: string, metrics: RouteMetrics) {
+  if (routeMetricsCache.size >= ROUTE_METRICS_CACHE_MAX_ENTRIES) {
+    const oldestKey = routeMetricsCache.keys().next().value as string | undefined;
+    if (oldestKey) routeMetricsCache.delete(oldestKey);
+  }
+  routeMetricsCache.set(key, {
+    metrics,
+    expiresAt: Date.now() + ROUTE_METRICS_CACHE_TTL_MS
+  });
+}
+
+function decodeGooglePolyline(encoded: string): RoutePathCoordinate[] {
+  const coordinates: RoutePathCoordinate[] = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    latitude += result & 1 ? ~(result >> 1) : result >> 1;
+
+    result = 0;
+    shift = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    longitude += result & 1 ? ~(result >> 1) : result >> 1;
+
+    coordinates.push({ latitude: latitude / 1e5, longitude: longitude / 1e5 });
+  }
+
+  return coordinates;
+}
+
+async function geocodeRouteAddress(address: string): Promise<RoutePathCoordinate | undefined> {
+  const normalizedAddress = address.trim();
+  if (!normalizedAddress || !env.GOOGLE_MAPS_API_KEY) return undefined;
+
+  const params = new URLSearchParams({
+    address: normalizedAddress,
+    components: 'country:IN',
+    region: 'in',
+    key: env.GOOGLE_MAPS_API_KEY
+  });
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params.toString()}`);
+    if (!response.ok) return undefined;
+    const payload = (await response.json()) as {
+      status?: string;
+      results?: Array<{
+        partial_match?: boolean;
+        geometry?: {
+          location?: { lat?: number; lng?: number };
+          location_type?: string;
+        };
+      }>;
+    };
+    const result = payload.results?.[0];
+    const lat = result?.geometry?.location?.lat;
+    const lng = result?.geometry?.location?.lng;
+    const locationType = result?.geometry?.location_type;
+    if (
+      payload.status !== 'OK' ||
+      result?.partial_match ||
+      locationType !== 'ROOFTOP' ||
+      typeof lat !== 'number' ||
+      typeof lng !== 'number' ||
+      !coordinatePair(lat, lng)
+    ) return undefined;
+    return { latitude: lat, longitude: lng };
+  } catch {
+    return undefined;
+  }
+}
+
+export async function resolveRoutePath(input: DistanceInput): Promise<RoutePathResult> {
+  if (!env.GOOGLE_MAPS_API_KEY) {
+    return { coordinates: [], locations: [], source: 'unavailable', reason: 'maps_api_not_configured' };
+  }
+
+  const waypoints = (input.extraStops ?? []).filter((stop) => stop.label.trim().length > 1);
+  const routeLocations = [
+    { address: input.pickup, lat: input.pickupLat, lng: input.pickupLng },
+    ...waypoints.map((stop) => ({ address: stop.address || stop.label, lat: stop.lat, lng: stop.lng })),
+    { address: input.drop, lat: input.dropLat, lng: input.dropLng }
+  ];
+  if (routeLocations.length < 2) {
+    return { coordinates: [], locations: [], source: 'unavailable', reason: 'location_not_found' };
+  }
+
+  const resolvedLocations = await Promise.all(routeLocations.map(async (location) => {
+    if (coordinatePair(location.lat, location.lng)) {
+      return { latitude: location.lat!, longitude: location.lng! };
+    }
+    return geocodeRouteAddress(location.address);
+  }));
+  if (resolvedLocations.some((location) => !location)) {
+    return { coordinates: [], locations: [], source: 'unavailable', reason: 'location_not_found' };
+  }
+  const locations = resolvedLocations as RoutePathCoordinate[];
+
+  const routePoints = locations.map((point) => `${point.latitude},${point.longitude}`);
+  const origin = routePoints[0];
+  const destination = routePoints[routePoints.length - 1];
+  const params = new URLSearchParams({
+    origin: origin!,
+    destination: destination!,
+    mode: 'driving',
+    units: 'metric',
+    region: 'in',
+    key: env.GOOGLE_MAPS_API_KEY,
+    ...(routePoints.length > 2 ? { waypoints: routePoints.slice(1, -1).join('|') } : {})
+  });
+
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`);
+    if (!response.ok) return { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
+    const payload = (await response.json()) as {
+      status?: string;
+      routes?: Array<{ overview_polyline?: { points?: string } }>;
+    };
+    const encodedPath = payload.routes?.[0]?.overview_polyline?.points;
+    if (payload.status !== 'OK' || !encodedPath) {
+      return { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
+    }
+    const coordinates = decodeGooglePolyline(encodedPath);
+    return coordinates.length > 1
+      ? { coordinates, locations, source: 'google_directions' }
+      : { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
+  } catch {
+    return { coordinates: [], locations, source: 'unavailable', reason: 'directions_unavailable' };
+  }
+}
+
+function googleMapsUrl(path: string, params: Record<string, string>) {
+  const search = new URLSearchParams({
+    ...params,
+    key: env.GOOGLE_MAPS_API_KEY ?? ''
+  });
+  return `https://maps.googleapis.com/maps/api/${path}?${search.toString()}`;
+}
+
+export async function autocompleteLocations(
+  input: string,
+  sessionToken?: string,
+  bias?: { lat: number; lng: number }
+): Promise<LocationSuggestionResult[]> {
+  const query = input.trim();
+  if (!env.GOOGLE_MAPS_API_KEY || query.length < 2) return [];
+
+  const validBias = coordinatePair(bias?.lat, bias?.lng);
+
+  try {
+    const response = await fetch(
+      googleMapsUrl('place/autocomplete/json', {
+        input: query,
+        components: 'country:in',
+        ...(validBias ? { location: validBias, radius: '50000' } : {}),
+        ...(sessionToken ? { sessiontoken: sessionToken } : {})
+      })
+    );
+    if (!response.ok) return [];
+    const payload = (await response.json()) as {
+      status?: string;
+      predictions?: Array<{
+        place_id?: string;
+        description?: string;
+        structured_formatting?: {
+          main_text?: string;
+          secondary_text?: string;
+        };
+      }>;
+    };
+    if (payload.status !== 'OK' && payload.status !== 'ZERO_RESULTS') return [];
+    return (payload.predictions ?? [])
+      .filter((item) => item.place_id && item.description)
+      .slice(0, 6)
+      .map((item) => ({
+        placeId: item.place_id!,
+        description: item.description!,
+        mainText: item.structured_formatting?.main_text ?? item.description!,
+        secondaryText: item.structured_formatting?.secondary_text
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export async function resolveLocationDetails(placeId: string, sessionToken?: string): Promise<LocationDetailsResult | undefined> {
+  const id = placeId.trim();
+  if (!env.GOOGLE_MAPS_API_KEY || !id) return undefined;
+
+  try {
+    const response = await fetch(
+      googleMapsUrl('place/details/json', {
+        place_id: id,
+        fields: 'place_id,name,formatted_address,geometry',
+        ...(sessionToken ? { sessiontoken: sessionToken } : {})
+      })
+    );
+    if (!response.ok) return undefined;
+    const payload = (await response.json()) as {
+      status?: string;
+      result?: {
+        place_id?: string;
+        name?: string;
+        formatted_address?: string;
+        geometry?: { location?: { lat?: number; lng?: number } };
+      };
+    };
+    const result = payload.result;
+    const lat = result?.geometry?.location?.lat;
+    const lng = result?.geometry?.location?.lng;
+    if (payload.status !== 'OK' || !result?.place_id || !coordinatePair(lat, lng)) {
+      return undefined;
+    }
+    const address = result.formatted_address ?? result.name ?? '';
+    return {
+      placeId: result.place_id,
+      label: result.name ?? address,
+      address,
+      lat: lat!,
+      lng: lng!
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export async function reverseGeocodeLocation(lat: number, lng: number): Promise<LocationDetailsResult | undefined> {
+  if (!env.GOOGLE_MAPS_API_KEY || !coordinatePair(lat, lng)) return undefined;
+
+  try {
+    const response = await fetch(googleMapsUrl('geocode/json', { latlng: `${lat},${lng}`, language: 'en', region: 'in' }));
+    if (!response.ok) return undefined;
+    const payload = (await response.json()) as {
+      status?: string;
+      results?: Array<{ place_id?: string; formatted_address?: string }>;
+    };
+    const result = payload.results?.[0];
+    const address = result?.formatted_address?.trim();
+    if (payload.status !== 'OK' || !address) return undefined;
+    return {
+      placeId: `map-${lat.toFixed(6)}-${lng.toFixed(6)}`,
+      label: address,
+      address,
+      lat,
+      lng
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveDirectionsMetrics(input: DistanceInput, mapsKey: string): Promise<RouteMetrics | undefined> {
+  const routePoints = routePointsFor(input);
+  const origin = routePoints[0];
+  const destination = routePoints[routePoints.length - 1];
+  if (!origin || !destination) return undefined;
+
+  const waypoints = routePoints.slice(1, -1).filter(Boolean);
+  const params = new URLSearchParams({
+    origin,
+    destination,
+    mode: 'driving',
+    units: 'metric',
+    region: 'in',
+    departure_time: 'now',
+    traffic_model: 'best_guess',
+    key: mapsKey,
+    ...(waypoints.length ? { waypoints: waypoints.join('|') } : {})
+  });
+
+  try {
+    const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`);
+    if (!response.ok) return undefined;
+    const payload = (await response.json()) as {
+      status?: string;
+      routes?: Array<{
+        legs?: Array<{
+          distance?: { value?: number };
+          duration?: { value?: number };
+          duration_in_traffic?: { value?: number };
+        }>;
+      }>;
+    };
+    const legs = payload.routes?.[0]?.legs ?? [];
+    if (payload.status !== 'OK' || !legs.length) return undefined;
+    const distanceMeters = legs.reduce((total, leg) => total + (leg.distance?.value ?? 0), 0);
+    const durationSeconds = legs.reduce(
+      (total, leg) => total + (leg.duration_in_traffic?.value ?? leg.duration?.value ?? 0),
+      0
+    );
+    if (distanceMeters <= 0) return undefined;
+    return {
+      distanceKm: Number(Math.max(0.5, distanceMeters / 1000).toFixed(1)),
+      durationMinutes: durationSeconds > 0 ? Math.max(1, Math.ceil(durationSeconds / 60)) : undefined,
+      source: 'google_directions'
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveDistanceMatrixMetrics(input: DistanceInput, mapsKey: string): Promise<RouteMetrics | undefined> {
+  try {
+    const routePoints = routePointsFor(input);
+    const legDistances = await Promise.all(
+      routePoints.slice(0, -1).map(async (origin, index) => {
+        const destination = routePoints[index + 1];
+        if (!destination) return undefined;
+        const params = new URLSearchParams({
+          origins: origin,
+          destinations: destination,
+          units: 'metric',
+          departure_time: 'now',
+          traffic_model: 'best_guess',
+          key: mapsKey
+        });
+        const response = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`);
+        if (!response.ok) return undefined;
+        const payload = (await response.json()) as {
+          rows?: Array<{
+            elements?: Array<{
+              status?: string;
+              distance?: { value?: number };
+              duration?: { value?: number };
+              duration_in_traffic?: { value?: number };
+            }>;
+          }>;
+        };
+        const element = payload.rows?.[0]?.elements?.[0];
+        const meters = element?.distance?.value;
+        if (!meters || element?.status !== 'OK') return undefined;
+        return {
+          distanceKm: Math.max(0.5, meters / 1000),
+          durationMinutes: Math.max(1, Math.ceil((element.duration_in_traffic?.value ?? element.duration?.value ?? 0) / 60))
+        };
+      })
+    );
+    if (legDistances.some((distance) => !distance)) return undefined;
+    const distanceKm = legDistances.reduce<number>((total, distance) => total + (distance?.distanceKm ?? 0), 0);
+    const durationMinutes = legDistances.reduce<number>((total, distance) => total + (distance?.durationMinutes ?? 0), 0);
+    return {
+      distanceKm: Number(distanceKm.toFixed(1)),
+      durationMinutes: durationMinutes > 0 ? durationMinutes : undefined,
+      source: 'google_distance_matrix'
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export async function resolveRouteMetrics(input: DistanceInput): Promise<RouteMetrics> {
+  const cached = cachedRouteMetrics(input);
+  if (cached.metrics) return cached.metrics;
+  const fallback: RouteMetrics = {
+    distanceKm: fallbackDistanceKm(input),
+    source: 'fallback'
+  };
+  const mapsKey = env.GOOGLE_MAPS_API_KEY;
+  if (!mapsKey) {
+    rememberRouteMetrics(cached.key, fallback);
+    return fallback;
+  }
+
+  const metrics =
+    (await resolveDirectionsMetrics(input, mapsKey)) ??
+    (await resolveDistanceMatrixMetrics(input, mapsKey)) ??
+    fallback;
+  rememberRouteMetrics(cached.key, metrics);
+  return metrics;
+}
+
+export async function resolveDistanceKm(input: DistanceInput) {
+  return (await resolveRouteMetrics(input)).distanceKm;
+}

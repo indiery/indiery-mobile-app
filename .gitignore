@@ -52,3 +52,18 @@ indiery-mobile-app/
 /webiste/.next/
 /webiste/out/
 /webiste/build/
+
+# mobile build output and local signing material
+/apps/*/*.jks
+/apps/*/android/app/debug.keystore
+/apps/*/debug.log
+/apps/*/google-services.json
+/apps/*/android/app/google-services.json
+/apps/*/GoogleService-Info.plist
+**/.expo/
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+/backend/dist/
+*.apk
+*.aab

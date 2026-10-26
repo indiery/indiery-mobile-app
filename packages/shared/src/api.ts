@@ -1,0 +1,649 @@
+import type {
+  CloudinarySignature,
+  CloudinaryUploadResult,
+  CreateOrderInput,
+  CustomerWallet,
+  CustomerBootstrap,
+  FareBreakup,
+  LocationDetails,
+  LocationSuggestion,
+  Order,
+  PaymentIntent,
+  PartnerBootstrap,
+  PartnerLocation,
+  PartnerRoutePath,
+  Role,
+  SavedAddress,
+  TripOtp,
+  UploadPurpose,
+  UserProfile,
+  Vehicle
+} from './types';
+
+export class ApiError extends Error {
+  status: number;
+  payload: unknown;
+
+  constructor(status: number, message: string, payload: unknown) {
+    super(message);
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+function isTransientRequestError(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String(error.code) : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  return (
+    code === 'auth/network-request-failed' ||
+    message.includes('failed to fetch') ||
+    message.includes('network request failed') ||
+    message.includes('network error')
+  );
+}
+
+export async function withTransientRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isTransientRequestError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** (attempt - 1))));
+    }
+  }
+  throw lastError;
+}
+
+export class IndieryApi {
+  private baseUrl: string;
+  private token?: string;
+  private inFlightRequests = new Map<string, Promise<unknown>>();
+  private responseCache = new Map<string, { value: unknown; expiresAt: number }>();
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+  }
+
+  setToken(token: string) {
+    this.token = token;
+  }
+
+  private request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const method = (options.method ?? 'GET').toUpperCase();
+    const dedupeInFlight = method === 'GET' || (method === 'POST' && path === '/customer/estimate');
+    if (!dedupeInFlight) return this.performRequest<T>(path, options);
+
+    const requestBody = typeof options.body === 'string' ? options.body : '';
+    const requestKey = `${this.token ?? 'public'}:${method}:${path}:${requestBody}`;
+    if (method === 'GET') {
+      const cached = this.responseCache.get(requestKey);
+      if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+      if (cached) this.responseCache.delete(requestKey);
+    }
+
+    const existing = this.inFlightRequests.get(requestKey);
+    if (existing) return existing as Promise<T>;
+
+    const request = this.performRequest<T>(path, options)
+      .then((value) => {
+        const ttl = method === 'GET' ? this.cacheTtl(path) : 0;
+        if (ttl > 0) {
+          const now = Date.now();
+          for (const [key, entry] of this.responseCache) {
+            if (entry.expiresAt <= now) this.responseCache.delete(key);
+          }
+          if (this.responseCache.size >= 100) {
+            const oldestKey = this.responseCache.keys().next().value;
+            if (oldestKey) this.responseCache.delete(oldestKey);
+          }
+          this.responseCache.set(requestKey, { value, expiresAt: now + ttl });
+        }
+        return value;
+      })
+      .finally(() => {
+        if (this.inFlightRequests.get(requestKey) === request) {
+          this.inFlightRequests.delete(requestKey);
+        }
+      });
+    this.inFlightRequests.set(requestKey, request);
+    return request;
+  }
+
+  private cacheTtl(path: string) {
+    if (path === '/meta/vehicles') return 5 * 60_000;
+    if (path.startsWith('/maps/place-details?')) return 5 * 60_000;
+    if (path.startsWith('/maps/autocomplete?')) return 15_000;
+    return 0;
+  }
+
+  private async performRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const headers: Record<string, string> = {
+      ...(options.headers as Record<string, string> | undefined)
+    };
+    const hasContentType = Object.keys(headers).some((key) => key.toLowerCase() === 'content-type');
+    if (options.body !== undefined && !hasContentType) headers['Content-Type'] = 'application/json';
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), 15_000);
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        ...options,
+        headers,
+        signal: options.signal ?? timeoutController.signal
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new ApiError(0, 'The server is taking too long. Please try again.', {});
+      }
+      throw new ApiError(
+        0,
+        'Unable to connect to Indiery. Check your internet connection and try again.',
+        { cause: error instanceof Error ? error.message : String(error) }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const responseText = await response.text().catch(() => '');
+    let payload: unknown = {};
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText);
+      } catch {
+        const snippet = responseText.trim().slice(0, 180);
+        throw new ApiError(
+          response.status || 0,
+          snippet ? `Server returned invalid JSON: ${snippet}` : 'Server returned invalid JSON',
+          { raw: responseText }
+        );
+      }
+    }
+
+    if (!response.ok) {
+      const message =
+        payload && typeof payload === 'object' && 'message' in payload && typeof payload.message === 'string'
+          ? payload.message
+          : 'Request failed';
+      throw new ApiError(response.status, message, payload);
+    }
+    return payload as T;
+  }
+
+  customerOnboardingStatus(phone: string) {
+    return this.request<{ needsProfile: boolean }>('/auth/customer-onboarding-status', {
+      method: 'POST',
+      body: JSON.stringify({ phone })
+    });
+  }
+
+  firebaseLogin(
+    role: Role,
+    firebaseIdToken: string,
+    customerProfile?: { name: string; email: string; city: string }
+  ) {
+    return this.request<{ token: string; user: UserProfile }>('/auth/firebase-login', {
+      method: 'POST',
+      body: JSON.stringify({ role, firebaseIdToken, customerProfile })
+    });
+  }
+
+  requestAccountDeletion(reason?: string) {
+    return this.request<{ ok: boolean; status: string }>('/auth/account-deletion-request', {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    });
+  }
+
+  vehicles() {
+    return this.request<{ vehicles: Vehicle[] }>('/meta/vehicles');
+  }
+
+  autocompleteLocations(input: string, sessionToken?: string, bias?: { lat: number; lng: number }) {
+    const params = new URLSearchParams({ input });
+    if (sessionToken) params.set('sessionToken', sessionToken);
+    if (bias) {
+      params.set('lat', String(bias.lat));
+      params.set('lng', String(bias.lng));
+    }
+    return this.request<{ suggestions: LocationSuggestion[] }>(`/maps/autocomplete?${params.toString()}`);
+  }
+
+  locationDetails(placeId: string, sessionToken?: string) {
+    const params = new URLSearchParams({ placeId });
+    if (sessionToken) params.set('sessionToken', sessionToken);
+    return this.request<{ location: LocationDetails }>(`/maps/place-details?${params.toString()}`);
+  }
+
+  reverseGeocodeLocation(lat: number, lng: number) {
+    const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+    return this.request<{ location: LocationDetails }>(`/maps/reverse-geocode?${params.toString()}`);
+  }
+
+  customerBootstrap() {
+    return this.request<CustomerBootstrap>('/customer/bootstrap');
+  }
+
+  submitEnterpriseEnquiry(input: { companyName: string; contactName: string; mobileNumber: string; email: string }) {
+    return this.request<{ id: string; status: string }>('/customer/enterprise-enquiries', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  updateCustomerProfile(input: { name: string; email?: string; city: string }) {
+    return this.request<{ user: UserProfile }>('/customer/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(input)
+    });
+  }
+
+  addSavedAddress(input: Omit<SavedAddress, 'id'>) {
+    return this.request<{ user: UserProfile; savedAddress: SavedAddress }>('/customer/saved-addresses', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  deleteSavedAddress(addressId: string) {
+    return this.request<{ user: UserProfile }>('/customer/saved-addresses/' + encodeURIComponent(addressId), {
+      method: 'DELETE'
+    });
+  }
+
+  estimate(input: {
+    pickup: string;
+    drop: string;
+    vehicleId: string;
+    coins?: number;
+    weightKg?: number;
+    extraStops?: Array<{ label: string; address?: string; lat?: number; lng?: number }>;
+    pickupLat?: number;
+    pickupLng?: number;
+    dropLat?: number;
+    dropLng?: number;
+  }) {
+    return this.request<{ fare: FareBreakup; vehicle: Vehicle; quoteId?: string }>('/customer/estimate', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  createOrder(input: CreateOrderInput) {
+    return this.request<{ order: Order; paymentIntent: PaymentIntent; tripOtp?: TripOtp }>(
+      '/customer/orders',
+      {
+        method: 'POST',
+        body: JSON.stringify(input)
+      }
+    );
+  }
+
+  verifyRazorpayPayment(input: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ order: Order }>(`/customer/orders/${input.orderId}/payment/verify`, {
+      method: 'POST',
+      body: JSON.stringify({
+        razorpayOrderId: input.razorpayOrderId,
+        razorpayPaymentId: input.razorpayPaymentId,
+        razorpaySignature: input.razorpaySignature
+      })
+    });
+  }
+
+  cancelOrder(orderId: string, reason: string) {
+    return this.request<{
+      order?: Order;
+      cancellationCharge: number;
+      refundAmount: number;
+      coinDebit: number;
+      wallet: CustomerWallet;
+      user?: UserProfile;
+    }>(`/customer/orders/${orderId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    });
+  }
+
+  createTrackingLink(orderId: string) {
+    return this.request<{ trackingPath: string }>(`/customer/orders/${orderId}/tracking-link`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  }
+
+  customerOrderRoute(orderId: string) {
+    return this.request<PartnerRoutePath>(`/customer/orders/${orderId}/route`);
+  }
+
+  applyCoupon(code: string) {
+    return this.request<{ user: UserProfile; addedCoins: number; alreadyApplied?: boolean }>('/customer/wallet/coupon', {
+      method: 'POST',
+      body: JSON.stringify({ code })
+    });
+  }
+
+  customerWallet() {
+    return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet');
+  }
+
+  createWalletTopup(input: { amount: number; paymentMode: 'upi' }) {
+    return this.request<{ wallet: CustomerWallet; paymentIntent: PaymentIntent }>('/customer/wallet/topup', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  verifyWalletTopup(input: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet/topup/verify', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  createCoinTopup(input: { amount: number; paymentMode: 'upi' }) {
+    return this.request<{ wallet: CustomerWallet; paymentIntent: PaymentIntent }>('/customer/wallet/coins/topup', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  verifyCoinTopup(input: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ wallet: CustomerWallet; user: UserProfile }>('/customer/wallet/coins/topup/verify', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  registerCustomerPushToken(token: string) {
+    return this.request<{ user: UserProfile }>('/customer/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  }
+
+  unregisterCustomerPushToken(token: string) {
+    return this.request<{ ok: boolean }>('/customer/push-token', {
+      method: 'DELETE',
+      body: JSON.stringify({ token })
+    });
+  }
+
+  createCloudinarySignature(input: { purpose: UploadPurpose; orderId?: string; documentKey?: string }) {
+    return this.request<{ upload: CloudinarySignature }>('/uploads/cloudinary-signature', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  partnerBootstrap() {
+    return this.request<PartnerBootstrap>('/partner/bootstrap', {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    });
+  }
+
+  updatePartnerProfile(input: { name: string; email?: string; city: string; vehicleId: string; vehicleNumber?: string }) {
+    return this.request<{ user: UserProfile }>('/partner/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(input)
+    });
+  }
+
+  setAvailability(online: boolean) {
+    return this.request<{ user: UserProfile }>('/partner/availability', {
+      method: 'POST',
+      body: JSON.stringify({ online })
+    });
+  }
+
+  registerPartnerPushToken(token: string) {
+    return this.request<{ user: UserProfile }>('/partner/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  }
+
+  unregisterPartnerPushToken(token: string) {
+    return this.request<{ ok: boolean }>('/partner/push-token', {
+      method: 'DELETE',
+      body: JSON.stringify({ token })
+    });
+  }
+
+  updatePartnerLocation(location: Required<Pick<PartnerLocation, 'lat' | 'lng'>> & Partial<PartnerLocation>) {
+    return this.request<{ user: UserProfile; activeOrderCount: number }>('/partner/location', {
+      method: 'POST',
+      body: JSON.stringify(location)
+    });
+  }
+
+  acceptOrder(orderId: string) {
+    return this.request<{ order: Order }>(`/partner/orders/${orderId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  }
+
+  partnerOrderRoute(orderId: string) {
+    return this.request<PartnerRoutePath>(`/partner/orders/${orderId}/route`);
+  }
+
+  rejectOrder(orderId: string) {
+    return this.request<{ order: Order; rejected: boolean }>(`/partner/orders/${orderId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  }
+
+  cancelPartnerOrder(orderId: string, reason: string) {
+    return this.request<{ ok: boolean; cancellationsRemaining: number }>(`/partner/orders/${orderId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason })
+    });
+  }
+
+  updateOrderStatus(orderId: string, status: 'arrived_pickup' | 'picked_up' | 'in_transit' | 'delivered') {
+    return this.request<{ order: Order }>(`/partner/orders/${orderId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status })
+    });
+  }
+
+  uploadPod(orderId: string, type: 'pickup' | 'drop', photoUrl: string) {
+    return this.request<{ order: Order }>(`/partner/orders/${orderId}/pod`, {
+      method: 'POST',
+      body: JSON.stringify({ type, photoUrl })
+    });
+  }
+
+  verifyOrderOtp(orderId: string, type: 'pickup' | 'drop', otp: string) {
+    return this.request<{ order: Order; verified: boolean }>(`/partner/orders/${orderId}/otp/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ type, otp })
+    });
+  }
+
+  requestPayout(amount: number) {
+    return this.request<{ reference: string; status: string; amount: number; user: UserProfile }>('/partner/payouts/request', {
+      method: 'POST',
+      body: JSON.stringify({ amount })
+    });
+  }
+
+  createPartnerWalletTopup(input: { amount: number; paymentMode: 'upi' | 'card' | 'netbanking' }) {
+    return this.request<{ user: UserProfile; paymentIntent: PaymentIntent }>('/partner/wallet/topup', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  verifyPartnerWalletTopup(input: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) {
+    return this.request<{ user: UserProfile }>('/partner/wallet/topup/verify', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  }
+
+  uploadKyc(
+    documentKey: 'selfie' | 'pan' | 'aadhaar' | 'drivingLicence' | 'rc' | 'insurance' | 'bank',
+    input?:
+      | string
+      | {
+          photoUrl?: string;
+          bankDetails?: {
+            accountHolder: string;
+            accountNumber: string;
+            ifsc: string;
+          };
+        }
+  ) {
+    const body = typeof input === 'string' ? { photoUrl: input } : input ?? {};
+    return this.request<{ user: UserProfile }>(`/partner/kyc/${documentKey}`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+}
+
+export async function uploadFileToCloudinary(
+  fileUri: string,
+  upload: CloudinarySignature,
+  options: { fileName?: string; mimeType?: string } = {}
+): Promise<CloudinaryUploadResult> {
+  if (!fileUri || typeof fileUri !== 'string') {
+    throw new Error('Captured photo is missing. Please retake the photo.');
+  }
+
+  const fileName = safeUploadFileName(options.fileName, fileUri);
+  const mimeType = safeUploadMimeType(options.mimeType, fileName);
+  let response: CloudinaryUploadHttpResponse;
+  try {
+    response = await uploadCloudinaryForm(upload.uploadUrl, await createBlobUploadForm(fileUri, upload, fileName, mimeType));
+  } catch {
+    response = await uploadCloudinaryNativeUriForm(upload.uploadUrl, createNativeUriUploadForm(fileUri, upload, fileName, mimeType));
+  }
+
+  return parseCloudinaryUploadResponse(response);
+}
+
+type CloudinaryUploadHttpResponse = {
+  ok: boolean;
+  json: () => Promise<unknown>;
+};
+
+function safeUploadFileName(fileName: string | undefined, fileUri: string) {
+  const rawName = fileName || fileUri.split(/[\\/]/).pop()?.split('?')[0] || `indiery-${Date.now()}.jpg`;
+  const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '-');
+  return /\.[a-zA-Z0-9]+$/.test(safeName) ? safeName : `${safeName}.jpg`;
+}
+
+function safeUploadMimeType(mimeType: string | undefined, fileName: string) {
+  if (mimeType && /^[a-z]+\/[-+.a-z0-9]+$/i.test(mimeType)) return mimeType;
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'heic' || extension === 'heif') return 'image/heic';
+  return 'image/jpeg';
+}
+
+function appendCloudinaryFields(form: FormData, upload: CloudinarySignature) {
+  form.append('api_key', String(upload.apiKey));
+  form.append('timestamp', String(upload.timestamp));
+  form.append('signature', String(upload.signature));
+  form.append('folder', String(upload.folder));
+  form.append('tags', String(upload.tags));
+}
+
+async function createBlobUploadForm(fileUri: string, upload: CloudinarySignature, fileName: string, mimeType: string) {
+  const fileResponse = await fetch(fileUri);
+  const blob = await fileResponse.blob();
+  const form = new FormData();
+  const append = form.append.bind(form) as (name: string, value: Blob | string, fileName?: string) => void;
+  append('file', blob.type ? blob : blob.slice(0, blob.size, mimeType), fileName);
+  appendCloudinaryFields(form, upload);
+  return form;
+}
+
+function createNativeUriUploadForm(fileUri: string, upload: CloudinarySignature, fileName: string, mimeType: string) {
+  const form = new FormData();
+  const append = form.append.bind(form) as (name: string, value: unknown) => void;
+  append('file', {
+    uri: fileUri,
+    name: fileName,
+    type: mimeType
+  });
+  appendCloudinaryFields(form, upload);
+  return form;
+}
+
+async function uploadCloudinaryForm(uploadUrl: string, form: FormData) {
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    body: form
+  });
+  if (response.ok) return response;
+  return response;
+}
+
+function uploadCloudinaryNativeUriForm(uploadUrl: string, form: FormData): Promise<CloudinaryUploadHttpResponse> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', uploadUrl);
+    request.timeout = 60000;
+    request.onload = () => {
+      resolve({
+        ok: request.status >= 200 && request.status < 300,
+        json: async () => {
+          try {
+            return JSON.parse(request.responseText || '{}');
+          } catch {
+            return {};
+          }
+        }
+      });
+    };
+    request.onerror = () => reject(new Error('Photo upload failed. Check your connection and try again.'));
+    request.ontimeout = () => reject(new Error('Photo upload timed out. Please try again.'));
+    request.onabort = () => reject(new Error('Photo upload was cancelled.'));
+    request.send(form);
+  });
+}
+
+async function parseCloudinaryUploadResponse(response: CloudinaryUploadHttpResponse): Promise<CloudinaryUploadResult> {
+  const payload = (await response.json().catch(() => ({}))) as { secure_url?: string; public_id?: string; error?: { message?: string } };
+  if (!response.ok || !payload.secure_url || !payload.public_id) {
+    throw new Error(payload.error?.message ?? 'Photo upload failed. Please retake the photo and try again.');
+  }
+
+  return {
+    secureUrl: payload.secure_url,
+    publicId: payload.public_id,
+    provider: 'cloudinary'
+  };
+}

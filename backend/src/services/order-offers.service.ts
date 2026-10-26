@@ -1,0 +1,308 @@
+import { Types } from 'mongoose';
+import { Order, type OrderDocument } from '../models/Order';
+import { User, type UserDocument } from '../models/User';
+import { serializeOrder } from './serialize.service';
+import { sendPush } from './notification.service';
+import { setOrderStatusTimeline } from './timeline.service';
+import { emitOrderChanged, emitPartnerQueueChanged } from '../realtime/socket';
+import { getRuntimeAdminPolicy } from './admin-settings.service';
+import {
+  INITIAL_PARTNER_WALLET_BALANCE,
+  MIN_POSITIVE_PARTNER_WALLET_BALANCE
+} from './partner-wallet-eligibility.service';
+
+export const DRIVER_OFFER_BATCH_SIZE = 3;
+export const DRIVER_OFFER_TIMEOUT_MS = 45_000;
+
+const activePartnerStatuses = ['accepted', 'arrived_pickup', 'picked_up', 'in_transit'];
+const offerTimers = new Map<string, NodeJS.Timeout>();
+
+function idOf(value: unknown) {
+  if (!value) return '';
+  if (typeof value === 'object' && '_id' in value) return String((value as { _id: unknown })._id);
+  return String(value);
+}
+
+function objectIds(values: string[]) {
+  return values.map((value) => new Types.ObjectId(value));
+}
+
+function idsFromOrderField(values: unknown[] | undefined) {
+  return (values ?? []).map(idOf).filter(Boolean);
+}
+
+function orderVehicleId(order: OrderDocument) {
+  return idOf(order.vehicle);
+}
+
+function distanceKm(
+  from?: { lat?: number | null; lng?: number | null } | null,
+  to?: { lat?: number | null; lng?: number | null } | null
+) {
+  if (
+    typeof from?.lat !== 'number' ||
+    typeof from.lng !== 'number' ||
+    typeof to?.lat !== 'number' ||
+    typeof to.lng !== 'number'
+  ) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const earthRadiusKm = 6371;
+  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+  const lat1 = (from.lat * Math.PI) / 180;
+  const lat2 = (to.lat * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function populatedOrder(orderId: string | Types.ObjectId) {
+  return Order.findById(orderId)
+    .populate('vehicle')
+    .populate('partner')
+    .populate('customer');
+}
+
+function canDispatchOrder(order: OrderDocument) {
+  return (
+    ['searching', 'offered'].includes(order.status) &&
+    !order.partner &&
+    (order.paymentMode === 'cash' || order.paymentStatus === 'paid')
+  );
+}
+
+async function eligiblePartnersForOrder(order: OrderDocument, maxPickupRadiusKm?: number) {
+  const vehicleId = orderVehicleId(order);
+  if (!vehicleId) return [];
+
+  const [activePartnerIds, partners] = await Promise.all([
+    Order.distinct('partner', {
+      partner: { $exists: true, $ne: null },
+      status: { $in: activePartnerStatuses }
+    }),
+    User.find({
+      role: 'partner',
+      'partnerProfile.online': true,
+      'partnerProfile.kycStatus': 'verified',
+      $or: [
+        {
+          'partnerProfile.walletActivated': true,
+          'partnerProfile.walletBalance': { $gte: MIN_POSITIVE_PARTNER_WALLET_BALANCE }
+        },
+        { 'partnerProfile.walletBalance': { $gte: INITIAL_PARTNER_WALLET_BALANCE } }
+      ],
+      'partnerProfile.vehicleId': vehicleId,
+      'partnerProfile.currentLocation.lat': { $type: 'number' },
+      'partnerProfile.currentLocation.lng': { $type: 'number' }
+    }).select('name expoPushTokens partnerProfile')
+  ]);
+
+  const blockedIds = new Set([
+    ...activePartnerIds.map(idOf),
+    ...idsFromOrderField(order.notifiedPartnerIds as unknown[]),
+    ...idsFromOrderField(order.rejectedPartnerIds as unknown[])
+  ]);
+  const pickup = order.pickup;
+
+  return partners
+    .filter((partner) => !blockedIds.has(String(partner._id)))
+    .map((partner) => ({
+      partner,
+      distance: distanceKm(pickup, partner.partnerProfile?.currentLocation)
+    }))
+    .filter((item) => maxPickupRadiusKm == null || item.distance <= maxPickupRadiusKm)
+    .sort((left, right) => left.distance - right.distance)
+    .map((item) => item.partner);
+}
+
+function scheduleOfferAdvance(orderId: string, expiresAt?: Date | null) {
+  const existing = offerTimers.get(orderId);
+  if (existing) clearTimeout(existing);
+
+  const delay = expiresAt
+    ? Math.max(0, expiresAt.getTime() - Date.now()) + 500
+    : DRIVER_OFFER_TIMEOUT_MS + 500;
+  const timer = setTimeout(() => {
+    offerTimers.delete(orderId);
+    offerOrderToNextDrivers(orderId, { reason: 'timeout' }).catch(() => undefined);
+  }, delay);
+  offerTimers.set(orderId, timer);
+}
+
+async function sendPartnerBatchPush(order: OrderDocument, partners: UserDocument[]) {
+  await Promise.all(
+    partners.map((partner) => {
+      const pickupDistance = distanceKm(partner.partnerProfile?.currentLocation, order.pickup);
+      const distanceLabel = Number.isFinite(pickupDistance) && pickupDistance < Number.MAX_SAFE_INTEGER
+        ? `${pickupDistance < 10 ? pickupDistance.toFixed(1) : Math.round(pickupDistance)} km to pickup - `
+        : '';
+      return sendPush(partner.expoPushTokens, 'New order nearby', `${distanceLabel}${order.pickup.label} to ${order.drop.label}. Accept before the offer expires.`, {
+        event: 'order_offer',
+        role: 'partner',
+        screen: 'dashboard',
+        orderId: String(order._id),
+        orderNo: order.orderNo,
+        status: order.status,
+        pickupLabel: order.pickup.label,
+        dropLabel: order.drop.label,
+        tripDistanceKm: String(order.distanceKm),
+        weightKg: String(order.weightKg),
+        goodsType: order.goodsType,
+        partnerEarnings: String(order.fare.partnerNet),
+        offerExpiresAtMs: order.offerExpiresAt?.getTime() ?? Date.now() + DRIVER_OFFER_TIMEOUT_MS,
+        ...(distanceLabel ? { pickupDistanceKm: Number(pickupDistance.toFixed(2)) } : {})
+      }, {
+        ttl: Math.ceil((DRIVER_OFFER_TIMEOUT_MS + 15_000) / 1000),
+        collapseId: `offer-${String(order._id)}`,
+        channelId: 'driver-order-alerts-v4',
+        categoryId: 'driver-order-offer',
+        priority: 'high'
+      });
+    })
+  );
+}
+
+async function sendCustomerSearchPush(order: OrderDocument, partnerCount: number) {
+  const fullOrder = await populatedOrder(order._id);
+  const customer = fullOrder?.customer as unknown as { expoPushTokens?: string[] } | undefined;
+  const body = partnerCount
+    ? `Sent to ${partnerCount} nearby driver${partnerCount === 1 ? '' : 's'}`
+    : 'Searching for nearby online drivers';
+  await sendPush(customer?.expoPushTokens, 'Finding nearby driver', body, {
+    event: 'order_search',
+    role: 'customer',
+    screen: 'orders',
+    orderId: String(order._id),
+    orderNo: order.orderNo,
+    status: order.status
+  }, { ttl: 300, collapseId: `search-${String(order._id)}` });
+}
+
+async function emitOfferUpdates(orderId: string, partnerIds: string[] = []) {
+  const fullOrder = await populatedOrder(orderId);
+  if (!fullOrder) return;
+  const payload = serializeOrder(fullOrder);
+  emitOrderChanged(payload, idOf(fullOrder.customer));
+  partnerIds.forEach((partnerId) => emitOrderChanged(payload, undefined, partnerId));
+  emitPartnerQueueChanged();
+}
+
+export async function offerOrderToNextDrivers(
+  orderId: string | Types.ObjectId,
+  options: { reason?: 'new' | 'payment' | 'timeout' | 'reject' | 'refresh' | 'driver_cancel' } = {}
+) {
+  // A refresh, timeout and rejection can all reach this function together. Retry
+  // once if another caller wins the atomic update, then observe its fresh batch.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const policy = await getRuntimeAdminPolicy();
+    if (!policy.autoAssign) return undefined;
+    const order = await Order.findById(orderId);
+    if (!order || !canDispatchOrder(order)) return undefined;
+
+    const now = new Date();
+    const currentBatchIds = idsFromOrderField(order.offeredPartnerIds as unknown[]);
+    const expiresAt = order.offerExpiresAt ? new Date(order.offerExpiresAt) : undefined;
+    const offerWindowActive = Boolean(expiresAt && expiresAt.getTime() > now.getTime());
+    if (offerWindowActive) {
+      scheduleOfferAdvance(String(order._id), expiresAt);
+      return emitOfferUpdates(String(order._id), currentBatchIds);
+    }
+
+    const eligiblePartners = await eligiblePartnersForOrder(order, policy.maxPickupRadiusKm);
+    const nextPartners = eligiblePartners.slice(0, DRIVER_OFFER_BATCH_SIZE);
+    const nextPartnerIds = nextPartners.map((partner) => String(partner._id));
+    const notifiedIds = Array.from(new Set([
+      ...idsFromOrderField(order.notifiedPartnerIds as unknown[]),
+      ...nextPartnerIds
+    ]));
+    const nextExpiresAt = new Date(now.getTime() + DRIVER_OFFER_TIMEOUT_MS);
+
+    setOrderStatusTimeline(order, nextPartners.length ? 'offered' : 'searching');
+
+    const updatedOrder = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        __v: order.__v,
+        status: { $in: ['searching', 'offered'] },
+        $and: [
+          { $or: [{ partner: { $exists: false } }, { partner: null }] },
+          { $or: [{ paymentStatus: 'paid' }, { paymentMode: 'cash' }] }
+        ]
+      },
+      {
+        $set: {
+          status: order.status,
+          timeline: order.timeline,
+          offeredPartnerIds: objectIds(nextPartnerIds),
+          notifiedPartnerIds: objectIds(notifiedIds),
+          offerBatchStartedAt: now,
+          offerExpiresAt: nextExpiresAt
+        },
+        $inc: { offerBatch: 1, __v: 1 }
+      },
+      { new: true, runValidators: true }
+    );
+    if (!updatedOrder) continue;
+
+    await emitOfferUpdates(String(updatedOrder._id), nextPartnerIds);
+    if (nextPartners.length) {
+      await sendPartnerBatchPush(updatedOrder, nextPartners);
+    }
+    if (options.reason === 'new' || options.reason === 'payment') {
+      await sendCustomerSearchPush(updatedOrder, nextPartners.length);
+    }
+    scheduleOfferAdvance(String(updatedOrder._id), nextExpiresAt);
+    return serializeOrder((await populatedOrder(updatedOrder._id)) ?? updatedOrder);
+  }
+
+  return undefined;
+}
+
+export async function advanceExpiredOrderOffers(vehicleId?: string) {
+  const now = new Date();
+  const query: Record<string, unknown> = {
+    status: { $in: ['searching', 'offered'] },
+    $and: [
+      { $or: [{ partner: { $exists: false } }, { partner: null }] },
+      { $or: [{ paymentStatus: 'paid' }, { paymentMode: 'cash' }] },
+      {
+        $or: [
+          { offerExpiresAt: { $lte: now } },
+          { offerExpiresAt: { $exists: false } },
+          { offerExpiresAt: null }
+        ]
+      }
+    ]
+  };
+  if (vehicleId) query.vehicle = vehicleId;
+
+  const orders = await Order.find(query).sort({ createdAt: 1 }).limit(10);
+  await Promise.all(orders.map((order) => offerOrderToNextDrivers(order._id, { reason: 'refresh' })));
+}
+
+export async function rejectDriverOffer(orderId: string, partnerId: string) {
+  const order = await Order.findById(orderId);
+  if (!order) throw new Error('Order not found');
+  const currentBatchIds = idsFromOrderField(order.offeredPartnerIds as unknown[]);
+  if (!currentBatchIds.includes(partnerId)) return order;
+
+  const rejectedIds = Array.from(new Set([...idsFromOrderField(order.rejectedPartnerIds as unknown[]), partnerId]));
+  const remainingBatchIds = currentBatchIds.filter((id) => id !== partnerId);
+  order.rejectedPartnerIds = objectIds(rejectedIds);
+  order.offeredPartnerIds = objectIds(remainingBatchIds);
+  if (!remainingBatchIds.length) {
+    order.set('offerBatchStartedAt', undefined);
+    order.set('offerExpiresAt', undefined);
+  }
+  await order.save();
+
+  if (!remainingBatchIds.length) {
+    await offerOrderToNextDrivers(order._id, { reason: 'reject' });
+  } else {
+    await emitOfferUpdates(String(order._id), remainingBatchIds);
+  }
+  return order;
+}

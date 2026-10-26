@@ -1,0 +1,30 @@
+{
+  "name": "indiery",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm --workspace backend run build",
+    "start": "npm --workspace backend run start",
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:customer": "npm --workspace @indiery/customer run start",
+    "dev:partner": "npm --workspace @indiery/partner run start",
+    "build:backend": "npm --workspace backend run build",
+    "check": "npm --workspace backend run check && npm --workspace @indiery/shared run check && npm --workspace @indiery/customer run check && npm --workspace @indiery/partner run check"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  }
+}

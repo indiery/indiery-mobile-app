@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "Indiery Partner",
+    "slug": "indiery-partner",
+    "owner": "indiery1235",
+    "scheme": "indierypartner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/app-icon.png",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-notifications",
+        {
+          "color": "#059669",
+          "defaultChannel": "orders"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Indiery Partner uses your camera to capture KYC documents and proof of delivery.",
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://indiery-mobile-app-1.onrender.com/api",
+      "allowInsecureApiBaseUrl": false,
+      "privacyPolicyUrl": "https://www.indiery.com/partner-privacy",
+      "accountDeletionUrl": "https://www.indiery.com/account-deletion",
+      "googleMapsApiKey": "AIzaSyAY5D6K2WhkSGAzQnjuQPdnJ8lF0H6uszE",
+      "eas": {
+        "projectId": "52645743-78b7-4eb0-8c00-4e2f6d1c1d4a"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.indiery.partner",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Indiery Partner uses your location to offer nearby deliveries and share live trip tracking.",
+        "NSCameraUsageDescription": "Indiery Partner uses your camera to capture KYC documents and proof of delivery."
+      }
+    },
+    "android": {
+      "package": "com.indeiry.driver",
+      "allowBackup": false,
+      "softwareKeyboardLayoutMode": "resize",
+      "googleServicesFile": "./google-services.json",
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "POST_NOTIFICATIONS"
+      ]
+    }
+  }
+}

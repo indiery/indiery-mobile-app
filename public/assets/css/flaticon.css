@@ -1,0 +1,285 @@
+@font-face {
+  font-family: 'icomoon';
+  src: url('../fonts/icomoon.eot?orkqwr');
+  src: url('../fonts/icomoon.eot?orkqwr#iefix') format('embedded-opentype'),
+    url('../fonts/icomoon.ttf?orkqwr') format('truetype'),
+    url('../fonts/icomoon.woff?orkqwr') format('woff'),
+    url('../fonts/icomoon.svg?orkqwr#icomoon') format('svg');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+[class^="icon-"],
+[class*=" icon-"] {
+  /* use !important to prevent issues with browser extensions that change fonts */
+  font-family: 'icomoon' !important;
+  speak: never;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+
+  /* Better Font Rendering =========== */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+
+
+
+
+
+.icon-check:before {
+  content: "\e923";
+}
+
+.icon-plus:before {
+  content: "\e924";
+}
+
+.icon-minus:before {
+  content: "\e925";
+}
+
+.icon-worldwide-shipping:before {
+  content: "\e926";
+}
+
+.icon-24-hours-service:before {
+  content: "\e927";
+}
+
+.icon-worldwide-shipping-1:before {
+  content: "\e928";
+}
+
+.icon-courier-services:before {
+  content: "\e929";
+}
+
+.icon-man:before {
+  content: "\e92a";
+}
+
+.icon-shipment:before {
+  content: "\e92b";
+}
+
+.icon-international-shipping:before {
+  content: "\e92c";
+}
+
+.icon-ship:before {
+  content: "\e92d";
+}
+
+.icon-box:before {
+  content: "\e92e";
+}
+
+.icon-location:before {
+  content: "\e92f";
+}
+
+.icon-customer-loyalty:before {
+  content: "\e930";
+}
+
+.icon-global-services:before {
+  content: "\e931";
+}
+
+.icon-protection:before {
+  content: "\e932";
+}
+
+.icon-professional-services:before {
+  content: "\e933";
+}
+
+.icon-tracking:before {
+  content: "\e934";
+}
+
+.icon-quote:before {
+  content: "\e935";
+}
+
+.icon-new-product:before {
+  content: "\e936";
+}
+
+.icon-service:before {
+  content: "\e937";
+}
+
+.icon-delivery-man:before {
+  content: "\e938";
+}
+
+.icon-ship-1:before {
+  content: "\e939";
+}
+
+.icon-storehouse:before {
+  content: "\e93a";
+}
+
+.icon-humanitarian-aid:before {
+  content: "\e93b";
+}
+
+.icon-pdf:before {
+  content: "\e93c";
+}
+
+.icon-twitter:before {
+  content: "\e93d";
+}
+
+.icon-label:before {
+  content: "\e93e";
+}
+
+.icon-search:before {
+  content: "\e900";
+}
+
+.icon-shopping-bag:before {
+  content: "\e901";
+}
+
+.icon-location1:before {
+  content: "\e902";
+}
+
+.icon-email:before {
+  content: "\e903";
+}
+
+.icon-facebook-app-symbol:before {
+  content: "\e904";
+}
+
+.icon-instagram:before {
+  content: "\e905";
+}
+
+.icon-twitter1:before {
+  content: "\e906";
+}
+
+.icon-play-button:before {
+  content: "\e907";
+}
+
+.icon-payment:before {
+  content: "\e908";
+}
+
+.icon-delivery-man1:before {
+  content: "\e909";
+}
+
+.icon-cruise:before {
+  content: "\e90a";
+}
+
+.icon-plane:before {
+  content: "\e90b";
+}
+
+.icon-truck:before {
+  content: "\e90c";
+}
+
+.icon-train:before {
+  content: "\e90d";
+}
+
+.icon-air-freight:before {
+  content: "\e90e";
+}
+
+.icon-shield:before {
+  content: "\e90f";
+}
+
+.icon-world-wide-web:before {
+  content: "\e910";
+}
+
+.icon-user-avatar:before {
+  content: "\e911";
+}
+
+.icon-rating:before {
+  content: "\e912";
+}
+
+.icon-delivery-man-1:before {
+  content: "\e913";
+}
+
+.icon-packaging:before {
+  content: "\e914";
+}
+
+.icon-box1:before {
+  content: "\e915";
+}
+
+.icon-user:before {
+  content: "\e916";
+}
+
+.icon-chat:before {
+  content: "\e917";
+}
+
+.icon-next:before {
+  content: "\e918";
+}
+
+.icon-right-arrow:before {
+  content: "\e919";
+}
+
+.icon-paper-plane:before {
+  content: "\e91a";
+}
+
+.icon-data-warehouse:before {
+  content: "\e91b";
+}
+
+.icon-phone-call:before {
+  content: "\e91c";
+}
+
+.icon-link:before {
+  content: "\e91d";
+}
+
+.icon-reputation:before {
+  content: "\e91e";
+}
+
+.icon-google-docs:before {
+  content: "\e91f";
+}
+
+.icon-share:before {
+  content: "\e920";
+}
+
+.icon-calendar:before {
+  content: "\e921";
+}
+
+.icon-user-1:before {
+  content: "\e922";
+}

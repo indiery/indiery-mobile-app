@@ -1,0 +1,1204 @@
+/* ==========================================================================
+   INDIERY OFFICIAL HOMEPAGE STYLES
+   Matches https://www.indiery.com/ design & branding
+   ========================================================================== */
+
+.page {
+  --primary: #7c3aed;
+  --primary-hover: #6d28d9;
+  --primary-dark: #111827;
+  --primary-light: #f5f3ff;
+  --primary-border: #ede9fe;
+  --slate-900: #0f172a;
+  --slate-800: #1e293b;
+  --slate-700: #334155;
+  --slate-600: #475569;
+  --slate-500: #64748b;
+  --slate-400: #94a3b8;
+  --slate-100: #f1f5f9;
+  --slate-50: #f8fafc;
+  --green: #059669;
+  --green-light: #d1fae5;
+  --white: #ffffff;
+  
+  background-color: #ffffff;
+  color: var(--slate-600);
+  font-family: 'Rubik', 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+.page * {
+  box-sizing: border-box;
+}
+
+/* ==========================================================================
+   HERO SECTION
+   ========================================================================== */
+
+.hero {
+  position: relative;
+  background: radial-gradient(circle at 85% 20%, rgba(124, 58, 237, 0.08) 0%, transparent 60%),
+              radial-gradient(circle at 10% 80%, rgba(124, 58, 237, 0.04) 0%, transparent 50%),
+              #ffffff;
+  padding: 50px 24px 90px;
+  overflow: hidden;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.heroInner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  align-items: center;
+  gap: 48px;
+  position: relative;
+  z-index: 2;
+}
+
+.heroContent {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eyebrowBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  background: #f5f3ff;
+  border: 1px solid #ede9fe;
+  color: #7c3aed;
+  padding: 7px 16px;
+  border-radius: 30px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.pulseDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.5); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(124, 58, 237, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+}
+
+.heroTitle {
+  font-size: 54px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #0f172a;
+  letter-spacing: -1px;
+  margin: 0;
+  font-family: 'Rubik', sans-serif;
+}
+
+.heroTitleHighlight {
+  color: #7c3aed;
+  position: relative;
+}
+
+.heroDescription {
+  font-size: 17.5px;
+  line-height: 1.65;
+  color: #475569;
+  max-width: 580px;
+  margin: 0;
+}
+
+.heroActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.primaryBtn {
+  background: #7c3aed;
+  color: #ffffff !important;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 14px 28px;
+  border-radius: 12px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px -4px rgba(124, 58, 237, 0.4);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border: none;
+  cursor: pointer;
+}
+
+.primaryBtn:hover {
+  background: #6d28d9;
+  box-shadow: 0 12px 30px -4px rgba(124, 58, 237, 0.55);
+  transform: translateY(-2px);
+}
+
+.secondaryBtn {
+  background: #ffffff;
+  color: #0f172a !important;
+  border: 1.5px solid #e2e8f0;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 14px 26px;
+  border-radius: 12px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  border-color: #7c3aed;
+  color: #7c3aed !important;
+  background: #f5f3ff;
+  transform: translateY(-2px);
+}
+
+.heroTrustBar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 14px;
+  padding-top: 20px;
+  border-top: 1px solid #f1f5f9;
+  flex-wrap: wrap;
+}
+
+.trustItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.trustIcon {
+  color: #10b981;
+}
+
+/* Hero Media Area */
+.heroMediaWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 520px;
+}
+
+.heroMainImgWrapper {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 520px;
+  height: 500px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.heroCourierImg {
+  object-fit: contain;
+  filter: drop-shadow(0 20px 30px rgba(15, 23, 42, 0.12));
+}
+
+.floatingContainerWrapper {
+  position: absolute;
+  top: 10px;
+  right: -20px;
+  width: 220px;
+  height: 240px;
+  z-index: 3;
+  animation: floatContainer 4s ease-in-out infinite alternate;
+}
+
+@keyframes floatContainer {
+  0% { transform: translateY(0px) rotate(0deg); }
+  100% { transform: translateY(-16px) rotate(1.5deg); }
+}
+
+.floatingContainerImg {
+  object-fit: contain;
+  filter: drop-shadow(0 15px 25px rgba(124, 58, 237, 0.25));
+}
+
+/* Floating Badges */
+.floatingTripBadge {
+  position: absolute;
+  bottom: 25px;
+  left: 0;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 14px 18px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: floatBadge 3.5s ease-in-out infinite alternate;
+}
+
+@keyframes floatBadge {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-8px); }
+}
+
+.tripBadgeIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #f5f3ff;
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tripBadgeText {
+  display: flex;
+  flex-direction: column;
+}
+
+.tripBadgeTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.tripBadgeSub {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.floatingRatingBadge {
+  position: absolute;
+  top: 60px;
+  left: -20px;
+  background: #ffffff;
+  border-radius: 30px;
+  padding: 8px 16px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  border: 1px solid #ede9fe;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* ==========================================================================
+   ABOUT / WHAT WE DO SECTION
+   ========================================================================== */
+
+.aboutSection {
+  padding: 100px 24px;
+  background: #f8fafc;
+  position: relative;
+}
+
+.aboutInner {
+  max-width: 1240px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  align-items: center;
+  gap: 60px;
+}
+
+.aboutMediaCol {
+  position: relative;
+}
+
+.aboutImageCard {
+  position: relative;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  height: 460px;
+}
+
+.aboutImage {
+  object-fit: cover;
+}
+
+.aboutOverlayBadge {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  right: 24px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 16px;
+  padding: 18px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.overlayStat {
+  display: flex;
+  flex-direction: column;
+}
+
+.overlayNum {
+  font-size: 26px;
+  font-weight: 800;
+  color: #7c3aed;
+  line-height: 1.1;
+  font-family: 'Rubik', sans-serif;
+}
+
+.overlayLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.aboutContentCol {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sectionEyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7c3aed;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.sectionTitle {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+  margin: 0;
+  font-family: 'Rubik', sans-serif;
+}
+
+.sectionText {
+  font-size: 16.5px;
+  line-height: 1.7;
+  color: #475569;
+  margin: 0;
+}
+
+.checklistGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 10px 0;
+}
+
+.checklistItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.checkIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #ede9fe;
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   SERVICES SECTION
+   ========================================================================== */
+
+.servicesSection {
+  padding: 100px 24px;
+  background: #ffffff;
+}
+
+.servicesInner {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.sectionHeaderRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 50px;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.viewAllLink {
+  color: #7c3aed;
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.viewAllLink:hover {
+  color: #6d28d9;
+  transform: translateX(4px);
+}
+
+.serviceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+
+.serviceCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.serviceCard:hover {
+  transform: translateY(-6px);
+  border-color: #7c3aed;
+  box-shadow: 0 20px 35px -10px rgba(124, 58, 237, 0.12);
+}
+
+.serviceIconTop {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #f5f3ff;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.serviceImgWrap {
+  position: relative;
+  width: 100%;
+  height: 160px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.serviceCutoutImg {
+  object-fit: contain;
+  transition: transform 0.3s ease;
+}
+
+.serviceCard:hover .serviceCutoutImg {
+  transform: scale(1.05);
+}
+
+.serviceCardTitle {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 10px;
+  font-family: 'Rubik', sans-serif;
+}
+
+.serviceCardText {
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.6;
+  margin: 0 0 18px;
+  flex-grow: 1;
+}
+
+.serviceTag {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: #f5f3ff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.serviceCardFooter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #7c3aed;
+}
+
+/* ==========================================================================
+   INTERACTIVE BOOKING / FARE ESTIMATOR WIDGET
+   ========================================================================== */
+
+.bookingWidgetSection {
+  padding: 90px 24px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.bookingWidgetInner {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.bookingWidgetCard {
+  background: #ffffff;
+  border-radius: 24px;
+  border: 1px solid #ede9fe;
+  box-shadow: 0 20px 48px -10px rgba(124, 58, 237, 0.1);
+  overflow: hidden;
+}
+
+.widgetHeaderTabs {
+  display: flex;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f5f3ff;
+}
+
+.widgetTab {
+  flex: 1;
+  padding: 20px 24px;
+  background: none;
+  border: none;
+  font-size: 16px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+  border-bottom: 3px solid transparent;
+}
+
+.widgetTab.active {
+  color: #7c3aed;
+  background: #ffffff;
+  border-bottom-color: #7c3aed;
+}
+
+.widgetBody {
+  padding: 36px 32px;
+}
+
+/* Vehicle Selector Pills */
+.vehiclePills {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.vehiclePillBtn {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vehiclePillBtn:hover {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+}
+
+.vehiclePillBtn.selected {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+}
+
+.vehiclePillEmoji {
+  font-size: 24px;
+}
+
+.vehiclePillName {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.vehiclePillBase {
+  font-size: 11.5px;
+  color: #7c3aed;
+  font-weight: 600;
+}
+
+/* Form Inputs Grid */
+.inputLocationsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.formInput {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 14.5px;
+  color: #0f172a;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.formInput:focus {
+  border-color: #7c3aed;
+  background: #ffffff;
+}
+
+/* Quick Landmark Pills */
+.quickLandmarks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.quickLandmarkPill {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quickLandmarkPill:hover {
+  background: #ede9fe;
+  color: #7c3aed;
+  border-color: #7c3aed;
+}
+
+/* Fare Result Box */
+.fareEstimateBox {
+  background: #f5f3ff;
+  border: 1.5px dashed #ddd6fe;
+  border-radius: 16px;
+  padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.fareDetailsCol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fareLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7c3aed;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fareAmount {
+  font-size: 32px;
+  font-weight: 800;
+  color: #0f172a;
+  font-family: 'Rubik', sans-serif;
+}
+
+.fareBreakdownMeta {
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* Tracking View inside Widget */
+.trackingViewBox {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.trackingTimeline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 20px;
+  position: relative;
+}
+
+.trackingStep {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.trackingStep.completed {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.trackingStep.active {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.15);
+}
+
+.stepStatusTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.stepStatusDesc {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+/* ==========================================================================
+   WHY CHOOSE US / FEATURES SECTION
+   ========================================================================== */
+
+.whyChooseSection {
+  padding: 100px 24px;
+  background: #ffffff;
+}
+
+.whyChooseInner {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.featureCardsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.featureCard {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: all 0.3s ease;
+}
+
+.featureCard:hover {
+  background: #ffffff;
+  border-color: #7c3aed;
+  box-shadow: 0 16px 36px rgba(124, 58, 237, 0.08);
+  transform: translateY(-4px);
+}
+
+.featureIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: #ede9fe;
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.featureTitle {
+  font-size: 19px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  font-family: 'Rubik', sans-serif;
+}
+
+.featureDesc {
+  font-size: 14.5px;
+  color: #64748b;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ==========================================================================
+   HOW IT WORKS (4 EASY STEPS)
+   ========================================================================== */
+
+.howItWorksSection {
+  padding: 100px 24px;
+  background: #f8fafc;
+}
+
+.howItWorksInner {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.stepsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 50px;
+  position: relative;
+}
+
+.stepCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.stepCard:hover {
+  border-color: #7c3aed;
+  box-shadow: 0 14px 30px rgba(124, 58, 237, 0.08);
+  transform: translateY(-4px);
+}
+
+.stepNumberBadge {
+  font-size: 38px;
+  font-weight: 900;
+  color: #ede9fe;
+  font-family: 'Rubik', sans-serif;
+  line-height: 1;
+  margin-bottom: 16px;
+  transition: color 0.2s ease;
+}
+
+.stepCard:hover .stepNumberBadge {
+  color: #7c3aed;
+}
+
+.stepTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 10px;
+  font-family: 'Rubik', sans-serif;
+}
+
+.stepText {
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ==========================================================================
+   WHAT YOU CAN BOOK SHOWCASE
+   ========================================================================== */
+
+.showcaseSection {
+  padding: 100px 24px;
+  background: #ffffff;
+}
+
+.showcaseInner {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.showcaseGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.showcaseCard {
+  background: #ffffff;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+  text-decoration: none;
+}
+
+.showcaseCard:hover {
+  border-color: #7c3aed;
+  transform: translateY(-4px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.08);
+}
+
+.showcaseImgWrap {
+  position: relative;
+  width: 100%;
+  height: 180px;
+}
+
+.showcaseImg {
+  object-fit: cover;
+}
+
+.showcaseBody {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.showcaseTitle {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  font-family: 'Rubik', sans-serif;
+}
+
+.showcaseSub {
+  font-size: 13.5px;
+  color: #64748b;
+  margin: 0;
+}
+
+/* ==========================================================================
+   BLOG / GUIDES SECTION
+   ========================================================================== */
+
+.guidesSection {
+  padding: 100px 24px;
+  background: #f8fafc;
+}
+
+.guidesInner {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+.guidesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+  margin-top: 48px;
+}
+
+.guideCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+  text-decoration: none;
+}
+
+.guideCard:hover {
+  border-color: #7c3aed;
+  transform: translateY(-4px);
+  box-shadow: 0 16px 36px rgba(124, 58, 237, 0.08);
+}
+
+.guideImgWrap {
+  position: relative;
+  width: 100%;
+  height: 200px;
+}
+
+.guideImg {
+  object-fit: cover;
+}
+
+.guideBody {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guideDate {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c3aed;
+  text-transform: uppercase;
+}
+
+.guideTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.4;
+  font-family: 'Rubik', sans-serif;
+}
+
+.guideExcerpt {
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.guideReadMore {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #7c3aed;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   RESPONSIVE BREAKPOINTS
+   ========================================================================== */
+
+@media (max-width: 1100px) {
+  .heroInner {
+    grid-template-columns: 1fr;
+    text-align: center;
+    gap: 40px;
+  }
+  .eyebrowBadge {
+    align-self: center;
+  }
+  .heroActions {
+    justify-content: center;
+  }
+  .heroTrustBar {
+    justify-content: center;
+  }
+  .serviceGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .featureCardsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .stepsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .showcaseGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .aboutInner {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .heroTitle {
+    font-size: 38px;
+  }
+  .sectionTitle {
+    font-size: 30px;
+  }
+  .serviceGrid {
+    grid-template-columns: 1fr;
+  }
+  .vehiclePills {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .inputLocationsGrid {
+    grid-template-columns: 1fr;
+  }
+  .featureCardsGrid {
+    grid-template-columns: 1fr;
+  }
+  .stepsGrid {
+    grid-template-columns: 1fr;
+  }
+  .showcaseGrid {
+    grid-template-columns: 1fr;
+  }
+  .guidesGrid {
+    grid-template-columns: 1fr;
+  }
+  .checklistGrid {
+    grid-template-columns: 1fr;
+  }
+  .floatingTripBadge {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+  }
+  .floatingContainerWrapper {
+    right: 0;
+    width: 160px;
+    height: 180px;
+  }
+  .trackingTimeline {
+    grid-template-columns: 1fr;
+  }
+}

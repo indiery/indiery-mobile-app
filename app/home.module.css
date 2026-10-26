@@ -95,13 +95,14 @@
 }
 
 .heroTitle {
-  font-size: 54px;
+  font-size: clamp(28px, 3.2vw, 42px);
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 1.2;
   color: #0f172a;
-  letter-spacing: -1px;
+  letter-spacing: -0.5px;
   margin: 0;
   font-family: 'Rubik', sans-serif;
+  max-width: 620px;
 }
 
 .heroTitleHighlight {
@@ -482,8 +483,8 @@
 
 .serviceGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
 }
 
 .serviceCard {

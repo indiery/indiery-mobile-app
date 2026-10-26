@@ -52,9 +52,9 @@ export default function Home() {
                 LOGISTICS PLATFORM · STARTING IN LUCKNOW
               </div>
 
-              <h1 className={styles.heroTitle}>
-                Technology-Driven Logistics For <br />
-                <span className={styles.heroTitleHighlight}>Individuals &amp; Businesses</span>
+              <h1 className={styles.heroTitle} style={{ fontSize: "clamp(28px, 3.2vw, 42px)", lineHeight: "1.2", maxWidth: "620px" }}>
+                Technology-Driven Logistics <br />
+                <span className={styles.heroTitleHighlight}>For Individuals &amp; Businesses</span>
               </h1>
 
               <p className={styles.heroDescription}>
@@ -112,123 +112,134 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Right: Hero PNG Visual Showcase */}
-            <div style={{ position: "relative" }}>
+            {/* Right: Hero PNG Visual Showcase - Borderless Clean Cutout */}
+            <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              {/* Ambient Soft Glow Circle */}
+              <div style={{
+                position: "absolute",
+                top: "10%",
+                left: "10%",
+                width: "480px",
+                height: "460px",
+                borderRadius: "50%",
+                background: "radial-gradient(circle, rgba(124, 58, 237, 0.14) 0%, rgba(245, 243, 255, 0.4) 60%, transparent 80%)",
+                filter: "blur(40px)",
+                zIndex: 0,
+                pointerEvents: "none"
+              }} />
+
+              {/* Floating Top Badge */}
+              <div style={{
+                position: "absolute",
+                top: "10px",
+                left: "20px",
+                zIndex: 4,
+                background: "rgba(15, 23, 42, 0.90)",
+                backdropFilter: "blur(12px)",
+                color: "#FFFFFF",
+                padding: "8px 18px",
+                borderRadius: "30px",
+                fontSize: "12px",
+                fontWeight: "700",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                boxShadow: "0 10px 25px rgba(0, 0, 0, 0.18)"
+              }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10B981" }} />
+                <span>On-Demand Lucknow Logistics · 15-20 Min Pickup</span>
+              </div>
+
+              {/* Clean PNG Courier Cutout - No Square Boundaries */}
+              <div style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: "520px", height: "460px" }}>
+                <Image
+                  src="/banner_img01_indiery.png"
+                  alt="Indiery Delivery Logistics Partner in Lucknow"
+                  fill
+                  priority
+                  sizes="(max-width: 768px) 100vw, 520px"
+                  style={{ objectFit: "contain", filter: "drop-shadow(0 20px 40px rgba(124, 58, 237, 0.18))" }}
+                />
+              </div>
+
+              {/* Floating Bottom Left Badge */}
+              <div style={{
+                position: "absolute",
+                bottom: "75px",
+                left: "0",
+                zIndex: 4,
+                background: "#FFFFFF",
+                border: "1px solid #EDE9FE",
+                padding: "10px 16px",
+                borderRadius: "14px",
+                boxShadow: "0 14px 32px rgba(124, 58, 237, 0.14)",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px"
+              }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#ECFDF5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
+                  🛡️
+                </div>
+                <div>
+                  <div style={{ fontSize: "12.5px", fontWeight: "800", color: "#0F172A" }}>Verified Driver Partners</div>
+                  <div style={{ fontSize: "11px", color: "#059669", fontWeight: "700" }}>KYC &amp; Commercial Fleet</div>
+                </div>
+              </div>
+
+              {/* Floating Bottom Right Badge */}
+              <div style={{
+                position: "absolute",
+                bottom: "75px",
+                right: "0",
+                zIndex: 4,
+                background: "#FFFFFF",
+                border: "1px solid #EDE9FE",
+                padding: "10px 16px",
+                borderRadius: "14px",
+                boxShadow: "0 14px 32px rgba(124, 58, 237, 0.14)",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px"
+              }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
+                  📍
+                </div>
+                <div>
+                  <div style={{ fontSize: "12.5px", fontWeight: "800", color: "#0F172A" }}>Starting in Lucknow</div>
+                  <div style={{ fontSize: "11px", color: "#7C3AED", fontWeight: "700" }}>Devpur, Rajajipuram Hub</div>
+                </div>
+              </div>
+
+              {/* Micro Fleet Highlights Pill Bar */}
               <div style={{
                 position: "relative",
-                background: "linear-gradient(145deg, #F5F3FF 0%, #FFFFFF 100%)",
-                borderRadius: "28px",
+                zIndex: 3,
+                width: "100%",
+                maxWidth: "500px",
+                background: "#FFFFFF",
                 border: "1px solid #EDE9FE",
-                padding: "20px",
-                boxShadow: "0 24px 60px rgba(124, 58, 237, 0.12)",
-                overflow: "hidden"
+                borderRadius: "16px",
+                padding: "12px 18px",
+                boxShadow: "0 10px 25px rgba(0, 0, 0, 0.05)",
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "10px",
+                marginTop: "-20px"
               }}>
-                {/* Floating Top Badge */}
-                <div style={{
-                  position: "absolute",
-                  top: "32px",
-                  left: "32px",
-                  zIndex: 3,
-                  background: "rgba(15, 23, 42, 0.88)",
-                  backdropFilter: "blur(10px)",
-                  color: "#FFFFFF",
-                  padding: "8px 16px",
-                  borderRadius: "30px",
-                  fontSize: "12px",
-                  fontWeight: "700",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.2)"
-                }}>
-                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10B981" }} />
-                  <span>On-Demand Lucknow Logistics · 15-20 Min Pickup</span>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "17px" }}>🛵</div>
+                  <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Bike &amp; Loader</div>
+                  <div style={{ fontSize: "11px", color: "#64748B" }}>20 kg to 90 kg</div>
                 </div>
-
-                {/* Main Hero PNG Fleet Image */}
-                <div style={{ position: "relative", width: "100%", height: "360px", borderRadius: "20px", overflow: "hidden", background: "#FAF5FF" }}>
-                  <Image
-                    src="/banner_img01_indiery.png"
-                    alt="Indiery On-Demand Goods Delivery Fleet in Lucknow"
-                    fill
-                    priority
-                    sizes="(max-width: 768px) 100vw, 600px"
-                    style={{ objectFit: "cover" }}
-                  />
+                <div style={{ textAlign: "center", borderLeft: "1px solid #F1F5F9", borderRight: "1px solid #F1F5F9" }}>
+                  <div style={{ fontSize: "17px" }}>🚚</div>
+                  <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Mini Trucks</div>
+                  <div style={{ fontSize: "11px", color: "#64748B" }}>500 kg &amp; 750 kg</div>
                 </div>
-
-                {/* Floating Bottom Left Badge */}
-                <div style={{
-                  position: "absolute",
-                  bottom: "100px",
-                  left: "32px",
-                  zIndex: 3,
-                  background: "#FFFFFF",
-                  border: "1px solid #EDE9FE",
-                  padding: "10px 16px",
-                  borderRadius: "14px",
-                  boxShadow: "0 12px 30px rgba(124, 58, 237, 0.15)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px"
-                }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#ECFDF5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
-                    🛡️
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "12.5px", fontWeight: "800", color: "#0F172A" }}>Verified Driver Partners</div>
-                    <div style={{ fontSize: "11px", color: "#059669", fontWeight: "700" }}>KYC &amp; Commercial Fleet</div>
-                  </div>
-                </div>
-
-                {/* Floating Bottom Right Badge */}
-                <div style={{
-                  position: "absolute",
-                  bottom: "100px",
-                  right: "32px",
-                  zIndex: 3,
-                  background: "#FFFFFF",
-                  border: "1px solid #EDE9FE",
-                  padding: "10px 16px",
-                  borderRadius: "14px",
-                  boxShadow: "0 12px 30px rgba(124, 58, 237, 0.15)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px"
-                }}>
-                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
-                    📍
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "12.5px", fontWeight: "800", color: "#0F172A" }}>Starting in Lucknow</div>
-                    <div style={{ fontSize: "11px", color: "#7C3AED", fontWeight: "700" }}>Devpur, Rajajipuram Hub</div>
-                  </div>
-                </div>
-
-                {/* Micro Highlights Pill Bar */}
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, 1fr)",
-                  gap: "10px",
-                  marginTop: "16px",
-                  paddingTop: "14px",
-                  borderTop: "1px solid #F1F5F9"
-                }}>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "18px" }}>🛵</div>
-                    <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Bike &amp; Loader</div>
-                    <div style={{ fontSize: "11px", color: "#64748B" }}>20 kg to 90 kg</div>
-                  </div>
-                  <div style={{ textAlign: "center", borderLeft: "1px solid #F1F5F9", borderRight: "1px solid #F1F5F9" }}>
-                    <div style={{ fontSize: "18px" }}>🚚</div>
-                    <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Mini Trucks</div>
-                    <div style={{ fontSize: "11px", color: "#64748B" }}>500 kg &amp; 750 kg</div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: "18px" }}>🛣️</div>
-                    <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Intercity FTL</div>
-                    <div style={{ fontSize: "11px", color: "#64748B" }}>Full Truck Load</div>
-                  </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "17px" }}>🛣️</div>
+                  <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Intercity FTL</div>
+                  <div style={{ fontSize: "11px", color: "#64748B" }}>Full Truck Load</div>
                 </div>
               </div>
             </div>
@@ -570,14 +581,186 @@ export default function Home() {
                 </Link>
               </div>
 
-              <div style={{ position: "relative", minHeight: "440px", borderRadius: "24px", overflow: "hidden", background: "linear-gradient(145deg, #F5F3FF 0%, #EDE9FE 100%)", border: "1px solid #DDD6FE", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
-                <Image
-                  src="/mobile-final.png"
-                  alt="Indiery Customer App On-Demand Booking Screen"
-                  width={320}
-                  height={420}
-                  style={{ objectFit: "contain", filter: "drop-shadow(0 20px 40px rgba(124, 58, 237, 0.25))" }}
-                />
+              {/* Realistic Smartphone Device Mockup */}
+              <div style={{
+                position: "relative",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                padding: "20px 0"
+              }}>
+                {/* Ambient Soft Glow Circle */}
+                <div style={{
+                  position: "absolute",
+                  width: "360px",
+                  height: "540px",
+                  borderRadius: "50%",
+                  background: "radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, rgba(245, 243, 255, 0.4) 60%, transparent 80%)",
+                  filter: "blur(40px)",
+                  zIndex: 0,
+                  pointerEvents: "none"
+                }} />
+
+                {/* Smartphone Device Frame Body */}
+                <div style={{
+                  position: "relative",
+                  zIndex: 2,
+                  width: "290px",
+                  height: "580px",
+                  background: "linear-gradient(145deg, #1e293b 0%, #0f172a 100%)",
+                  borderRadius: "48px",
+                  padding: "10px",
+                  boxShadow: "0 28px 65px -15px rgba(15, 23, 42, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.14) inset, 0 14px 28px -10px rgba(124, 58, 237, 0.25)"
+                }}>
+                  {/* Physical Side Buttons */}
+                  <div style={{ position: "absolute", top: "100px", left: "-3px", width: "3px", height: "28px", background: "#334155", borderRadius: "3px 0 0 3px" }} />
+                  <div style={{ position: "absolute", top: "140px", left: "-3px", width: "3px", height: "42px", background: "#334155", borderRadius: "3px 0 0 3px" }} />
+                  <div style={{ position: "absolute", top: "190px", left: "-3px", width: "3px", height: "42px", background: "#334155", borderRadius: "3px 0 0 3px" }} />
+                  <div style={{ position: "absolute", top: "135px", right: "-3px", width: "3px", height: "58px", background: "#334155", borderRadius: "0 3px 3px 0" }} />
+
+                  {/* Phone Screen Display */}
+                  <div style={{
+                    position: "relative",
+                    width: "100%",
+                    height: "100%",
+                    background: "#FFFFFF",
+                    borderRadius: "38px",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column"
+                  }}>
+                    {/* Top Status Bar & Dynamic Island */}
+                    <div style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: "36px",
+                      zIndex: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0 20px",
+                      fontSize: "11px",
+                      fontWeight: "700",
+                      color: "#0F172A",
+                      background: "rgba(255, 255, 255, 0.94)",
+                      backdropFilter: "blur(8px)"
+                    }}>
+                      <span>9:41</span>
+                      
+                      {/* Dynamic Island Pill */}
+                      <div style={{
+                        position: "absolute",
+                        left: "50%",
+                        top: "7px",
+                        transform: "translateX(-50%)",
+                        width: "82px",
+                        height: "22px",
+                        background: "#0F172A",
+                        borderRadius: "14px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "flex-end",
+                        paddingRight: "8px",
+                        gap: "5px"
+                      }}>
+                        <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#1E293B" }} />
+                        <div style={{ width: "3px", height: "3px", borderRadius: "50%", background: "#10B981" }} />
+                      </div>
+
+                      {/* Icons: 5G & Battery */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px" }}>
+                        <span>5G</span>
+                        <div style={{ width: "16px", height: "8.5px", border: "1.5px solid currentColor", borderRadius: "2.5px", padding: "1px", display: "flex" }}>
+                          <div style={{ width: "80%", height: "100%", background: "currentColor", borderRadius: "1px" }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Indiery Customer App Screen Inside Phone */}
+                    <div style={{
+                      marginTop: "34px",
+                      height: "calc(100% - 46px)",
+                      overflowY: "auto",
+                      scrollbarWidth: "none",
+                      position: "relative",
+                      background: "#FFFFFF"
+                    }}>
+                      <Image
+                        src="/mobile-final.png"
+                        alt="Indiery Customer App On-Demand Booking Screen in Smartphone"
+                        width={270}
+                        height={600}
+                        style={{ width: "100%", height: "auto", display: "block" }}
+                        priority
+                      />
+                    </div>
+
+                    {/* Bottom Home Indicator Bar */}
+                    <div style={{
+                      position: "absolute",
+                      bottom: "5px",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      width: "105px",
+                      height: "4px",
+                      background: "#0F172A",
+                      borderRadius: "4px",
+                      zIndex: 10
+                    }} />
+                  </div>
+                </div>
+
+                {/* Floating Feature Pill Left */}
+                <div style={{
+                  position: "absolute",
+                  left: "-25px",
+                  top: "35%",
+                  background: "rgba(255, 255, 255, 0.96)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid #EDE9FE",
+                  padding: "10px 14px",
+                  borderRadius: "14px",
+                  boxShadow: "0 12px 28px rgba(124, 58, 237, 0.15)",
+                  zIndex: 5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px"
+                }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "#ECFDF5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                    ⚡
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: "800", color: "#0F172A" }}>Instant Estimate</div>
+                    <div style={{ fontSize: "11px", color: "#059669", fontWeight: "600" }}>100% Upfront Pricing</div>
+                  </div>
+                </div>
+
+                {/* Floating Feature Pill Right */}
+                <div style={{
+                  position: "absolute",
+                  right: "-25px",
+                  bottom: "28%",
+                  background: "rgba(255, 255, 255, 0.96)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid #EDE9FE",
+                  padding: "10px 14px",
+                  borderRadius: "14px",
+                  boxShadow: "0 12px 28px rgba(124, 58, 237, 0.15)",
+                  zIndex: 5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px"
+                }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "#F5F3FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                    📍
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: "800", color: "#0F172A" }}>Live GPS Tracking</div>
+                    <div style={{ fontSize: "11px", color: "#7C3AED", fontWeight: "600" }}>OTP Verified Delivery</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

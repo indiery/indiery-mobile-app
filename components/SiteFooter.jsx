@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 export default function SiteFooter({ showCta = true }) {
   return (
@@ -29,22 +30,14 @@ export default function SiteFooter({ showCta = true }) {
         <div className="indiery-footer-container">
           {/* Brand Info Column */}
           <div className="indiery-footer-col brand-col">
-            <Link href="/" className="footer-logo-link" aria-label="Indiery Home">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 54" width="160" height="36">
-                <g transform="translate(4, 5)">
-                  <rect x="0" y="0" width="44" height="44" rx="12" fill="#7C3AED" stroke="#EDE9FE" strokeWidth="1.8" />
-                  <path d="M12 25h4v-5h9v5h5l4 4v5h-3a4 4 0 0 1-8 0h-6a4 4 0 0 1-8 0h-2v-6a3 3 0 0 1 2-3z" fill="#FFFFFF" />
-                  <circle cx="16" cy="31" r="2.2" fill="#7C3AED" />
-                  <circle cx="30" cy="31" r="2.2" fill="#7C3AED" />
-                  <path d="M25 22h4l2.5 3H25z" fill="#FFFFFF" opacity="0.7" />
-                </g>
-                <text x="56" y="31" fontFamily="'Rubik', 'Poppins', Arial, sans-serif" fontSize="23" fontWeight="900" fill="#0F172A" letterSpacing="1">
-                  INDIERY
-                </text>
-                <text x="57" y="44" fontFamily="'Poppins', Arial, sans-serif" fontSize="8.5" fontWeight="700" fill="#7C3AED" letterSpacing="1.5">
-                  LOGISTICS PLATFORM
-                </text>
-              </svg>
+            <Link href="/" className="footer-logo-link" aria-label="Indiery Home" style={{ display: "inline-flex", alignItems: "center" }}>
+              <Image
+                src="/indiery-official-logo-white.png"
+                alt="Indiery Logistics Platform"
+                width={155}
+                height={42}
+                style={{ height: "36px", width: "auto", objectFit: "contain" }}
+              />
             </Link>
             <p className="footer-desc">
               Indiery is a technology-driven logistics platform starting in Lucknow, serving individuals and businesses through a network of independent transport partners.

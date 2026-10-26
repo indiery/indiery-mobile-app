@@ -920,7 +920,7 @@ export default function Home() {
               <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "20px", padding: "32px", border: "1px solid rgba(255,255,255,0.1)" }}>
                 <div style={{ position: "relative", height: "140px", marginBottom: "16px", borderRadius: "14px", overflow: "hidden", background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Image
-                    src="/about_img01_purple.png"
+                    src="/assets/service-business-truck-cutout.png"
                     alt="Indiery Independent Driver Partners Network"
                     width={320}
                     height={130}

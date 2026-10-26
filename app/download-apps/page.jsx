@@ -140,8 +140,8 @@ export default function DownloadAppsPage() {
 
                 <div style={{ position: "relative", height: "180px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "center", background: "#ECFDF5", borderRadius: "16px", border: "1px solid #D1FAE5" }}>
                   <Image
-                    src="/about_img01_purple.png"
-                    alt="Indiery Driver App Interface"
+                    src="/assets/service-tempo-cutout.png"
+                    alt="Indiery Driver App Commercial Transport Vehicle"
                     width={240}
                     height={160}
                     style={{ objectFit: "contain", filter: "drop-shadow(0 10px 20px rgba(5, 150, 105, 0.25))" }}

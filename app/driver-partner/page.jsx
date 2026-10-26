@@ -129,14 +129,103 @@ export default function DriverPartnerPage() {
                 </div>
               </div>
 
-              <div style={{ position: "relative", minHeight: "340px", borderRadius: "24px", overflow: "hidden", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-                <Image
-                  src="/about_img01_purple.png"
-                  alt="Indiery Independent Driver Partners Network"
-                  width={420}
-                  height={280}
-                  style={{ objectFit: "contain", filter: "drop-shadow(0 15px 30px rgba(0,0,0,0.4))" }}
-                />
+              {/* Driver Partner Vehicle Visual - Borderless Cutout */}
+              <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                {/* Ambient Soft Emerald Glow */}
+                <div style={{
+                  position: "absolute",
+                  width: "440px",
+                  height: "360px",
+                  borderRadius: "50%",
+                  background: "radial-gradient(circle, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.05) 60%, transparent 80%)",
+                  filter: "blur(40px)",
+                  zIndex: 0,
+                  pointerEvents: "none"
+                }} />
+
+                {/* Floating Top Badge */}
+                <div style={{
+                  position: "absolute",
+                  top: "10px",
+                  left: "10px",
+                  zIndex: 4,
+                  background: "rgba(15, 23, 42, 0.88)",
+                  backdropFilter: "blur(12px)",
+                  color: "#FFFFFF",
+                  padding: "8px 16px",
+                  borderRadius: "30px",
+                  fontSize: "12px",
+                  fontWeight: "700",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  boxShadow: "0 10px 25px rgba(0, 0, 0, 0.2)"
+                }}>
+                  <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10B981" }} />
+                  <span>Attach 2-Wheeler, Loader or Mini Truck</span>
+                </div>
+
+                {/* Commercial Goods Carrier Cutout */}
+                <div style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: "480px", height: "320px" }}>
+                  <Image
+                    src="/assets/service-tempo-cutout.png"
+                    alt="Indiery Independent Driver Partner Mini Truck"
+                    fill
+                    priority
+                    sizes="(max-width: 768px) 100vw, 480px"
+                    style={{ objectFit: "contain", filter: "drop-shadow(0 20px 40px rgba(0, 0, 0, 0.45))" }}
+                  />
+                </div>
+
+                {/* Floating Bottom Left Badge */}
+                <div style={{
+                  position: "absolute",
+                  bottom: "10px",
+                  left: "0",
+                  zIndex: 4,
+                  background: "rgba(255, 255, 255, 0.95)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid #D1FAE5",
+                  padding: "9px 15px",
+                  borderRadius: "14px",
+                  boxShadow: "0 12px 28px rgba(0, 0, 0, 0.2)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px"
+                }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "#ECFDF5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                    💰
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: "800", color: "#0F172A" }}>Direct App Payouts</div>
+                    <div style={{ fontSize: "11px", color: "#059669", fontWeight: "700" }}>Zero Hidden Platform Cuts</div>
+                  </div>
+                </div>
+
+                {/* Floating Bottom Right Badge */}
+                <div style={{
+                  position: "absolute",
+                  bottom: "10px",
+                  right: "0",
+                  zIndex: 4,
+                  background: "rgba(255, 255, 255, 0.95)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid #D1FAE5",
+                  padding: "9px 15px",
+                  borderRadius: "14px",
+                  boxShadow: "0 12px 28px rgba(0, 0, 0, 0.2)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px"
+                }}>
+                  <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "#ECFDF5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>
+                    📍
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: "800", color: "#0F172A" }}>Lucknow Trade Orders</div>
+                    <div style={{ fontSize: "11px", color: "#059669", fontWeight: "700" }}>Devpur Rajajipuram Hub</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function SiteHeader({ active = "home" }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -10,24 +11,17 @@ export default function SiteHeader({ active = "home" }) {
   return (
     <header className="indiery-lean-header">
       <div className="indiery-header-inner">
-        {/* Brand Logo */}
+        {/* Brand Logo from Inventory */}
         <div className="indiery-logo-wrap">
-          <Link href="/" aria-label="Indiery Home" className="indiery-logo-link">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 54" width="168" height="38">
-              <g transform="translate(4, 5)">
-                <rect x="0" y="0" width="44" height="44" rx="12" fill="#7C3AED" stroke="#EDE9FE" strokeWidth="1.8" />
-                <path d="M12 25h4v-5h9v5h5l4 4v5h-3a4 4 0 0 1-8 0h-6a4 4 0 0 1-8 0h-2v-6a3 3 0 0 1 2-3z" fill="#FFFFFF" />
-                <circle cx="16" cy="31" r="2.2" fill="#7C3AED" />
-                <circle cx="30" cy="31" r="2.2" fill="#7C3AED" />
-                <path d="M25 22h4l2.5 3H25z" fill="#FFFFFF" opacity="0.7" />
-              </g>
-              <text x="56" y="31" fontFamily="'Rubik', 'Poppins', Arial, sans-serif" fontSize="23" fontWeight="900" fill="#0F172A" letterSpacing="1">
-                INDIERY
-              </text>
-              <text x="57" y="44" fontFamily="'Poppins', Arial, sans-serif" fontSize="8.5" fontWeight="700" fill="#7C3AED" letterSpacing="1.5">
-                LOGISTICS PLATFORM
-              </text>
-            </svg>
+          <Link href="/" aria-label="Indiery Home" className="indiery-logo-link" style={{ display: "inline-flex", alignItems: "center" }}>
+            <Image
+              src="/indiery-brand-logo.png"
+              alt="Indiery Logistics Platform"
+              width={165}
+              height={50}
+              priority
+              style={{ height: "38px", width: "auto", objectFit: "contain" }}
+            />
           </Link>
         </div>
 
@@ -147,7 +141,13 @@ export default function SiteHeader({ active = "home" }) {
       >
         <div className="indiery-mobile-panel" onClick={(e) => e.stopPropagation()}>
           <div className="indiery-mobile-header">
-            <span className="indiery-mobile-brand">indiery</span>
+            <Image
+              src="/indiery-brand-logo.png"
+              alt="Indiery"
+              width={120}
+              height={36}
+              style={{ height: "30px", width: "auto", objectFit: "contain" }}
+            />
             <button
               className="indiery-mobile-close"
               aria-label="Close menu"

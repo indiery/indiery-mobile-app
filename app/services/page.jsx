@@ -37,7 +37,7 @@ const goodsTransportServices = [
     features: ["Payload up to 500 kg", "Dimensions suited for city lanes", "Upfront distance-based fare", "Direct driver coordination"],
     booking: "Book via Customer App & Business Desk",
     slug: "mini-truck-500",
-    image: "/assets/service-tempo-cutout.png",
+    image: "/assets/generated/service-business-van-realistic-v3.png",
   },
   {
     title: "750 kg Mini Truck (Tata Ace)",

@@ -33,7 +33,7 @@ export default function AboutPage() {
 
               <div style={{ position: "relative", minHeight: "320px", borderRadius: "24px", overflow: "hidden", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
                 <Image
-                  src="/banner_img01_indiery.png"
+                  src="/assets/generated/indiery-hero-local-fleet-v3.png"
                   alt="Indiery Logistics Technology and Transport Network"
                   width={460}
                   height={300}

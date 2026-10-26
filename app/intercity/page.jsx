@@ -141,13 +141,14 @@ export default function IntercityPage() {
                 </div>
               </div>
 
-              <div style={{ position: "relative", minHeight: "420px", borderRadius: "24px", overflow: "hidden", background: "#EDE9FE" }}>
+              <div style={{ position: "relative", minHeight: "420px", borderRadius: "24px", overflow: "hidden", background: "#FAF5FF", border: "1px solid #EDE9FE", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Image
-                  src="/banner_img01_brand-purple.png"
+                  src="/assets/hero-truck.png"
                   alt="Indiery intercity logistics and commercial goods transport"
                   fill
-                  style={{ objectFit: "cover" }}
+                  style={{ objectFit: "contain", padding: "20px" }}
                   sizes="(max-width: 768px) 100vw, 550px"
+                  priority
                 />
               </div>
             </div>

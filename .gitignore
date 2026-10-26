@@ -36,7 +36,7 @@ next-env.d.ts
 # backups and scratch
 backup-*/
 scratch/
-legacy-html/
+/legacy-html/
 .review-assets/
 .runtime/
 /*.js
@@ -46,3 +46,9 @@ legacy-html/
 
 # isolated mobile app repo
 indiery-mobile-app/
+
+# website build artifacts (Vercel project root)
+/webiste/node_modules/
+/webiste/.next/
+/webiste/out/
+/webiste/build/

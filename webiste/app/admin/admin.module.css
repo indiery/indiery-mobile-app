@@ -1833,4 +1833,29 @@
   .homeBackLink {
     display: none;
   }
+
+  .contentContainer {
+    padding: 12px;
+  }
+
+  .modalCard,
+  .drawerPanel {
+    border-radius: 14px 14px 0 0;
+  }
+
+  .modalCard [style*="grid-template-columns"],
+  .drawerPanel [style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .metricsGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .topBarRight > * {
+    width: 100%;
+    justify-content: center;
+  }
 }

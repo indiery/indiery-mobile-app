@@ -2759,12 +2759,15 @@ footer {
   backdrop-filter: blur(4px);
   z-index: 1000000;
   opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
   pointer-events: none;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .indiery-mobile-drawer.open {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -2886,7 +2889,8 @@ footer {
   .indiery-desktop-nav { display: none !important; }
   .indiery-call-box { display: none !important; }
   .indiery-mobile-toggle { display: block !important; }
-  .indiery-mobile-drawer { display: block; }
+  .indiery-mobile-drawer { display: none; }
+  .indiery-mobile-drawer.open { display: block; }
 }
 
 @media (max-width: 576px) {
@@ -3166,6 +3170,281 @@ footer {
   }
   .indiery-prefooter-text h2 {
     font-size: 28px;
+  }
+}
+
+/* ==========================================================================
+   RESPONSIVE FOUNDATION
+   Keeps every App Router marketing/legal page usable on tablets and phones,
+   including pages that still carry legacy inline layout declarations.
+   ========================================================================== */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+img[width][height] {
+  height: auto;
+}
+
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .innerHeader main .shell > [style*="grid-template-columns:1fr 1fr"],
+  .innerHeader main [style*="grid-template-columns:1.2fr 1fr"],
+  .innerHeader main [style*="grid-template-columns:1.1fr 1fr"],
+  .innerHeader main [style*="grid-template-columns:1fr 1.1fr"],
+  .innerHeader main [style*="grid-template-columns:1fr 1.05fr"],
+  .innerHeader main [style*="grid-template-columns:1fr 1.3fr"],
+  .innerHeader main [style*="grid-template-columns:300px 1fr"],
+  .innerHeader main [style*="grid-template-columns:310px 1fr"],
+  .innerHeader main [style*="grid-template-columns:320px 1fr"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 36px !important;
+  }
+
+  .innerHeader main [style*="position: sticky"] {
+    position: static !important;
+    top: auto !important;
+  }
+
+  .innerHeader main img {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .innerHeader main > section,
+  .innerHeader main:not(:has(> section)) {
+    padding-top: 56px !important;
+    padding-bottom: 56px !important;
+  }
+
+  .innerHeader main > .innerPageHero,
+  .innerHeader main > .aboutHero {
+    padding-top: 48px !important;
+    padding-bottom: 56px !important;
+  }
+
+  .innerHeader main .shell,
+  .innerHeader main > .shell {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-right: 18px !important;
+    padding-left: 18px !important;
+  }
+
+  .innerHeader main [style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 22px !important;
+  }
+
+  .innerHeader main h1,
+  .innerHeader main h1[style] {
+    max-width: 100%;
+    font-size: clamp(2rem, 10vw, 2.65rem) !important;
+    line-height: 1.12 !important;
+    letter-spacing: -1.5px !important;
+    overflow-wrap: anywhere;
+  }
+
+  .innerHeader main h2,
+  .innerHeader main h2[style] {
+    font-size: clamp(1.65rem, 8vw, 2.1rem) !important;
+    line-height: 1.2 !important;
+    letter-spacing: -1px !important;
+    overflow-wrap: anywhere;
+  }
+
+  .innerHeader main h3,
+  .innerHeader main h3[style] {
+    overflow-wrap: anywhere;
+  }
+
+  .innerHeader main h1 br,
+  .innerHeader main h2 br {
+    display: none;
+  }
+
+  .innerHeader main p[style*="font-size: 18px"],
+  .innerHeader main p[style*="font-size: 17px"] {
+    font-size: 16px !important;
+  }
+
+  .innerHeader main [style*="padding: 48px 40px"],
+  .innerHeader main [style*="padding: 40px"],
+  .innerHeader main [style*="padding: 36px"],
+  .innerHeader main [style*="padding: 32px"] {
+    padding: 24px !important;
+  }
+
+  .innerHeader main [style*="padding: 28px"] {
+    padding: 22px !important;
+  }
+
+  .innerHeader main form,
+  .innerHeader main input,
+  .innerHeader main select,
+  .innerHeader main textarea,
+  .innerHeader main form button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .innerHeader main [style*="display: flex"][style*="gap"] {
+    min-width: 0;
+  }
+
+  .innerHeader main [style*="min-height: 440px"],
+  .innerHeader main [style*="min-height: 420px"] {
+    min-height: 300px !important;
+  }
+
+  .innerHeader main [style*="min-height: 320px"] {
+    min-height: 260px !important;
+  }
+
+  .innerHeader main [style*="height: 460px"] {
+    height: 330px !important;
+  }
+
+  .innerHeader main [style*="overflow-x: auto"] {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .innerHeader main [style*="overflow-x: auto"] table {
+    min-width: 680px;
+  }
+
+  .innerHeader main table th,
+  .innerHeader main table td {
+    white-space: nowrap;
+  }
+
+  .tagPill {
+    max-width: 100%;
+    margin-bottom: 18px !important;
+    white-space: normal;
+    line-height: 1.45;
+  }
+
+  .indiery-header-inner {
+    gap: 10px;
+  }
+
+  .indiery-logo-link img {
+    width: auto !important;
+    height: 32px !important;
+  }
+
+  .indiery-mobile-toggle,
+  .indiery-mobile-close,
+  .social-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .indiery-mobile-panel {
+    width: min(92vw, 360px);
+    max-width: none;
+    padding: 20px 18px;
+  }
+
+  .indiery-mobile-nav-link {
+    min-height: 44px;
+    padding: 11px 0;
+  }
+
+  .indiery-mobile-sub a {
+    min-height: 40px;
+    padding: 9px 0;
+    line-height: 1.45;
+  }
+
+  /* Only the compact header action disappears; page CTAs remain tappable. */
+  .indiery-header-actions > .indiery-cta-btn {
+    display: none !important;
+  }
+
+  .innerHeader main .indiery-cta-btn,
+  main > section .indiery-cta-btn,
+  .indiery-prefooter-cta .indiery-cta-btn,
+  .indiery-mobile-footer .indiery-cta-btn {
+    display: inline-flex !important;
+    min-height: 48px;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .indiery-prefooter-cta {
+    padding: 52px 18px;
+  }
+
+  .indiery-prefooter-inner {
+    gap: 28px;
+  }
+
+  .indiery-prefooter-actions,
+  .indiery-prefooter-actions .indiery-cta-btn {
+    width: 100%;
+  }
+
+  .indiery-main-footer {
+    padding-top: 56px;
+  }
+
+  .indiery-footer-container,
+  .indiery-footer-bottom-inner {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .indiery-footer-container {
+    gap: 36px;
+  }
+
+  .legal-links {
+    gap: 12px 18px;
+  }
+}
+
+@media (max-width: 380px) {
+  .innerHeader main .shell,
+  .innerHeader main > .shell {
+    padding-right: 14px !important;
+    padding-left: 14px !important;
+  }
+
+  .indiery-header-inner {
+    padding: 0 12px;
+  }
+
+  .indiery-logo-link img {
+    height: 29px !important;
+  }
+
+  .innerHeader main [style*="padding: 48px 40px"],
+  .innerHeader main [style*="padding: 40px"],
+  .innerHeader main [style*="padding: 36px"],
+  .innerHeader main [style*="padding: 32px"],
+  .innerHeader main [style*="padding: 28px"] {
+    padding: 20px !important;
   }
 }
 

@@ -1,12 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 
 export default function SiteHeader({ active = "home" }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [servicesDropdownOpen, setServicesDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileMenuOpen]);
 
   return (
     <header className="indiery-lean-header">
@@ -122,8 +139,10 @@ export default function SiteHeader({ active = "home" }) {
           <button
             type="button"
             className="indiery-mobile-toggle"
-            aria-label="Open navigation menu"
-            onClick={() => setMobileMenuOpen(true)}
+            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-controls="indiery-mobile-menu"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}
           >
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="12" x2="21" y2="12" />
@@ -137,9 +156,17 @@ export default function SiteHeader({ active = "home" }) {
       {/* Mobile Drawer */}
       <div 
         className={`indiery-mobile-drawer ${mobileMenuOpen ? "open" : ""}`}
+        aria-hidden={!mobileMenuOpen}
         onClick={() => setMobileMenuOpen(false)}
       >
-        <div className="indiery-mobile-panel" onClick={(e) => e.stopPropagation()}>
+        <div
+          id="indiery-mobile-menu"
+          className="indiery-mobile-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mobile navigation"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="indiery-mobile-header">
             <Image
               src="/indiery-brand-logo.png"

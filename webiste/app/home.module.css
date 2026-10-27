@@ -182,6 +182,86 @@
   flex-wrap: wrap;
 }
 
+/* Responsive media compositions. These class hooks replace desktop-only
+   positioning without changing the established visual direction. */
+.audienceGrid,
+.heroVisual,
+.heroImageStage,
+.phoneShowcase,
+.businessImage,
+.coverageMap {
+  min-width: 0;
+}
+
+.audienceCard {
+  min-width: 0;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.audienceCard:hover {
+  transform: translateY(-2px);
+  border-color: #c4b5fd !important;
+  box-shadow: 0 10px 22px rgba(124, 58, 237, 0.08);
+}
+
+.heroVisual {
+  isolation: isolate;
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 48px;
+}
+
+.heroImageStage {
+  grid-column: 1 / -1;
+  justify-self: center;
+  overflow: visible;
+}
+
+.heroImage {
+  object-position: center bottom;
+}
+
+.heroInfoBadge,
+.phoneFeatureBadge {
+  position: static !important;
+  width: 100%;
+  max-width: none;
+}
+
+.heroFleetStrip,
+.heroFleetItem {
+  min-width: 0;
+}
+
+.heroFleetStrip {
+  grid-column: 1 / -1;
+  margin-top: 0 !important;
+}
+
+.phoneShowcase {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.phoneDevice {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+
+.contentShell,
+.splitLayout,
+.fareCalculator,
+.fareIntroCard,
+.phoneDevice,
+.driverCard,
+.driverImage,
+.coverageOverlay {
+  min-width: 0;
+}
+
 .trustItem {
   display: inline-flex;
   align-items: center;
@@ -1160,7 +1240,7 @@
 
 @media (max-width: 768px) {
   .heroTitle {
-    font-size: 38px;
+    font-size: clamp(32px, 9vw, 38px) !important;
   }
   .sectionTitle {
     font-size: 30px;
@@ -1218,11 +1298,221 @@
   }
 
   .hero {
-    padding: 38px 18px 64px;
+    padding: 32px 18px 56px;
   }
 
   .heroInner {
-    gap: 28px;
+    gap: 34px;
+    text-align: left;
+  }
+
+  .heroContent {
+    gap: 16px;
+  }
+
+  .eyebrowBadge {
+    align-self: flex-start;
+    max-width: 100%;
+    line-height: 1.4;
+  }
+
+  .audienceGrid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    margin: 4px 0 12px !important;
+  }
+
+  .audienceCard {
+    min-height: 92px;
+    justify-content: center;
+  }
+
+  .heroVisual {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding-top: 42px;
+  }
+
+  .heroGlow {
+    top: 10% !important;
+    left: 5% !important;
+    width: 90% !important;
+    height: 360px !important;
+  }
+
+  .heroStatusBadge {
+    top: 0 !important;
+    left: 50% !important;
+    width: max-content;
+    max-width: 100%;
+    transform: translateX(-50%);
+    justify-content: center;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .heroImageStage {
+    grid-column: 1 / -1;
+    justify-self: center;
+    height: clamp(280px, 82vw, 390px) !important;
+    max-width: 430px !important;
+  }
+
+  .heroInfoBadge {
+    position: static !important;
+    width: 100%;
+    max-width: none;
+    padding: 10px 12px !important;
+    box-shadow: 0 10px 24px rgba(124, 58, 237, 0.1) !important;
+  }
+
+  .heroFleetStrip {
+    grid-column: 1 / -1;
+    max-width: none !important;
+    margin-top: 0 !important;
+    padding: 12px 8px !important;
+  }
+
+  .heroFleetItem {
+    padding-inline: 4px;
+  }
+
+  .heroFleetItem > div:nth-child(2) {
+    line-height: 1.25;
+  }
+
+  .heroTrustBar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: 10px;
+  }
+
+  .servicesSection,
+  .whyChooseSection {
+    padding: 64px 18px;
+  }
+
+  .sectionHeaderRow {
+    align-items: flex-start;
+    margin-bottom: 30px;
+  }
+
+  .serviceCard {
+    padding: 22px 20px;
+  }
+
+  .serviceMedia {
+    height: clamp(150px, 46vw, 190px) !important;
+    margin: 8px 0 18px !important;
+  }
+
+  .serviceMedia img {
+    width: min(82%, 290px) !important;
+    height: auto !important;
+  }
+
+  .contentSection {
+    padding-top: 60px !important;
+    padding-bottom: 60px !important;
+  }
+
+  .contentShell {
+    width: 100%;
+    padding-right: 18px !important;
+    padding-left: 18px !important;
+  }
+
+  .splitLayout {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 34px !important;
+  }
+
+  .fareCalculator {
+    padding: 24px !important;
+    border-radius: 20px !important;
+  }
+
+  .fareCalculatorHeader {
+    align-items: flex-start !important;
+    gap: 12px;
+  }
+
+  .phoneShowcase {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 8px 0 0 !important;
+  }
+
+  .phoneGlow {
+    width: min(100%, 360px) !important;
+    height: 78% !important;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .phoneDevice {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(74vw, 290px) !important;
+    height: min(148vw, 580px) !important;
+  }
+
+  .phoneFeatureBadge {
+    position: static !important;
+    width: 100%;
+    max-width: none;
+    padding: 10px 12px !important;
+    box-shadow: 0 10px 24px rgba(124, 58, 237, 0.1) !important;
+  }
+
+  .businessImage {
+    min-height: 0 !important;
+    aspect-ratio: 16 / 11;
+    border-radius: 18px !important;
+  }
+
+  .driverCard {
+    padding: 22px !important;
+  }
+
+  .driverImage {
+    height: clamp(130px, 40vw, 170px) !important;
+  }
+
+  .driverImage img {
+    width: min(92%, 320px) !important;
+    height: auto !important;
+  }
+
+  .coverageMap {
+    height: 300px !important;
+    border-radius: 18px !important;
+  }
+
+  .coverageOverlay {
+    flex-direction: column;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    gap: 20px;
+    padding: 24px !important;
+    background: linear-gradient(90deg, rgba(15,23,42,0.9) 0%, rgba(15,23,42,0.66) 100%) !important;
+  }
+
+  .coverageOverlay > div:first-child > div:last-child {
+    font-size: 19px !important;
+    line-height: 1.3;
+  }
+
+  .coverageBadges {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .coverageBadges span {
+    max-width: 100%;
+    line-height: 1.35;
   }
 
   .heroActions {
@@ -1261,6 +1551,78 @@
 
   .heroDescription {
     font-size: 15px;
+  }
+
+  .heroVisual {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heroImageStage,
+  .heroFleetStrip {
+    grid-column: 1;
+  }
+
+  .heroImageStage {
+    height: min(82vw, 320px) !important;
+  }
+
+  .heroInfoBadge {
+    grid-column: 1;
+  }
+
+  .heroFleetStrip {
+    gap: 4px !important;
+  }
+
+  .heroFleetItem > div:nth-child(2) {
+    font-size: 11px !important;
+  }
+
+  .heroFleetItem > div:nth-child(3) {
+    font-size: 10px !important;
+  }
+
+  .fareIntroCard > div {
+    align-items: flex-start !important;
+  }
+
+  .fareIntroCard > div > div:first-child {
+    width: 92px !important;
+  }
+
+  .fareCalculator {
+    padding: 20px 16px !important;
+  }
+
+  .fareCalculatorHeader {
+    flex-direction: column;
+  }
+
+  .phoneShowcase {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .phoneDevice,
+  .phoneFeatureBadge {
+    grid-column: 1;
+  }
+
+  .phoneDevice {
+    width: min(76vw, 270px) !important;
+    height: min(152vw, 540px) !important;
+    border-radius: 42px !important;
+  }
+
+  .businessLayout > div:last-child > div[style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .coverageMap {
+    height: 330px !important;
+  }
+
+  .coverageOverlay {
+    padding: 20px !important;
   }
 
   .vehiclePills {

@@ -62,20 +62,20 @@ export default function Home() {
               </p>
 
               {/* 3 Clear Pathways Banner */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", margin: "10px 0 20px" }}>
-                <Link href="#for-individuals" style={{ background: "#F5F3FF", border: "1px solid #EDE9FE", borderRadius: "12px", padding: "14px 16px", textDecoration: "none", display: "flex", flexDirection: "column" }}>
+              <div className={styles.audienceGrid} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", margin: "10px 0 20px" }}>
+                <Link href="#for-individuals" className={styles.audienceCard} style={{ background: "#F5F3FF", border: "1px solid #EDE9FE", borderRadius: "12px", padding: "14px 16px", textDecoration: "none", display: "flex", flexDirection: "column" }}>
                   <span style={{ fontSize: "20px", marginBottom: "4px" }}>👤</span>
                   <span style={{ color: "#7C3AED", fontWeight: "700", fontSize: "14px" }}>For Individuals</span>
                   <span style={{ color: "#64748B", fontSize: "12px", marginTop: "2px" }}>Book on-demand via app</span>
                 </Link>
 
-                <Link href="#for-businesses" style={{ background: "#F5F3FF", border: "1px solid #EDE9FE", borderRadius: "12px", padding: "14px 16px", textDecoration: "none", display: "flex", flexDirection: "column" }}>
+                <Link href="#for-businesses" className={styles.audienceCard} style={{ background: "#F5F3FF", border: "1px solid #EDE9FE", borderRadius: "12px", padding: "14px 16px", textDecoration: "none", display: "flex", flexDirection: "column" }}>
                   <span style={{ fontSize: "20px", marginBottom: "4px" }}>🏢</span>
                   <span style={{ color: "#7C3AED", fontWeight: "700", fontSize: "14px" }}>For Businesses</span>
                   <span style={{ color: "#64748B", fontSize: "12px", marginTop: "2px" }}>Local &amp; intercity transport</span>
                 </Link>
 
-                <Link href="#driver-partners" style={{ background: "#ECFDF5", border: "1px solid #D1FAE5", borderRadius: "12px", padding: "14px 16px", textDecoration: "none", display: "flex", flexDirection: "column" }}>
+                <Link href="#driver-partners" className={styles.audienceCard} style={{ background: "#ECFDF5", border: "1px solid #D1FAE5", borderRadius: "12px", padding: "14px 16px", textDecoration: "none", display: "flex", flexDirection: "column" }}>
                   <span style={{ fontSize: "20px", marginBottom: "4px" }}>🚚</span>
                   <span style={{ color: "#059669", fontWeight: "700", fontSize: "14px" }}>Driver Partners</span>
                   <span style={{ color: "#065F46", fontSize: "12px", marginTop: "2px" }}>Join independent network</span>
@@ -113,9 +113,9 @@ export default function Home() {
             </div>
 
             {/* Right: Hero PNG Visual Showcase - Borderless Clean Cutout */}
-            <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <div className={styles.heroVisual} style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
               {/* Ambient Soft Glow Circle */}
-              <div style={{
+              <div className={styles.heroGlow} style={{
                 position: "absolute",
                 top: "10%",
                 left: "10%",
@@ -129,7 +129,7 @@ export default function Home() {
               }} />
 
               {/* Floating Top Badge */}
-              <div style={{
+              <div className={styles.heroStatusBadge} style={{
                 position: "absolute",
                 top: "10px",
                 left: "20px",
@@ -151,19 +151,20 @@ export default function Home() {
               </div>
 
               {/* Clean PNG Courier Cutout - No Square Boundaries */}
-              <div style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: "520px", height: "460px" }}>
+              <div className={styles.heroImageStage} style={{ position: "relative", zIndex: 2, width: "100%", maxWidth: "520px", height: "460px" }}>
                 <Image
                   src="/banner_img01_indiery.png"
                   alt="Indiery Delivery Logistics Partner in Lucknow"
                   fill
                   priority
                   sizes="(max-width: 768px) 100vw, 520px"
+                  className={styles.heroImage}
                   style={{ objectFit: "contain", filter: "drop-shadow(0 20px 40px rgba(124, 58, 237, 0.18))" }}
                 />
               </div>
 
               {/* Floating Bottom Left Badge */}
-              <div style={{
+              <div className={`${styles.heroInfoBadge} ${styles.heroInfoBadgeLeft}`} style={{
                 position: "absolute",
                 bottom: "75px",
                 left: "0",
@@ -187,7 +188,7 @@ export default function Home() {
               </div>
 
               {/* Floating Bottom Right Badge */}
-              <div style={{
+              <div className={`${styles.heroInfoBadge} ${styles.heroInfoBadgeRight}`} style={{
                 position: "absolute",
                 bottom: "75px",
                 right: "0",
@@ -211,7 +212,7 @@ export default function Home() {
               </div>
 
               {/* Micro Fleet Highlights Pill Bar */}
-              <div style={{
+              <div className={styles.heroFleetStrip} style={{
                 position: "relative",
                 zIndex: 3,
                 width: "100%",
@@ -226,17 +227,17 @@ export default function Home() {
                 gap: "10px",
                 marginTop: "-20px"
               }}>
-                <div style={{ textAlign: "center" }}>
+                <div className={styles.heroFleetItem} style={{ textAlign: "center" }}>
                   <div style={{ fontSize: "17px" }}>🛵</div>
                   <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Bike &amp; Loader</div>
                   <div style={{ fontSize: "11px", color: "#64748B" }}>20 kg to 90 kg</div>
                 </div>
-                <div style={{ textAlign: "center", borderLeft: "1px solid #F1F5F9", borderRight: "1px solid #F1F5F9" }}>
+                <div className={styles.heroFleetItem} style={{ textAlign: "center", borderLeft: "1px solid #F1F5F9", borderRight: "1px solid #F1F5F9" }}>
                   <div style={{ fontSize: "17px" }}>🚚</div>
                   <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Mini Trucks</div>
                   <div style={{ fontSize: "11px", color: "#64748B" }}>500 kg &amp; 750 kg</div>
                 </div>
-                <div style={{ textAlign: "center" }}>
+                <div className={styles.heroFleetItem} style={{ textAlign: "center" }}>
                   <div style={{ fontSize: "17px" }}>🛣️</div>
                   <div style={{ fontSize: "12px", fontWeight: "700", color: "#0F172A" }}>Intercity FTL</div>
                   <div style={{ fontSize: "11px", color: "#64748B" }}>Full Truck Load</div>
@@ -273,7 +274,7 @@ export default function Home() {
                   <div className={styles.serviceIconTop}>🛵</div>
                   <span className={styles.serviceTag}>Category 1 · Intra-City</span>
                 </div>
-                <div style={{ position: "relative", height: "140px", margin: "6px 0 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div className={styles.serviceMedia} style={{ position: "relative", height: "140px", margin: "6px 0 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Image
                     src="/assets/service-bike-cutout.png"
                     alt="Indiery Local Bike and Loader Delivery"
@@ -303,7 +304,7 @@ export default function Home() {
                   <div className={styles.serviceIconTop}>🛺</div>
                   <span className={styles.serviceTag}>Category 2 · Commercial Cargo</span>
                 </div>
-                <div style={{ position: "relative", height: "140px", margin: "6px 0 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div className={styles.serviceMedia} style={{ position: "relative", height: "140px", margin: "6px 0 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Image
                     src="/assets/service-tempo-cutout.png"
                     alt="Indiery 500kg and 750kg Mini Truck Goods Transport"
@@ -334,7 +335,7 @@ export default function Home() {
                   <div className={styles.serviceIconTop}>🚚</div>
                   <span className={styles.serviceTag} style={{ background: "#EDE9FE", color: "#6D28D9" }}>Category 3 · Full Truck Load</span>
                 </div>
-                <div style={{ position: "relative", height: "140px", margin: "6px 0 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div className={styles.serviceMedia} style={{ position: "relative", height: "140px", margin: "6px 0 14px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Image
                     src="/assets/service-moving-truck-cutout.png"
                     alt="Indiery Intercity Logistics Commercial Trucks"
@@ -366,9 +367,9 @@ export default function Home() {
         {/* =================================================================
             INSTANT FARE ESTIMATE & LUCKNOW BOOKING (BOOK OPTION MOVED DOWN)
             ================================================================= */}
-        <section id="fare-estimator" className="section" style={{ padding: "80px 0", background: "linear-gradient(180deg, #FFFFFF 0%, #F5F3FF 50%, #FFFFFF 100%)", borderTop: "1px solid #EDE9FE", borderBottom: "1px solid #EDE9FE" }}>
-          <div className="shell" style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.05fr", gap: "48px", alignItems: "center" }}>
+        <section id="fare-estimator" className={`${styles.contentSection} section`} style={{ padding: "80px 0", background: "linear-gradient(180deg, #FFFFFF 0%, #F5F3FF 50%, #FFFFFF 100%)", borderTop: "1px solid #EDE9FE", borderBottom: "1px solid #EDE9FE" }}>
+          <div className={`${styles.contentShell} shell`} style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
+            <div className={styles.splitLayout} style={{ display: "grid", gridTemplateColumns: "1fr 1.05fr", gap: "48px", alignItems: "center" }}>
               <div>
                 <span style={{ color: "#7C3AED", fontSize: "12.5px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "1px" }}>
                   UPFRONT TRANSPARENT PRICING
@@ -380,7 +381,7 @@ export default function Home() {
                   Check your estimated intra-city goods transportation rate before confirming. With Indiery, you get clear upfront pricing based strictly on vehicle type and trip distance—no surge pricing, no haggling, and verified independent driver partners.
                 </p>
 
-                <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "20px", border: "1px solid #E2E8F0", marginBottom: "24px", boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)" }}>
+                <div className={styles.fareIntroCard} style={{ background: "#FFFFFF", borderRadius: "16px", padding: "20px", border: "1px solid #E2E8F0", marginBottom: "24px", boxShadow: "0 4px 16px rgba(15, 23, 42, 0.04)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
                     <div style={{ width: "120px", flexShrink: 0 }}>
                       <Image
@@ -417,8 +418,8 @@ export default function Home() {
               </div>
 
               {/* Right: The Interactive Fare Calculator */}
-              <div style={{ background: "#FFFFFF", borderRadius: "24px", border: "1px solid #E2E8F0", padding: "32px", boxShadow: "0 20px 48px rgba(124, 58, 237, 0.12)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
+              <div className={styles.fareCalculator} style={{ background: "#FFFFFF", borderRadius: "24px", border: "1px solid #E2E8F0", padding: "32px", boxShadow: "0 20px 48px rgba(124, 58, 237, 0.12)" }}>
+                <div className={styles.fareCalculatorHeader} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
                   <div>
                     <span style={{ color: "#7C3AED", fontSize: "11px", fontWeight: "800", textTransform: "uppercase", letterSpacing: "0.5px" }}>LUCKNOW FARE CALCULATOR</span>
                     <h3 style={{ margin: "2px 0 0", color: "#0F172A", fontSize: "20px", fontWeight: "800" }}>Calculate Delivery Fare</h3>
@@ -537,9 +538,9 @@ export default function Home() {
             03 - FOR INDIVIDUALS
             Customers discover services, understand vehicle options, book via app.
             ================================================================= */}
-        <section id="for-individuals" className="section" style={{ padding: "80px 0", background: "#FFFFFF", borderTop: "1px solid #E2E8F0" }}>
-          <div className="shell" style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "48px", alignItems: "center" }}>
+        <section id="for-individuals" className={`${styles.contentSection} section`} style={{ padding: "80px 0", background: "#FFFFFF", borderTop: "1px solid #E2E8F0" }}>
+          <div className={`${styles.contentShell} shell`} style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
+            <div className={styles.splitLayout} style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "48px", alignItems: "center" }}>
               <div>
                 <p className={styles.sectionEyebrow}>03 · FOR INDIVIDUALS</p>
                 <h2 className={styles.sectionTitle}>
@@ -582,7 +583,7 @@ export default function Home() {
               </div>
 
               {/* Realistic Smartphone Device Mockup */}
-              <div style={{
+              <div className={styles.phoneShowcase} style={{
                 position: "relative",
                 display: "flex",
                 justifyContent: "center",
@@ -590,7 +591,7 @@ export default function Home() {
                 padding: "20px 0"
               }}>
                 {/* Ambient Soft Glow Circle */}
-                <div style={{
+                <div className={styles.phoneGlow} style={{
                   position: "absolute",
                   width: "360px",
                   height: "540px",
@@ -602,7 +603,7 @@ export default function Home() {
                 }} />
 
                 {/* Smartphone Device Frame Body */}
-                <div style={{
+                <div className={styles.phoneDevice} style={{
                   position: "relative",
                   zIndex: 2,
                   width: "290px",
@@ -713,7 +714,7 @@ export default function Home() {
                 </div>
 
                 {/* Floating Feature Pill Left */}
-                <div style={{
+                <div className={`${styles.phoneFeatureBadge} ${styles.phoneFeatureBadgeLeft}`} style={{
                   position: "absolute",
                   left: "-25px",
                   top: "35%",
@@ -738,7 +739,7 @@ export default function Home() {
                 </div>
 
                 {/* Floating Feature Pill Right */}
-                <div style={{
+                <div className={`${styles.phoneFeatureBadge} ${styles.phoneFeatureBadgeRight}`} style={{
                   position: "absolute",
                   right: "-25px",
                   bottom: "28%",
@@ -770,10 +771,10 @@ export default function Home() {
             04 - FOR BUSINESSES
             Local and intercity transport options, discuss requirements.
             ================================================================= */}
-        <section id="for-businesses" className="section" style={{ padding: "80px 0", background: "#F8FAFC", borderTop: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F0" }}>
-          <div className="shell" style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: "48px", alignItems: "center" }}>
-              <div style={{ position: "relative", minHeight: "380px", borderRadius: "24px", overflow: "hidden", background: "#EDE9FE" }}>
+        <section id="for-businesses" className={`${styles.contentSection} section`} style={{ padding: "80px 0", background: "#F8FAFC", borderTop: "1px solid #E2E8F0", borderBottom: "1px solid #E2E8F0" }}>
+          <div className={`${styles.contentShell} shell`} style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
+            <div className={`${styles.splitLayout} ${styles.businessLayout}`} style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: "48px", alignItems: "center" }}>
+              <div className={styles.businessImage} style={{ position: "relative", minHeight: "380px", borderRadius: "24px", overflow: "hidden", background: "#EDE9FE" }}>
                 <Image
                   src="/assets/service-business-v2.png"
                   alt="Indiery Business Logistics Partnerships"
@@ -878,9 +879,9 @@ export default function Home() {
             Independent drivers and transport providers join network.
             App link: Become a Driver Partner.
             ================================================================= */}
-        <section id="driver-partners" className="section" style={{ padding: "80px 0", background: "#0F172A", color: "#FFFFFF" }}>
-          <div className="shell" style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "48px", alignItems: "center" }}>
+        <section id="driver-partners" className={`${styles.contentSection} section`} style={{ padding: "80px 0", background: "#0F172A", color: "#FFFFFF" }}>
+          <div className={`${styles.contentShell} shell`} style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
+            <div className={styles.splitLayout} style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "48px", alignItems: "center" }}>
               <div>
                 <span style={{ color: "#34D399", fontSize: "12.5px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "1px" }}>07 · DRIVER PARTNERS</span>
                 <h2 style={{ fontSize: "36px", fontWeight: "800", color: "#FFFFFF", margin: "10px 0 16px" }}>
@@ -917,8 +918,8 @@ export default function Home() {
                 </div>
               </div>
 
-              <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "20px", padding: "32px", border: "1px solid rgba(255,255,255,0.1)" }}>
-                <div style={{ position: "relative", height: "140px", marginBottom: "16px", borderRadius: "14px", overflow: "hidden", background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div className={styles.driverCard} style={{ background: "rgba(255,255,255,0.05)", borderRadius: "20px", padding: "32px", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <div className={styles.driverImage} style={{ position: "relative", height: "140px", marginBottom: "16px", borderRadius: "14px", overflow: "hidden", background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Image
                     src="/assets/service-business-truck-cutout.png"
                     alt="Indiery Independent Driver Partners Network"
@@ -956,8 +957,8 @@ export default function Home() {
             Heading: "Starting in Lucknow".
             Explain local area and accurate information on intercity services.
             ================================================================= */}
-        <section className="section" style={{ padding: "80px 0", background: "#FFFFFF", borderTop: "1px solid #E2E8F0" }}>
-          <div className="shell" style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
+        <section className={`${styles.contentSection} section`} style={{ padding: "80px 0", background: "#FFFFFF", borderTop: "1px solid #E2E8F0" }}>
+          <div className={`${styles.contentShell} shell`} style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 24px" }}>
             <div style={{ textAlign: "center", maxWidth: "720px", margin: "0 auto 40px" }}>
               <span style={{ color: "#7C3AED", fontSize: "12.5px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "1px" }}>08 · SERVICE COVERAGE</span>
               <h2 style={{ fontSize: "38px", fontWeight: "800", color: "#0F172A", margin: "10px 0 16px" }}>Starting in Lucknow</h2>
@@ -967,7 +968,7 @@ export default function Home() {
             </div>
 
             {/* Visual Coverage Map Banner */}
-            <div style={{ position: "relative", height: "180px", borderRadius: "20px", overflow: "hidden", marginBottom: "36px", border: "1px solid #E2E8F0", boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)" }}>
+            <div className={styles.coverageMap} style={{ position: "relative", height: "180px", borderRadius: "20px", overflow: "hidden", marginBottom: "36px", border: "1px solid #E2E8F0", boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)" }}>
               <Image
                 src="/assets/indiery-real-map.jpg"
                 alt="Indiery Lucknow Operating Area Map"
@@ -975,12 +976,12 @@ export default function Home() {
                 style={{ objectFit: "cover" }}
                 sizes="(max-width: 1240px) 100vw, 1200px"
               />
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(15,23,42,0.88) 0%, rgba(15,23,42,0.5) 50%, rgba(15,23,42,0.88) 100%)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 36px", color: "#fff" }}>
+              <div className={styles.coverageOverlay} style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(15,23,42,0.88) 0%, rgba(15,23,42,0.5) 50%, rgba(15,23,42,0.88) 100%)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 36px", color: "#fff" }}>
                 <div>
                   <div style={{ fontSize: "11.5px", fontWeight: "800", color: "#34D399", textTransform: "uppercase", letterSpacing: "1px" }}>CENTRAL UTTAR PRADESH LOGISTICS</div>
                   <div style={{ fontSize: "22px", fontWeight: "800", marginTop: "4px" }}>Lucknow Metro + Active Regional Trade Corridors</div>
                 </div>
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <div className={styles.coverageBadges} style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   <span style={{ background: "rgba(255,255,255,0.18)", padding: "8px 16px", borderRadius: "20px", fontSize: "12.5px", fontWeight: "700" }}>📍 16+ Local Hubs</span>
                   <span style={{ background: "rgba(124,58,237,0.8)", padding: "8px 16px", borderRadius: "20px", fontSize: "12.5px", fontWeight: "700" }}>🛣️ Daily Kanpur / Ayodhya FTL</span>
                 </div>

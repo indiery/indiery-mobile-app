@@ -360,8 +360,6 @@ const enCopy = {
   goodsRulesIntro: 'Check what can and cannot be shipped before booking.',
   okayUnderstood: 'Okay, understood',
   chooseVehicle: 'Choose vehicle',
-  newVehicle: 'NEW',
-  mini300Rate: '₹150 first km · ₹15 each extra km',
   suggested: 'Suggested',
   unavailableForWeight: 'Too heavy',
   fareEstimate: 'Fare',
@@ -1031,8 +1029,6 @@ const hiCopy: Record<keyof typeof enCopy, string> = {
   goodsRulesIntro: 'बुकिंग से पहले देखें कि क्या भेजा जा सकता है और क्या नहीं।',
   okayUnderstood: 'ठीक है, समझ गया',
   chooseVehicle: 'वाहन चुनें',
-  newVehicle: 'नया',
-  mini300Rate: 'पहला किमी ₹150 · हर अगला किमी ₹15',
   suggested: 'सुझाया गया',
   unavailableForWeight: 'इस वजन के लिए उपलब्ध नहीं',
   fareEstimate: 'अनुमानित किराया',
@@ -2731,6 +2727,7 @@ export default function App() {
           responsive.isCompact && styles.homeAppHeaderCompact,
           responsive.isSmall && styles.appHeaderSmall,
           responsive.isSmall && styles.homeAppHeaderSmall,
+          responsive.height < 720 && styles.homeAppHeaderShort,
           {
             paddingTop: rootTopInset + (responsive.isSmall ? 11 : responsive.isCompact ? 13 : 18)
           }
@@ -2774,7 +2771,7 @@ export default function App() {
               >
                 {copyFor(language, 'hi')}, {data.user.name.split(' ')[0]}
               </Text>
-              <Text style={[styles.homeHeaderSubtitle, responsive.isCompact && styles.homeHeaderSubtitleCompact]}>
+              <Text numberOfLines={1} style={[styles.homeHeaderSubtitle, responsive.isCompact && styles.homeHeaderSubtitleCompact]}>
                 {language === 'hi' ? 'आपका डिलीवरी पार्टनर यहाँ है' : 'Your delivery partner is here'}
               </Text>
             </View>
@@ -4324,7 +4321,6 @@ function ScrollingPageHeader({
 
 function HomeScreen({
   header,
-  onPageScroll,
   api,
   data,
   booking,
@@ -4346,15 +4342,30 @@ function HomeScreen({
   const copy = useCopy();
   const language = useLanguage();
   const responsive = useResponsiveLayout();
+  const insets = useSafeAreaInsets();
   const compact = responsive.isCompact;
   const small = responsive.isSmall;
   const lastOrder = data.orders[0];
+  const [bodyHeight, setBodyHeight] = useState(0);
   const [autoPickupLoading, setAutoPickupLoading] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
   const [announcementWidth, setAnnouncementWidth] = useState(0);
   const autoPickupAttemptedRef = useRef(false);
   const announcementScrollRef = useRef<React.ElementRef<typeof ScrollView> | null>(null);
   const vehicleChoices = customerVehicles(data.vehicles);
+  const availableHeight = bodyHeight || responsive.height - responsive.tabBarHeight - insets.bottom - insets.top - 150;
+  const denseHome = availableHeight < 460;
+  const vehicleColumns = denseHome ? 3 : 2;
+  const vehicleRows = Math.ceil(vehicleChoices.length / vehicleColumns);
+  const wideLastVehicle = vehicleColumns === 2 && vehicleChoices.length > 1 && vehicleChoices.length % 2 === 1;
+  const gridGap = denseHome ? 6 : 8;
+  const locationHeight = denseHome ? 46 : 52;
+  const announcementHeight = denseHome ? 46 : 54;
+  const gridHeight = availableHeight - 16 - locationHeight - (denseHome ? 6 : 10)
+    - (lastOrder ? (denseHome ? 42 : 48) + 8 : 0) - (28 + announcementHeight + 12);
+  const vehicleCardHeight = Math.max(80, Math.min(denseHome ? 106 : 144,
+    Math.floor((gridHeight - (wideLastVehicle ? 64 : 0) - gridGap * Math.max(0, vehicleRows - 1))
+      / Math.max(1, vehicleRows - (wideLastVehicle ? 1 : 0)))));
   const pickupText = booking.pickup.trim();
   const pickupDisplay = pickupText || (autoPickupLoading ? copy.settingPickupLocation : copy.setPickupLocation);
   const pickupSelected = typeof booking.pickupLat === 'number' && typeof booking.pickupLng === 'number';
@@ -4455,23 +4466,16 @@ function HomeScreen({
   return (
     <View style={styles.homeShell}>
       <View pointerEvents="none" style={styles.homeCurveSurface} />
-      <Animated.ScrollView
-        onScroll={onPageScroll}
-        scrollEventThrottle={16}
-        contentContainerStyle={[
-          styles.homeScroll,
-          compact && styles.homeScrollCompact,
-          { maxWidth: responsive.contentMaxWidth, paddingHorizontal: responsive.horizontalPadding }
-        ]}
-        showsVerticalScrollIndicator={false}
+      {header}
+      <View
+        style={[styles.homeFixedBody, { maxWidth: responsive.contentMaxWidth, paddingHorizontal: responsive.horizontalPadding }]}
+        onLayout={(event) => setBodyHeight(event.nativeEvent.layout.height)}
       >
-        <ScrollingPageHeader
-          header={header}
-          horizontalInset={responsive.horizontalPadding}
-          topInset={compact ? 9 : 12}
-          bottomOverlap={20}
-        />
-        <Pressable style={[styles.homeLocationCard, compact && styles.homeLocationCardCompact]} onPress={onPickupPress}>
+        <Pressable style={[
+          styles.homeLocationCard,
+          compact && styles.homeLocationCardCompact,
+          { minHeight: locationHeight, height: locationHeight, marginBottom: denseHome ? 6 : 10 }
+        ]} onPress={onPickupPress}>
           <View style={[
             styles.homeLocationIcon,
             compact && styles.homeLocationIconCompact,
@@ -4490,42 +4494,43 @@ function HomeScreen({
           <Ionicons name="arrow-forward" size={compact ? 17 : 18} color={colors.customer} />
         </Pressable>
 
-        <View style={[styles.homeServiceGrid, compact && styles.homeServiceGridCompact]}>
-          {homeVehicleCards.map((service) => (
+        <View style={[styles.homeServiceGrid, { gap: gridGap }]}>
+          {homeVehicleCards.map((service, index) => {
+            const wide = wideLastVehicle && index === homeVehicleCards.length - 1;
+            const artHeight = wide ? 46 : Math.max(28, Math.min(72, vehicleCardHeight - (denseHome ? 52 : 50)));
+            return (
             <Pressable
               key={service.id}
               style={[
                 styles.homeServiceCard,
                 compact && styles.homeServiceCardCompact,
-                small && styles.homeServiceCardSmall
+                small && styles.homeServiceCardSmall,
+                { flexBasis: denseHome ? '30%' : '46%', minHeight: 0, height: wide ? 64 : vehicleCardHeight, padding: 8 },
+                wide && styles.homeServiceCardWide
               ]}
               onPress={() => startBookingFromHome(service.vehicle)}
             >
-              <HomeVehicleVisual vehicle={service.vehicle} color={service.accent} compact={compact} small={small} />
-              {service.vehicle.code === 'mini300' ? (
-                <View style={styles.homeVehicleNewBadge}>
-                  <Text style={styles.homeVehicleNewBadgeText}>{copy.newVehicle}</Text>
-                </View>
-              ) : null}
-              <View style={styles.homeServiceFooter}>
+              <HomeVehicleVisual vehicle={service.vehicle} color={service.accent} compact={compact} small={small} artHeight={artHeight} />
+              <View style={[styles.homeServiceFooter, wide && styles.homeServiceFooterWide]}>
                 <View style={styles.flex}>
-                  <Text style={[styles.homeServiceTitle, compact && styles.homeServiceTitleCompact, small && styles.homeServiceTitleSmall]}>{service.title}</Text>
-                  <Text style={[styles.homeServiceSubtitle, compact && styles.homeServiceSubtitleCompact]} numberOfLines={2}>{service.subtitle}</Text>
+                  <Text numberOfLines={1} style={[styles.homeServiceTitle, compact && styles.homeServiceTitleCompact, small && styles.homeServiceTitleSmall, denseHome && styles.homeServiceTitleDense]}>{service.title}</Text>
+                  <Text style={[styles.homeServiceSubtitle, compact && styles.homeServiceSubtitleCompact]} numberOfLines={denseHome ? 2 : 1}>{service.subtitle}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={compact ? 15 : 17} color={colors.ink} />
+                {!denseHome || wide ? <Ionicons name="chevron-forward" size={compact ? 15 : 17} color={colors.ink} /> : null}
               </View>
             </Pressable>
-          ))}
+            );
+          })}
         </View>
 
         {lastOrder ? (
-          <Pressable style={[styles.rebookCard, compact && styles.rebookCardCompact]} onPress={() => onBook(1)}>
-            <View style={[styles.rebookIcon, compact && styles.rebookIconCompact]}>
-              <Ionicons name="repeat" size={compact ? 16 : 18} color={colors.customer} />
+          <Pressable style={[styles.rebookCard, styles.homeRebookCard, { height: denseHome ? 42 : 48 }]} onPress={() => onBook(1)}>
+            <View style={[styles.rebookIcon, styles.homeRebookIcon]}>
+              <Ionicons name="repeat" size={16} color={colors.customer} />
             </View>
             <View style={styles.flex}>
-              <Text style={[styles.cardTitle, compact && styles.cardTitleCompact]}>{copy.repeatLastRoute}</Text>
-              <Text style={[styles.mutedSmall, compact && styles.mutedSmallCompact]} numberOfLines={small ? 1 : 2}>
+              <Text style={styles.homeRebookTitle} numberOfLines={1}>{copy.repeatLastRoute}</Text>
+              <Text style={styles.homeRebookRoute} numberOfLines={1}>
                 {lastOrder.pickup.label} {copy.to} {lastOrder.drop.label}
               </Text>
             </View>
@@ -4533,7 +4538,8 @@ function HomeScreen({
           </Pressable>
         ) : null}
 
-        <View style={[styles.homeAnnouncementHeader, compact && styles.homeAnnouncementHeaderCompact]}>
+        <View style={styles.homeAnnouncementSection}>
+        <View style={[styles.homeAnnouncementHeader, styles.homeAnnouncementHeaderFixed]}>
           <Text style={[styles.homeAnnouncementTitle, compact && styles.homeAnnouncementTitleCompact]}>{copy.announcements}</Text>
         </View>
         <View
@@ -4556,27 +4562,28 @@ function HomeScreen({
                 style={[
                   styles.homeAnnouncementCard,
                   compact && styles.homeAnnouncementCardCompact,
+                  { minHeight: announcementHeight, height: announcementHeight, padding: 8, gap: 8 },
                   announcementWidth ? { width: announcementWidth } : null
                 ]}
               >
-                <View style={[styles.homeAnnouncementIcon, compact && styles.homeAnnouncementIconCompact]}>
+                <View style={[styles.homeAnnouncementIcon, styles.homeAnnouncementIconFixed]}>
                   <Ionicons name={item.icon} size={compact ? 18 : 22} color={item.iconColor} />
                 </View>
                 <View style={styles.flex}>
-                  <Text style={[styles.homeAnnouncementCopy, compact && styles.homeAnnouncementCopyCompact]}>{item.title}</Text>
-                  <Text style={[styles.homeAnnouncementMeta, compact && styles.homeAnnouncementMetaCompact]}>{item.subtitle}</Text>
+                  <Text numberOfLines={1} style={[styles.homeAnnouncementCopy, styles.homeAnnouncementCopyFixed]}>{item.title}</Text>
+                  <Text numberOfLines={1} style={[styles.homeAnnouncementMeta, styles.homeAnnouncementMetaFixed]}>{item.subtitle}</Text>
                 </View>
               </View>
             ))}
           </ScrollView>
         </View>
-        <View style={styles.homeDots}>
+        <View style={[styles.homeDots, styles.homeDotsFixed]}>
           {homeAnnouncements.map((item, index) => (
             <View key={item.id} style={[styles.homeDot, index === announcementIndex && styles.homeDotActive]} />
           ))}
         </View>
-
-      </Animated.ScrollView>
+        </View>
+      </View>
     </View>
   );
 }
@@ -4759,17 +4766,19 @@ const HomeVehicleVisual = React.memo(function HomeVehicleVisual({
   vehicle,
   color,
   compact = false,
-  small = false
+  small = false,
+  artHeight
 }: {
   vehicle: Vehicle;
   color: string;
   compact?: boolean;
   small?: boolean;
+  artHeight?: number;
 }) {
   const source = vehicleArtSources[vehicle.code] ?? mini700VehicleImage;
   return (
-    <View style={[styles.homeServiceArt, compact && styles.homeServiceArtCompact, small && styles.homeServiceArtSmall]}>
-      <View style={[styles.homeServiceArtHalo, compact && styles.homeServiceArtHaloCompact, { backgroundColor: `${color}1F` }]} />
+    <View style={[styles.homeServiceArt, compact && styles.homeServiceArtCompact, small && styles.homeServiceArtSmall, artHeight !== undefined && { height: artHeight, minWidth: 64 }]}>
+      <View style={[styles.homeServiceArtHalo, compact && styles.homeServiceArtHaloCompact, { backgroundColor: `${color}1F` }, artHeight !== undefined && { height: Math.min(46, artHeight), width: Math.min(104, artHeight * 1.8) }]} />
       <View style={[styles.homeServiceArtShadow, compact && styles.homeServiceArtShadowCompact, { backgroundColor: color }]} />
       <Image
         source={source}
@@ -4780,7 +4789,8 @@ const HomeVehicleVisual = React.memo(function HomeVehicleVisual({
           small && styles.homeVehicleImageSmall,
           vehicle.code === 'bike' && styles.homeVehicleImageBike,
           vehicle.code === 'bike' && compact && styles.homeVehicleImageBikeCompact,
-          vehicle.code === 'loader90' && styles.homeVehicleImageLoader
+          vehicle.code === 'loader90' && styles.homeVehicleImageLoader,
+          artHeight !== undefined && { height: artHeight, width: Math.min(96, artHeight * 1.45) }
         ]}
       />
     </View>
@@ -5137,11 +5147,6 @@ function VehicleFareOption({
           >
             {vehicle.shortName}
           </Text>
-          {vehicle.code === 'mini300' && !suggested ? (
-            <View style={styles.vehicle300Badge}>
-              <Text style={styles.vehicle300BadgeText}>{copy.newVehicle}</Text>
-            </View>
-          ) : null}
           {suggested ? (
             <View style={styles.vehicleNewBadge}>
               <Text style={styles.vehicleNewBadgeText}>{copy.suggested}</Text>
@@ -5151,9 +5156,6 @@ function VehicleFareOption({
         <Text style={[styles.vehicleFareOptionMeta, responsive.isCompact && styles.vehicleFareOptionMetaCompact]}>
           {vehicleCapacityText(vehicle, copy.upTo, copy.kgUnit)} - {vehicle.etaMinutes} {copy.min}
         </Text>
-        {vehicle.code === 'mini300' ? (
-          <Text style={[styles.vehicle300Rate, responsive.isCompact && styles.vehicle300RateCompact]}>{copy.mini300Rate}</Text>
-        ) : null}
       </View>
       <View style={[styles.vehicleFareOptionPriceWrap, responsive.isCompact && styles.vehicleFareOptionPriceWrapCompact]}>
         <Text
@@ -10393,6 +10395,7 @@ const styles = StyleSheet.create({
   homeAppHeaderCompact: { minHeight: 138, paddingTop: 13, paddingBottom: 42 },
   appHeaderSmall: { paddingTop: 8, paddingBottom: 20 },
   homeAppHeaderSmall: { minHeight: 132, paddingTop: 11, paddingBottom: 40 },
+  homeAppHeaderShort: { minHeight: 112, paddingBottom: 16 },
   homeHeaderArtwork: {
     position: 'absolute',
     left: 0,
@@ -10471,6 +10474,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden'
   },
   homeShell: { flex: 1, backgroundColor: 'transparent', overflow: 'hidden' },
+  homeFixedBody: { flex: 1, width: '100%', alignSelf: 'center', paddingVertical: 8 },
   homeCurveSurface: {
     position: 'absolute',
     left: 0,
@@ -10562,8 +10566,7 @@ const styles = StyleSheet.create({
   },
   homeServiceCardCompact: { minHeight: 116, borderRadius: 14, padding: 9 },
   homeServiceCardSmall: { minHeight: 108, padding: 8 },
-  homeVehicleNewBadge: { position: 'absolute', top: 8, right: 8, borderRadius: 7, backgroundColor: '#0D9488', paddingHorizontal: 6, paddingVertical: 3 },
-  homeVehicleNewBadgeText: { color: colors.white, fontSize: 9, fontWeight: '700' },
+  homeServiceCardWide: { flexBasis: '100%', flexDirection: 'row', alignItems: 'center', gap: 12 },
   homeServiceArt: { height: 76, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   homeServiceArtCompact: { height: 58 },
   homeServiceArtSmall: { height: 53 },
@@ -10578,13 +10581,17 @@ const styles = StyleSheet.create({
   homeVehicleImageBikeCompact: { width: 76, height: 58 },
   homeVehicleImageLoader: { width: 90, height: 66, borderRadius: 10 },
   homeServiceFooter: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  homeServiceFooterWide: { flex: 1, alignItems: 'center' },
   homeServiceTitle: { color: colors.ink, fontSize: 14, fontWeight: '600' },
   homeServiceTitleCompact: { fontSize: 13 },
   homeServiceTitleSmall: { fontSize: 12 },
+  homeServiceTitleDense: { fontSize: 12 },
   homeServiceSubtitle: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 15, marginTop: 3 },
   homeServiceSubtitleCompact: { fontSize: 10, lineHeight: 13, marginTop: 2 },
   homeAnnouncementHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 10 },
   homeAnnouncementHeaderCompact: { marginTop: 12, marginBottom: 7 },
+  homeAnnouncementSection: { marginTop: 'auto' },
+  homeAnnouncementHeaderFixed: { marginTop: 8, marginBottom: 6, height: 14 },
   homeAnnouncementTitle: { color: colors.muted, fontSize: 13, fontWeight: '600' },
   homeAnnouncementTitleCompact: { fontSize: 11 },
   homeAnnouncementCarousel: { borderRadius: 16, overflow: 'hidden' },
@@ -10603,11 +10610,15 @@ const styles = StyleSheet.create({
   homeAnnouncementCardCompact: { minHeight: 58, borderRadius: 14, gap: 10, padding: 10 },
   homeAnnouncementIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
   homeAnnouncementIconCompact: { width: 32, height: 32, borderRadius: 11 },
+  homeAnnouncementIconFixed: { width: 30, height: 30, borderRadius: 10 },
   homeAnnouncementCopy: { color: colors.ink, fontSize: 13, fontWeight: '600' },
   homeAnnouncementCopyCompact: { fontSize: 12 },
+  homeAnnouncementCopyFixed: { fontSize: 12, lineHeight: 15 },
   homeAnnouncementMeta: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 3 },
   homeAnnouncementMetaCompact: { fontSize: 10, marginTop: 2 },
+  homeAnnouncementMetaFixed: { fontSize: 10, lineHeight: 13, marginTop: 2 },
   homeDots: { flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 8 },
+  homeDotsFixed: { marginTop: 6, height: 6 },
   homeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CBD5E1' },
   homeDotActive: { width: 18, backgroundColor: colors.ink },
   homeActiveCard: {
@@ -10663,6 +10674,10 @@ const styles = StyleSheet.create({
   rebookCardCompact: { gap: 10, borderRadius: 13, padding: 10, marginTop: 10 },
   rebookIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.customerLight, alignItems: 'center', justifyContent: 'center' },
   rebookIconCompact: { width: 32, height: 32, borderRadius: 10 },
+  homeRebookCard: { padding: 8, marginTop: 8, gap: 8 },
+  homeRebookIcon: { width: 30, height: 30, borderRadius: 10 },
+  homeRebookTitle: { color: colors.ink, fontSize: 12, lineHeight: 15, fontWeight: '600' },
+  homeRebookRoute: { color: colors.muted, fontSize: 10, lineHeight: 13, marginTop: 1 },
   cardTitleCompact: { fontSize: 13 },
   mutedSmallCompact: { fontSize: 10, lineHeight: 13 },
   promiseBand: { flexDirection: 'row', gap: 8, marginTop: 14 },
@@ -11248,10 +11263,6 @@ const styles = StyleSheet.create({
   vehicleFareOptionTitleSelected: { color: colors.customer },
   vehicleFareOptionMeta: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 3 },
   vehicleFareOptionMetaCompact: { fontSize: 10, marginTop: 2 },
-  vehicle300Badge: { borderRadius: 7, backgroundColor: '#CCFBF1', paddingHorizontal: 6, paddingVertical: 2 },
-  vehicle300BadgeText: { color: '#0F766E', fontSize: 9, fontWeight: '700' },
-  vehicle300Rate: { color: '#0F766E', fontSize: 11, fontWeight: '600', marginTop: 4 },
-  vehicle300RateCompact: { fontSize: 10, marginTop: 3 },
   vehicleFareOptionPriceWrap: { alignItems: 'flex-end', gap: 4 },
   vehicleFareOptionPriceWrapCompact: { gap: 3 },
   vehicleFareOptionPrice: { color: colors.ink, fontSize: 14, fontWeight: '600' },

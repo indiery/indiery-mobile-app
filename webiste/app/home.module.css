@@ -1202,4 +1202,72 @@
   .trackingTimeline {
     grid-template-columns: 1fr;
   }
+
+  .page main [style*="grid-template-columns"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .page main [style*="width: 480px"],
+  .page main [style*="width: 500px"],
+  .page main [style*="max-width: 520px"] {
+    max-width: 100% !important;
+  }
+
+  .page main img {
+    max-width: 100%;
+  }
+
+  .hero {
+    padding: 38px 18px 64px;
+  }
+
+  .heroInner {
+    gap: 28px;
+  }
+
+  .heroActions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .heroActions a {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .heroTrustBar {
+    align-items: flex-start;
+  }
+
+  .page main section {
+    scroll-margin-top: 72px;
+  }
+}
+
+@media (max-width: 480px) {
+  .heroTitle {
+    font-size: 34px !important;
+    letter-spacing: -1.2px;
+  }
+
+  .heroTitle br,
+  .sectionTitle br {
+    display: none;
+  }
+
+  .heroDescription {
+    font-size: 15px;
+  }
+
+  .vehiclePills {
+    grid-template-columns: 1fr;
+  }
+
+  .floatingContainerWrapper {
+    display: none;
+  }
 }

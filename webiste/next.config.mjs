@@ -17,6 +17,7 @@ const nextConfig = {
   },
   async redirects() {
     return [
+      { source: "/adnin/:path*", destination: "/admin/:path*", permanent: true },
       { source: "/about.html", destination: "/about", permanent: true },
       { source: "/services.html", destination: "/services", permanent: true },
       { source: "/pricing.html", destination: "/plans-eccomerce", permanent: true },

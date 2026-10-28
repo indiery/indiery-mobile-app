@@ -3192,10 +3192,6 @@ canvas {
   max-width: 100%;
 }
 
-img[width][height] {
-  height: auto;
-}
-
 input,
 select,
 textarea,

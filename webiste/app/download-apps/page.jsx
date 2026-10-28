@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
+import styles from "./download-apps.module.css";
 
 export default function DownloadAppsPage() {
   return (
@@ -35,8 +36,8 @@ export default function DownloadAppsPage() {
               
               {/* App 1: Customer App */}
               <div style={{ background: "#FFFFFF", borderRadius: "24px", padding: "40px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15, 23, 42, 0.05)", display: "flex", flexDirection: "column" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "18px", marginBottom: "24px" }}>
-                  <div style={{ width: "70px", height: "70px", borderRadius: "18px", background: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", overflow: "hidden", flexShrink: 0, boxShadow: "0 8px 20px rgba(124, 58, 237, 0.3)" }}>
+                <div className={styles.appHeader} style={{ display: "flex", alignItems: "center", gap: "18px", marginBottom: "24px" }}>
+                  <div className={styles.appIcon} style={{ width: "70px", height: "70px", borderRadius: "18px", background: "#7C3AED", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", overflow: "hidden", flexShrink: 0, boxShadow: "0 8px 20px rgba(124, 58, 237, 0.3)" }}>
                     <Image
                       src="/indiery-app-icon.png"
                       alt="Indiery Customer App Icon"
@@ -45,23 +46,23 @@ export default function DownloadAppsPage() {
                       style={{ objectFit: "cover" }}
                     />
                   </div>
-                  <div>
-                    <span style={{ display: "inline-block", background: "#EDE9FE", color: "#6D28D9", fontSize: "11.5px", fontWeight: "700", padding: "3px 10px", borderRadius: "12px", textTransform: "uppercase", marginBottom: "4px" }}>
+                  <div className={styles.appMeta}>
+                    <span className={styles.appTag} style={{ display: "inline-block", background: "#EDE9FE", color: "#6D28D9", fontSize: "11.5px", fontWeight: "700", padding: "3px 10px", borderRadius: "12px", textTransform: "uppercase", marginBottom: "4px" }}>
                       For Individuals &amp; Businesses
                     </span>
-                    <h2 style={{ fontSize: "26px", fontWeight: "800", color: "#0F172A", margin: 0 }}>
+                    <h2 className={styles.appTitle} style={{ fontSize: "26px", fontWeight: "800", color: "#0F172A", margin: 0 }}>
                       Indiery Customer App
                     </h2>
                   </div>
                 </div>
 
-                <div style={{ position: "relative", height: "180px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "center", background: "#F5F3FF", borderRadius: "16px", border: "1px solid #EDE9FE" }}>
+                <div className={`${styles.appPreview} ${styles.customerPreview}`}>
                   <Image
-                    src="/mobile-final.png"
-                    alt="Indiery Customer App Interface"
-                    width={140}
-                    height={170}
-                    style={{ objectFit: "contain", filter: "drop-shadow(0 10px 20px rgba(124, 58, 237, 0.25))" }}
+                    src="/assets/generated/service-bike-realistic-v3.png"
+                    alt="Indiery customer delivery scooter"
+                    fill
+                    sizes="(max-width: 900px) 90vw, 520px"
+                    className={styles.customerVehicle}
                   />
                 </div>
 
@@ -118,8 +119,8 @@ export default function DownloadAppsPage() {
 
               {/* App 2: Driver App */}
               <div style={{ background: "#FFFFFF", borderRadius: "24px", padding: "40px", border: "1px solid #E2E8F0", boxShadow: "0 10px 30px rgba(15, 23, 42, 0.05)", display: "flex", flexDirection: "column" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "18px", marginBottom: "24px" }}>
-                  <div style={{ width: "70px", height: "70px", borderRadius: "18px", background: "#059669", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", overflow: "hidden", flexShrink: 0, boxShadow: "0 8px 20px rgba(5, 150, 105, 0.3)" }}>
+                <div className={styles.appHeader} style={{ display: "flex", alignItems: "center", gap: "18px", marginBottom: "24px" }}>
+                  <div className={styles.appIcon} style={{ width: "70px", height: "70px", borderRadius: "18px", background: "#059669", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", overflow: "hidden", flexShrink: 0, boxShadow: "0 8px 20px rgba(5, 150, 105, 0.3)" }}>
                     <Image
                       src="/indiery-app-icon.png"
                       alt="Indiery Driver App Icon"
@@ -128,23 +129,23 @@ export default function DownloadAppsPage() {
                       style={{ objectFit: "cover" }}
                     />
                   </div>
-                  <div>
-                    <span style={{ display: "inline-block", background: "#D1FAE5", color: "#065F46", fontSize: "11.5px", fontWeight: "700", padding: "3px 10px", borderRadius: "12px", textTransform: "uppercase", marginBottom: "4px" }}>
+                  <div className={styles.appMeta}>
+                    <span className={styles.appTag} style={{ display: "inline-block", background: "#D1FAE5", color: "#065F46", fontSize: "11.5px", fontWeight: "700", padding: "3px 10px", borderRadius: "12px", textTransform: "uppercase", marginBottom: "4px" }}>
                       For Approved Driver Partners
                     </span>
-                    <h2 style={{ fontSize: "26px", fontWeight: "800", color: "#0F172A", margin: 0 }}>
+                    <h2 className={styles.appTitle} style={{ fontSize: "26px", fontWeight: "800", color: "#0F172A", margin: 0 }}>
                       Indiery Driver App
                     </h2>
                   </div>
                 </div>
 
-                <div style={{ position: "relative", height: "180px", marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "center", background: "#ECFDF5", borderRadius: "16px", border: "1px solid #D1FAE5" }}>
+                <div className={`${styles.appPreview} ${styles.driverPreview}`}>
                   <Image
                     src="/assets/service-tempo-cutout.png"
                     alt="Indiery Driver App Commercial Transport Vehicle"
-                    width={240}
-                    height={160}
-                    style={{ objectFit: "contain", filter: "drop-shadow(0 10px 20px rgba(5, 150, 105, 0.25))" }}
+                    fill
+                    sizes="(max-width: 900px) 90vw, 520px"
+                    className={styles.driverVehicle}
                   />
                 </div>
 

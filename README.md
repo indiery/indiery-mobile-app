@@ -92,7 +92,7 @@ Order notifications currently cover driver search/assignment, nearby partner off
 - Partner Firebase OTP login, KYC-gated availability, authenticated realtime order queue, device location sync, accept/reject, active delivery, Cloudinary pickup/drop POD, pickup/drop OTP verification, status transitions, earnings, payout request queue, KYC upload, and in-app legal policies
 - Shared backend order state, MongoDB persistence, Google Maps distance calculation, Razorpay webhook verification, Cloudinary signed uploads, wallet ledger, document status, push-token storage, Expo push adapter, authenticated Socket.IO rooms, and realtime event hooks
 
-The admin dashboard is intentionally excluded from this build.
+The admin dashboard is hosted at `https://www.indiery.com/admin`. Requests to the backend `/admin` path redirect to the website dashboard.
 
 ## Production Configuration
 

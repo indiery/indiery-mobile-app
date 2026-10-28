@@ -55,6 +55,10 @@ export function createApp() {
     res.json({ ok: true, service: 'indiery-api' });
   });
 
+  app.get(['/admin', '/admin/*', '/adnin', '/adnin/*'], (req, res) => {
+    res.redirect(308, `https://www.indiery.com${req.originalUrl}`);
+  });
+
   app.use(legalRouter);
   app.use(trackingRouter);
   app.use('/api/auth', authRouter);

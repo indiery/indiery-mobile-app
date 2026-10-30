@@ -63,6 +63,13 @@ export function requireAuth(roles?: AuthRole[]) {
       req.auth = auth;
       next();
     } catch (error) {
+      if (
+        error instanceof Error &&
+        ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(error.name)
+      ) {
+        next(new ApiError(401, 'Session is invalid or expired'));
+        return;
+      }
       next(error);
     }
   };

@@ -1,32 +1,19 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import {
-  CircleMarker,
-  MapContainer,
-  Polyline,
-  Popup,
-  TileLayer,
-  Tooltip,
-  useMap,
-} from "react-leaflet";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { loadGoogleMaps } from "./googleMaps";
 import styles from "./admin.module.css";
 
-const DEFAULT_CENTER = [26.8467, 80.9462];
 const FRESH_LOCATION_MS = 5 * 60 * 1000;
 
 function coordinates(value) {
   const lat = Number(value?.lat ?? value?.latitude);
   const lng = Number(value?.lng ?? value?.longitude);
-  return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
 }
 
 function driverCoordinates(driver) {
   return coordinates(driver?.partnerProfile?.currentLocation);
-}
-
-function orderCoordinates(stop) {
-  return coordinates(stop?.location || stop);
 }
 
 function locationAgeLabel(updatedAt) {
@@ -41,120 +28,151 @@ function locationAgeLabel(updatedAt) {
   return `Updated ${Math.floor(hours / 24)} day(s) ago`;
 }
 
-function MapController({ selectedPosition, allPositions }) {
-  const map = useMap();
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => map.invalidateSize(), 50);
-    return () => window.clearTimeout(timer);
-  }, [map]);
-
-  useEffect(() => {
-    if (selectedPosition) {
-      map.flyTo(selectedPosition, Math.max(map.getZoom(), 14), { duration: 0.55 });
-      return;
-    }
-
-    if (allPositions.length > 1) {
-      map.fitBounds(allPositions, { padding: [50, 50], maxZoom: 14 });
-    } else if (allPositions.length === 1) {
-      map.setView(allPositions[0], 14);
-    }
-  }, [allPositions, map, selectedPosition]);
-
-  return null;
-}
-
 export default function LiveFleetMap({ drivers, selectedDriverId, onSelectDriver }) {
+  const mapElement = useRef(null);
+  const [mapError, setMapError] = useState("");
+  const [route, setRoute] = useState(null);
+  const [routeError, setRouteError] = useState("");
   const locatedDrivers = useMemo(
-    () => drivers
-      .map((driver) => ({ driver, position: driverCoordinates(driver) }))
-      .filter((item) => item.position),
+    () => drivers.map((driver) => ({ driver, position: driverCoordinates(driver) })).filter((item) => item.position),
     [drivers],
   );
-
   const selectedDriver = drivers.find((driver) => driver._id === selectedDriverId) || null;
-  const selectedPosition = driverCoordinates(selectedDriver);
-  const pickupPosition = orderCoordinates(selectedDriver?.activeOrder?.pickup);
-  const dropPosition = orderCoordinates(selectedDriver?.activeOrder?.drop);
-  const routePositions = pickupPosition && dropPosition ? [pickupPosition, dropPosition] : null;
-  const initialCenter = selectedPosition || locatedDrivers[0]?.position || DEFAULT_CENTER;
+  const activeOrderId = selectedDriver?.activeOrder?._id;
 
-  return (
-    <>
-      <MapContainer
-        center={initialCenter}
-        zoom={locatedDrivers.length ? 13 : 11}
-        className={styles.realMap}
-        scrollWheelZoom
-        preferCanvas
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maxZoom={19}
-        />
+  useEffect(() => {
+    if (!activeOrderId) {
+      setRoute(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    setRoute(null);
+    setRouteError("");
+    fetch(`/api/admin/orders/${encodeURIComponent(activeOrderId)}/route`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.message || "Route unavailable");
+        return data?.route;
+      })
+      .then(setRoute)
+      .catch((cause) => {
+        if (cause?.name !== "AbortError") {
+          setRoute(null);
+          setRouteError(cause?.message || "Could not load the Google route.");
+        }
+      });
+    return () => controller.abort();
+  }, [activeOrderId]);
 
-        <MapController
-          selectedPosition={selectedPosition}
-          allPositions={locatedDrivers.map((item) => item.position)}
-        />
+  const routePositions = useMemo(() => (route?.source === "google_directions" ? (route.coordinates || []) : [])
+      .map((point) => ({ lat: Number(point.latitude), lng: Number(point.longitude) }))
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)), [route]);
+  const routeLocations = useMemo(() => (route?.locations || [])
+    .map((point) => ({ lat: Number(point.latitude), lng: Number(point.longitude) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)), [route]);
 
-        {routePositions && (
-          <>
-            <Polyline positions={routePositions} pathOptions={{ color: "#6d28d9", weight: 5, opacity: 0.8, dashArray: "10 8" }} />
-            <CircleMarker center={pickupPosition} radius={8} pathOptions={{ color: "#ffffff", weight: 3, fillColor: "#059669", fillOpacity: 1 }}>
-              <Tooltip permanent direction="top">Pickup</Tooltip>
-            </CircleMarker>
-            <CircleMarker center={dropPosition} radius={8} pathOptions={{ color: "#ffffff", weight: 3, fillColor: "#e11d48", fillOpacity: 1 }}>
-              <Tooltip permanent direction="top">Drop</Tooltip>
-            </CircleMarker>
-          </>
-        )}
+  useEffect(() => {
+    if (!locatedDrivers.length || !mapElement.current) return undefined;
+    let disposed = false;
+    let resizeObserver;
+    const overlays = [];
+    loadGoogleMaps()
+      .then((maps) => {
+        if (disposed || !mapElement.current) return;
+        setMapError("");
+        const selectedPosition = selectedDriver ? driverCoordinates(selectedDriver) : null;
+        const map = new maps.Map(mapElement.current, {
+          center: selectedPosition || locatedDrivers[0].position,
+          zoom: 12,
+          mapTypeControl: true,
+          streetViewControl: false,
+          fullscreenControl: true,
+          clickableIcons: false,
+        });
 
-        {locatedDrivers.map(({ driver, position }) => {
+        if (routePositions.length > 1) {
+          overlays.push(new maps.Polyline({
+            map,
+            path: routePositions,
+            geodesic: true,
+            strokeColor: "#6d28d9",
+            strokeOpacity: 0.9,
+            strokeWeight: 5,
+          }));
+        }
+        routeLocations.forEach((position, index) => {
+          const label = index === 0 ? "P" : index === routeLocations.length - 1 ? "D" : String(index);
+          const title = index === 0 ? "Pickup" : index === routeLocations.length - 1 ? "Drop" : `Stop ${index}`;
+          overlays.push(new maps.Marker({ map, position, label: { text: label, color: "#fff", fontWeight: "700" }, title }));
+        });
+
+        locatedDrivers.forEach(({ driver, position }) => {
           const location = driver.partnerProfile?.currentLocation;
-          const updatedAt = location?.updatedAt;
-          const updatedTime = updatedAt ? new Date(updatedAt).getTime() : 0;
+          const updatedTime = location?.updatedAt ? new Date(location.updatedAt).getTime() : 0;
           const fresh = updatedTime > 0 && Date.now() - updatedTime <= FRESH_LOCATION_MS;
           const online = Boolean(driver.partnerProfile?.online);
           const selected = driver._id === selectedDriverId;
-          const markerColor = selected ? "#6d28d9" : online && fresh ? "#059669" : online ? "#d97706" : "#64748b";
+          const fillColor = selected ? "#6d28d9" : online && fresh ? "#059669" : online ? "#d97706" : "#64748b";
+          const marker = new maps.Marker({
+            map,
+            position,
+            title: `${driver.name} · ${driver.partnerProfile?.vehicleNumber || "Vehicle number not added"} · ${online ? "Online" : "Offline"} · ${locationAgeLabel(location?.updatedAt)}`,
+            icon: {
+              path: maps.SymbolPath.CIRCLE,
+              scale: selected ? 10 : 8,
+              fillColor,
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 3,
+            },
+            zIndex: selected ? 100 : 1,
+          });
+          marker.addListener("click", () => onSelectDriver(driver._id));
+          overlays.push(marker);
+        });
 
-          return (
-            <CircleMarker
-              key={driver._id}
-              center={position}
-              radius={selected ? 11 : 8}
-              pathOptions={{
-                color: "#ffffff",
-                weight: selected ? 4 : 3,
-                fillColor: markerColor,
-                fillOpacity: 1,
-              }}
-              eventHandlers={{ click: () => onSelectDriver(driver._id) }}
-            >
-              <Tooltip direction="top" offset={[0, -8]} opacity={1} permanent={selected}>
-                {driver.name} · {Number(location?.speed || 0)} km/h
-              </Tooltip>
-              <Popup>
-                <div className={styles.mapPopup}>
-                  <strong>{driver.name}</strong>
-                  <span>{driver.partnerProfile?.vehicleNumber || "Vehicle number not added"}</span>
-                  <span>{online ? "Online" : "Offline"} · {locationAgeLabel(updatedAt)}</span>
-                  <span>{position[0].toFixed(5)}, {position[1].toFixed(5)}</span>
-                  <button type="button" onClick={() => onSelectDriver(driver._id)}>Select driver</button>
-                </div>
-              </Popup>
-            </CircleMarker>
-          );
-        })}
-      </MapContainer>
+        const bounds = new maps.LatLngBounds();
+        locatedDrivers.forEach(({ position }) => bounds.extend(position));
+        routeLocations.forEach((position) => bounds.extend(position));
+        routePositions.forEach((position) => bounds.extend(position));
+        if (locatedDrivers.length > 1 || routePositions.length > 1 || routeLocations.length > 1) map.fitBounds(bounds, 48);
+        else if (selectedPosition) map.setCenter(selectedPosition);
+        if (typeof ResizeObserver !== "undefined") {
+          resizeObserver = new ResizeObserver(() => maps.event.trigger(map, "resize"));
+          resizeObserver.observe(mapElement.current);
+        }
+      })
+      .catch((cause) => {
+        if (!disposed) setMapError(cause?.message || "Google Maps could not be loaded.");
+      });
+    return () => {
+      disposed = true;
+      resizeObserver?.disconnect();
+      overlays.forEach((overlay) => overlay.setMap(null));
+    };
+  }, [drivers, locatedDrivers, onSelectDriver, routeLocations, routePositions, selectedDriver, selectedDriverId]);
 
-      {locatedDrivers.length === 0 && (
-        <div className={styles.mapEmptyNotice}>No drivers in this view have sent GPS coordinates yet.</div>
+  if (!locatedDrivers.length) {
+    return <div className={styles.mapEmptyNotice}>No drivers in this view have sent GPS coordinates yet.</div>;
+  }
+
+  return (
+    <>
+      <div ref={mapElement} className={styles.realMap} role="application" aria-label="Google Maps live driver fleet" />
+      {mapError && <div className={styles.googleMapError}>{mapError}</div>}
+      {selectedDriver?.activeOrder && (
+        <div className={styles.routeMapBadge}>
+          {routeError || (route?.source === "google_directions"
+            ? "Google driving route"
+            : route?.locations?.length
+              ? "Google-verified pins · driving route unavailable"
+              : "Resolving exact Google Maps locations…")}
+        </div>
       )}
-
       <div className={styles.mapLegend} aria-label="Map status legend">
         <span><i className={styles.legendLive}></i>Live</span>
         <span><i className={styles.legendStale}></i>Stale GPS</span>
